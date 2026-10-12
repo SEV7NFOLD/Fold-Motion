@@ -44,6 +44,11 @@ if (!/^[a-zA-Z0-9-]+$/.test(currentRunId)) {
   throw new Error('Run identifier may contain only letters, numbers, and hyphens.');
 }
 
+// choose platform-appropriate FFmpeg/FFprobe executable names
+const isWindows = process.platform === 'win32';
+const ffmpegCmd = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+const ffprobeCmd = isWindows ? 'ffprobe.exe' : 'ffprobe';
+
 const outputDirectory = path.join(root, 'output', SCENE_01_META.id, currentRunId);
 const framesDirectory = path.join(outputDirectory, 'frames');
 await createEmptyDirectory(outputDirectory);
@@ -74,7 +79,7 @@ for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
 }
 
 const videoFile = path.join(outputDirectory, `${SCENE_01_META.id}.mp4`);
-await runCommand('ffmpeg.exe', [
+await runCommand(ffmpegCmd, [
   '-y',
   '-framerate', String(captureFramesPerSecond),
   '-i', path.join(framesDirectory, 'frame-%04d.png'),
@@ -96,7 +101,7 @@ const contactSheetInputs = inspectionFrameIndexes.flatMap((frameIndex) => [
   '-i',
   path.join(framesDirectory, `frame-${String(frameIndex).padStart(4, '0')}.png`),
 ]);
-await runCommand('ffmpeg.exe', [
+await runCommand(ffmpegCmd, [
   '-y',
   ...contactSheetInputs,
   '-filter_complex', '[0:v]scale=640:360[a];[1:v]scale=640:360[b];[2:v]scale=640:360[c];[3:v]scale=640:360[d];[a][b]hstack=inputs=2[top];[c][d]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2',
@@ -104,7 +109,7 @@ await runCommand('ffmpeg.exe', [
   contactSheetFile,
 ]);
 
-const probe = await runCommand('ffprobe.exe', [
+const probe = await runCommand(ffprobeCmd, [
   '-v', 'error',
   '-select_streams', 'v:0',
   '-show_entries', 'format=duration:stream=width,height,avg_frame_rate',
