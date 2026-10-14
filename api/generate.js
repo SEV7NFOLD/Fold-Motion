@@ -9,7 +9,29 @@ const defaultContext = {
   accentColor: '#38BDF8',
 };
 
+function createMockContext(context = {}) {
+  const positiveNumber = (value, fallback) => (
+    Number.isFinite(value) && value > 0 ? value : fallback
+  );
+
+  return {
+    ...context,
+    width: positiveNumber(context.width, defaultContext.width),
+    height: positiveNumber(context.height, defaultContext.height),
+    fps: positiveNumber(context.fps, defaultContext.fps),
+    durationInSeconds: positiveNumber(context.durationInSeconds, 4),
+  };
+}
+
 export default async function generate(request, response) {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (request.method === 'OPTIONS') {
+    return response.status(204).end();
+  }
+
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     return response.status(405).json({ success: false, error: 'Method not allowed.' });
@@ -32,21 +54,36 @@ export default async function generate(request, response) {
   }
 
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
-  try {
-    const provider = geminiConfigured
-      ? new GeminiAIProvider({ apiKey: process.env.GEMINI_API_KEY.trim() })
-      : undefined;
-    const result = await generateAndValidateScene(body.prompt, {
-      provider,
-      context: body.context ?? defaultContext,
-    });
-    return response.status(200).json({ success: true, ...result });
-  } catch (error) {
-    console.error('[api/generate] Scene generation failed.', {
-      provider: geminiConfigured ? 'Gemini' : 'mock',
-      error: error.message,
-    });
-    return response.status(geminiConfigured ? 502 : 500)
-      .json({ success: false, error: error.message });
+  const context = body.context ?? defaultContext;
+  let result;
+
+  if (geminiConfigured) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    try {
+      const provider = new GeminiAIProvider({
+        apiKey: process.env.GEMINI_API_KEY.trim(),
+        fetchImpl: (url, options) => globalThis.fetch(url, {
+          ...options,
+          signal: controller.signal,
+        }),
+      });
+      result = await generateAndValidateScene(body.prompt, { provider, context });
+    } catch (error) {
+      console.warn('[api/generate] Gemini unavailable; using mock provider.', {
+        error: error.message,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  if (!result) {
+    result = await generateAndValidateScene(body.prompt, {
+      context: createMockContext(context),
+    });
+  }
+
+  return response.status(200).json({ success: true, ...result });
 }

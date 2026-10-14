@@ -18,6 +18,9 @@ function createResponse() {
       this.body = body;
       return this;
     },
+    end() {
+      return this;
+    },
   };
 }
 
@@ -58,6 +61,13 @@ test('Vercel generation function rejects invalid prompts and request methods', a
   await generate({ method: 'GET', body: {} }, methodResponse);
   assert.equal(methodResponse.statusCode, 405);
   assert.equal(methodResponse.headers.Allow, 'POST');
+  assert.equal(methodResponse.headers['Access-Control-Allow-Origin'], '*');
+  assert.equal(methodResponse.headers['Access-Control-Allow-Methods'], 'POST, OPTIONS');
+
+  const preflightResponse = createResponse();
+  await generate({ method: 'OPTIONS' }, preflightResponse);
+  assert.equal(preflightResponse.statusCode, 204);
+  assert.equal(preflightResponse.headers['Access-Control-Allow-Headers'], 'Content-Type');
 });
 
 test('Vercel generation function uses Gemini when the server key is configured', async () => {
@@ -113,13 +123,14 @@ test('Vercel generation function uses Gemini when the server key is configured',
   }
 });
 
-test('Vercel generation function reports Gemini failures without mock fallback', async () => {
+test('Vercel generation function falls back to mock when Gemini returns an error', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFetch = globalThis.fetch;
-  const previousConsoleError = console.error;
+  const previousConsoleWarn = console.warn;
   process.env.GEMINI_API_KEY = 'test-gemini-key';
   globalThis.fetch = async () => ({ ok: false, status: 503 });
-  console.error = () => {};
+  let warningLogged = false;
+  console.warn = () => { warningLogged = true; };
 
   try {
     const response = createResponse();
@@ -128,11 +139,13 @@ test('Vercel generation function reports Gemini failures without mock fallback',
       body: { prompt: 'A cinematic title' },
     }, response);
 
-    assert.equal(response.statusCode, 502);
-    assert.equal(response.body.success, false);
-    assert.match(response.body.error, /Gemini API returned HTTP 503/);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.success, true);
+    assert.equal(response.body.provider, 'mock-provider');
+    assert.equal(response.body.spec.promptSource, 'A cinematic title');
+    assert.equal(warningLogged, true);
   } finally {
-    console.error = previousConsoleError;
+    console.warn = previousConsoleWarn;
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
@@ -142,13 +155,22 @@ test('Vercel generation function reports Gemini failures without mock fallback',
   }
 });
 
-test('Vercel generation function returns JSON when Gemini provider setup fails', async () => {
+test('Vercel generation function falls back when the Gemini request times out', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFetch = globalThis.fetch;
-  const previousConsoleError = console.error;
+  const previousConsoleWarn = console.warn;
   process.env.GEMINI_API_KEY = 'test-gemini-key';
-  globalThis.fetch = undefined;
-  console.error = () => {};
+  let requestSignal;
+  let warningLogged = false;
+  globalThis.fetch = async (_url, options) => {
+    requestSignal = options.signal;
+    return new Promise((_, reject) => {
+      options.signal.addEventListener('abort', () => {
+        reject(new Error('Gemini request aborted.'));
+      }, { once: true });
+    });
+  };
+  console.warn = () => { warningLogged = true; };
 
   try {
     const response = createResponse();
@@ -157,11 +179,42 @@ test('Vercel generation function returns JSON when Gemini provider setup fails',
       body: { prompt: 'A cinematic title' },
     }, response);
 
-    assert.equal(response.statusCode, 502);
-    assert.equal(response.body.success, false);
-    assert.match(response.body.error, /fetch implementation is required/);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.success, true);
+    assert.equal(response.body.provider, 'mock-provider');
+    assert.equal(requestSignal.aborted, true);
+    assert.equal(warningLogged, true);
   } finally {
-    console.error = previousConsoleError;
+    console.warn = previousConsoleWarn;
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
+    }
+  }
+});
+
+test('Vercel generation function falls back when Gemini provider setup fails', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousFetch = globalThis.fetch;
+  const previousConsoleWarn = console.warn;
+  process.env.GEMINI_API_KEY = 'test-gemini-key';
+  globalThis.fetch = undefined;
+  console.warn = () => {};
+
+  try {
+    const response = createResponse();
+    await generate({
+      method: 'POST',
+      body: { prompt: 'A cinematic title' },
+    }, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.success, true);
+    assert.equal(response.body.provider, 'mock-provider');
+  } finally {
+    console.warn = previousConsoleWarn;
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
