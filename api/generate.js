@@ -1,4 +1,5 @@
 import { generateAndValidateScene } from '../src/ai/prompt-to-spec.mjs';
+import { GeminiAIProvider } from '../src/ai/provider.mjs';
 
 const defaultContext = {
   width: 1280,
@@ -30,12 +31,18 @@ export default async function generate(request, response) {
     return response.status(400).json({ success: false, error: 'Context must be a JSON object.' });
   }
 
+  const provider = process.env.GEMINI_API_KEY
+    ? new GeminiAIProvider({ apiKey: process.env.GEMINI_API_KEY })
+    : undefined;
+
   try {
     const result = await generateAndValidateScene(body.prompt, {
+      provider,
       context: body.context ?? defaultContext,
     });
     return response.status(200).json({ success: true, ...result });
   } catch (error) {
-    return response.status(500).json({ success: false, error: error.message });
+    return response.status(provider instanceof GeminiAIProvider ? 502 : 500)
+      .json({ success: false, error: error.message });
   }
 }
