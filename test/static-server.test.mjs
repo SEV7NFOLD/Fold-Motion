@@ -13,6 +13,23 @@ test('maps preview URLs beneath the configured root and rejects traversal', () =
   assert.equal(resolveStaticPath(root, '/..%2Fpackage.json'), null);
 });
 
+test('serves the studio entry point at the site root', async () => {
+  const root = path.resolve('public');
+  const server = await createStaticServer({ root });
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /^text\/html;/);
+    assert.match(html, /FOLD Motion — Studio/);
+    assert.match(html, /studio\.js/);
+  } finally {
+    await server.close();
+  }
+});
+
 test('serves JavaScript module files with a browser-compatible MIME type', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'fold-motion-static-'));
   const moduleContents = 'export const ready = true;';
