@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BaseAIProvider, MockAIProvider } from '../src/ai/provider.mjs';
+import { BaseAIProvider, GeminiAIProvider, MockAIProvider } from '../src/ai/provider.mjs';
 import { validateSceneSpec } from '../scripts/qa/validate-scene-spec.mjs';
 
 test('BaseAIProvider stores provider options and requires an implementation', async () => {
@@ -87,4 +87,71 @@ test('MockAIProvider rejects a missing or non-string prompt', async () => {
 
   await assert.rejects(provider.generateSceneSpec(''), /Prompt string is required/);
   await assert.rejects(provider.generateSceneSpec(42), /Prompt string is required/);
+});
+
+test('GeminiAIProvider requests JSON and parses a scene specification', async () => {
+  let requestedUrl;
+  let requestedOptions;
+  const spec = {
+    id: 'gemini-scene',
+    title: 'Neon Intro',
+    width: 1920,
+    height: 1080,
+    fps: 24,
+    durationInSeconds: 4,
+    elements: [{ id: 'title', type: 'text', content: 'Hello' }],
+  };
+  const provider = new GeminiAIProvider({
+    apiKey: 'test-api-key',
+    fetchImpl: async (url, options) => {
+      requestedUrl = url;
+      requestedOptions = options;
+      return {
+        ok: true,
+        async json() {
+          return { candidates: [{ content: { parts: [{ text: JSON.stringify(spec) }] } }] };
+        },
+      };
+    },
+  });
+
+  const result = await provider.generateSceneSpec('Neon title reveal', { width: 1920 });
+
+  assert.equal(provider.name, 'Gemini 2.5 Flash');
+  assert.match(requestedUrl, /models\/gemini-2\.5-flash:generateContent$/);
+  assert.equal(requestedOptions.headers['x-goog-api-key'], 'test-api-key');
+  assert.equal(requestedOptions.headers['Content-Type'], 'application/json');
+  assert.equal(result.id, spec.id);
+  assert.equal(result.width, 1920);
+  assert.equal(JSON.parse(requestedOptions.body).generationConfig.responseMimeType, 'application/json');
+  assert.equal(validateSceneSpec(result).valid, true);
+});
+
+test('GeminiAIProvider surfaces HTTP and malformed-response failures', async () => {
+  const unavailable = new GeminiAIProvider({
+    apiKey: 'test-api-key',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      async json() {
+        return { error: { message: 'Rate limit exceeded.' } };
+      },
+    }),
+  });
+  await assert.rejects(
+    unavailable.generateSceneSpec('A scene'),
+    /Gemini API returned HTTP 429: Rate limit exceeded/,
+  );
+
+  const malformed = new GeminiAIProvider({
+    apiKey: 'test-api-key',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return { candidates: [{ content: { parts: [{ text: 'not json' }] } }] };
+      },
+    }),
+  });
+  await assert.rejects(malformed.generateSceneSpec('A scene'), /Gemini returned invalid scene JSON/);
+  assert.throws(() => new GeminiAIProvider({ apiKey: '' }), /Gemini API key is required/);
 });

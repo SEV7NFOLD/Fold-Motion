@@ -31,18 +31,22 @@ export default async function generate(request, response) {
     return response.status(400).json({ success: false, error: 'Context must be a JSON object.' });
   }
 
-  const provider = process.env.GEMINI_API_KEY
-    ? new GeminiAIProvider({ apiKey: process.env.GEMINI_API_KEY })
-    : undefined;
-
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
   try {
+    const provider = geminiConfigured
+      ? new GeminiAIProvider({ apiKey: process.env.GEMINI_API_KEY.trim() })
+      : undefined;
     const result = await generateAndValidateScene(body.prompt, {
       provider,
       context: body.context ?? defaultContext,
     });
     return response.status(200).json({ success: true, ...result });
   } catch (error) {
-    return response.status(provider instanceof GeminiAIProvider ? 502 : 500)
+    console.error('[api/generate] Scene generation failed.', {
+      provider: geminiConfigured ? 'Gemini' : 'mock',
+      error: error.message,
+    });
+    return response.status(geminiConfigured ? 502 : 500)
       .json({ success: false, error: error.message });
   }
 }

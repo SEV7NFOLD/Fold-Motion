@@ -77,12 +77,12 @@
               <form class="prompt-card panel" id="prompt-form">
                 <div class="card-heading">
                   <div><p class="eyebrow">Active tool <span class="accent" id="active-tool">Flow Design</span></p><h2>Describe your motion brief</h2></div>
-                  <span class="mock-tag">LOCAL MOCK API</span>
+                  <span class="mock-tag">GEMINI / LOCAL MOCK</span>
                 </div>
                 <label class="sr-only" for="prompt-input">Motion brief</label>
                 <textarea id="prompt-input" name="prompt" rows="4" placeholder="Describe a scene, its visual language, and how it should move…" required>Kinetic typography intro with neon blue branding</textarea>
                 <div class="prompt-footer">
-                  <span class="helper-text"><span class="status-dot"></span> Local API · scene spec only</span>
+                  <span class="helper-text"><span class="status-dot"></span> Gemini if configured · scene spec only</span>
                   <button class="primary-button" type="submit">Synthesize &amp; validate spec <span aria-hidden="true">↗</span></button>
                 </div>
                 <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
@@ -90,7 +90,7 @@
               <aside class="pipeline-card panel">
                 <div class="card-heading"><div><p class="eyebrow">Workspace status</p><h2>Pipeline overview</h2></div><span class="pulse-mark" aria-hidden="true"></span></div>
                 <div class="pipeline-list">
-                  <div><span>Scene provider</span><strong class="state-cyan">Local mock</strong></div>
+                  <div><span>Scene provider</span><strong class="state-cyan">Gemini when configured</strong></div>
                   <div><span>Generate API</span><strong class="state-cyan">Available</strong></div>
                   <div><span>Video render</span><strong>Not started</strong></div>
                   <div><span>Render cache</span><strong class="mono">.fold-cache</strong></div>
