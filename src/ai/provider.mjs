@@ -75,7 +75,7 @@ export class MockAIProvider extends BaseAIProvider {
  * Generates scene specifications with Google's Gemini generateContent API.
  */
 export class GeminiAIProvider extends BaseAIProvider {
-  constructor({ apiKey, model = 'gemini-2.5-flash', fetchImpl = globalThis.fetch } = {}) {
+  constructor({ apiKey, model = 'gemini-3.8-flash', fetchImpl = globalThis.fetch } = {}) {
     if (typeof apiKey !== 'string' || !apiKey.trim()) {
       throw new Error('A Gemini API key is required.');
     }
@@ -84,7 +84,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     }
 
     super({
-      name: model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : `Gemini (${model})`,
+      name: model === 'gemini-3.8-flash' ? 'Gemini 3.8 Flash' : `Gemini (${model})`,
       apiKey,
     });
     this.model = model;

@@ -117,8 +117,8 @@ test('GeminiAIProvider requests JSON and parses a scene specification', async ()
 
   const result = await provider.generateSceneSpec('Neon title reveal', { width: 1920 });
 
-  assert.equal(provider.name, 'Gemini 2.5 Flash');
-  assert.match(requestedUrl, /models\/gemini-2\.5-flash:generateContent$/);
+  assert.equal(provider.name, 'Gemini 3.8 Flash');
+  assert.match(requestedUrl, /models\/gemini-3\.8-flash:generateContent$/);
   assert.equal(requestedOptions.headers['x-goog-api-key'], 'test-api-key');
   assert.equal(requestedOptions.headers['Content-Type'], 'application/json');
   assert.equal(result.id, spec.id);
