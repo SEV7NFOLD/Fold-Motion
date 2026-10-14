@@ -63,6 +63,55 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .branch-pill:hover { border-color: #4a9eac; }
 .branch-pill .status-dot { width: 5px; height: 5px; background: var(--cyan); }
 .content-wrap { width: min(1160px, 100%); margin: 0 auto; padding: 28px clamp(20px, 4vw, 54px) 60px; }
+.workflow-status { margin: 16px clamp(20px, 4vw, 54px) 0; padding: 16px 18px; }
+.workflow-status-heading, .approval-actions, .render-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.workflow-status-heading .eyebrow { margin: 0 0 4px; }
+.workflow-status-heading h2 { margin: 0; font: 600 14px var(--mono); color: #f1f5f9; }
+.state-chip { display: inline-flex; align-items: center; border: 1px solid #344254; border-radius: 30px; padding: 6px 10px; color: #cbd5e1; font-size: 14px; }
+.state-steps { display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); gap: 7px; overflow-x: auto; margin: 14px 0 0; padding: 0 0 3px; list-style: none; }
+.state-steps li { border: 1px solid #252e3b; border-radius: 8px; padding: 8px; color: #94a3b8; font-size: 14px; white-space: nowrap; text-align: center; }
+.state-steps li.is-complete { color: #8be3b4; border-color: #26775677; background: #16442d25; }
+.state-steps li.is-current { color: var(--cyan); border-color: #4acddb71; background: #102027; }
+.storyboard-review { margin-top: 17px; padding: 18px; }
+.storyboard-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+.storyboard-summary h3, .acceptance-panel h3, .render-controls h3 { margin: 0 0 7px; color: #eef2f7; font-size: 16px; }
+.storyboard-summary p, .render-controls p { margin: 0; color: #cbd5e1; font-size: 14px; line-height: 1.6; }
+.storyboard-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 11px; }
+.storyboard-shot { border: 1px solid #263342; border-radius: 10px; padding: 14px; background: #090e16; }
+.storyboard-shot h3 { margin: 0 0 6px; color: var(--cyan); font-size: 14px; }
+.storyboard-shot p, .storyboard-shot li { color: #cbd5e1; font-size: 14px; line-height: 1.5; }
+.storyboard-shot p { margin: 6px 0; }
+.storyboard-shot ul, .acceptance-panel ul { margin: 7px 0 0; padding-left: 20px; }
+.acceptance-panel { margin-top: 17px; border-top: 1px solid var(--line); padding-top: 16px; }
+.acceptance-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.acceptance-columns h4 { margin: 12px 0 0; font-size: 14px; color: #e2e8f0; }
+.acceptance-panel li { margin: 5px 0; color: #cbd5e1; font-size: 14px; }
+.approval-actions { margin-top: 17px; border-top: 1px solid var(--line); padding-top: 15px; }
+.approval-actions .result-note { margin: 0; }
+.json-details { margin-top: 14px; color: #cbd5e1; font-size: 14px; }
+.json-details summary { cursor: pointer; }
+.json-details pre, .timeline-json { overflow: auto; max-height: 420px; border: 1px solid #252f3b; border-radius: 8px; padding: 12px; color: #b7d9df; background: #080b12; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.render-controls { flex-wrap: wrap; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+.render-controls > div { flex: 1 1 280px; }
+.render-controls .form-message { flex-basis: 100%; }
+.timeline-visualization { display: grid; gap: 10px; padding-top: 14px; }
+.timeline-shot { min-width: 0; display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: center; gap: 12px; }
+.timeline-shot-label { color: #cbd5e1; font-size: 14px; }
+.timeline-shot-bar { min-width: 0; border: 1px solid #4ebfc957; border-radius: 8px; padding: 10px; color: #ecfeff; background: linear-gradient(100deg, #18505a8a, #25265b70); font-size: 14px; }
+.timeline-shot-bar small { display: block; margin-top: 4px; color: #cbd5e1; font-size: 14px; }
+.timeline-summary { padding-top: 12px; color: #cbd5e1; font-size: 14px; }
+.timeline-render { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+.qa-results, .delivery-panel { margin-top: 17px; padding: 18px; }
+.qa-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.qa-metric { border: 1px solid #263342; border-radius: 9px; padding: 13px; background: #090e16; }
+.qa-metric h3 { margin: 0 0 5px; font-size: 14px; color: #e2e8f0; }
+.qa-metric strong { font-size: 14px; }
+.qa-metric p { margin: 6px 0 0; color: #cbd5e1; font-size: 14px; }
+.qa-metric.is-pass strong { color: #71d9a6; }
+.qa-metric.is-fail strong { color: #f0ac9f; }
+.delivery-artifacts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 15px; }
+.delivery-artifact { border: 1px solid #263342; border-radius: 9px; padding: 13px; color: var(--cyan); background: #090e16; font-size: 14px; }
+.delivery-artifact:hover { border-color: #4acddb71; }
 .view-panel { animation: rise-in .28s ease both; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 .hero { position: relative; isolation: isolate; overflow: hidden; min-height: 294px; display: grid; place-items: center; border: 1px solid #26303d; border-radius: 22px; background: linear-gradient(145deg, #101723, #0b0e17 65%, #0e0d19); }
@@ -180,6 +229,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
   .pipeline-card > .text-link { margin-top: 16px; }
   .qa-grid { grid-template-columns: 1fr; }
   .qa-card p:not(.eyebrow) { min-height: 0; }
+  .state-steps { grid-template-columns: repeat(8, 120px); }
 }
 @media (max-width: 680px) {
   .sidebar { position: static; width: auto; height: auto; padding: 12px 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -194,6 +244,12 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
   .topbar { height: 48px; padding-inline: 16px; }
   .branch-pill { padding: 6px 8px; font-size: 8px; }
   .content-wrap { padding: 17px 15px 40px; }
+  .workflow-status { margin: 12px 15px 0; padding: 13px; }
+  .workflow-status-heading, .approval-actions, .render-controls { align-items: stretch; flex-direction: column; }
+  .state-chip { align-self: flex-start; }
+  .storyboard-summary, .acceptance-columns { grid-template-columns: 1fr; }
+  .timeline-shot { grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
+  .timeline-shot-bar { font-size: 14px; }
   .hero { min-height: 310px; border-radius: 16px; }
   .hero-content { padding: 28px 16px 18px; }
   .hero h1 { font-size: clamp(25px, 7vw, 34px); }

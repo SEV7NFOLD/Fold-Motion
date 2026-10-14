@@ -6,6 +6,8 @@
   "description": "Deterministic, code-first motion-production foundation.",
   "scripts": {
     "health": "node scripts/health-check.mjs",
+    "render": "node scripts/render-production.mjs",
+    "qa:validate": "node scripts/qa/validate-production.mjs",
     "render:scene-01": "node scripts/render-scene-01.mjs",
     "start": "node scripts/serve.mjs",
     "test": "node --test"

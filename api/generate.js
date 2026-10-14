@@ -1,5 +1,5 @@
-import { generateAndValidateScene } from '../src/ai/prompt-to-spec.mjs';
-import { GeminiAIProvider } from '../src/ai/provider.mjs';
+import { generateProductionAction } from '../src/runtime/creative-api.mjs';
+import { validateStoryboard } from '../src/production/production.mjs';
 
 const defaultContext = {
   width: 1280,
@@ -9,20 +9,6 @@ const defaultContext = {
   accentColor: '#38BDF8',
 };
 
-function createMockContext(context = {}) {
-  const positiveNumber = (value, fallback) => (
-    Number.isFinite(value) && value > 0 ? value : fallback
-  );
-
-  return {
-    ...context,
-    width: positiveNumber(context.width, defaultContext.width),
-    height: positiveNumber(context.height, defaultContext.height),
-    fps: positiveNumber(context.fps, defaultContext.fps),
-    durationInSeconds: positiveNumber(context.durationInSeconds, 4),
-  };
-}
-
 export default async function generate(request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -31,7 +17,6 @@ export default async function generate(request, response) {
   if (request.method === 'OPTIONS') {
     return response.status(204).end();
   }
-
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     return response.status(405).json({ success: false, error: 'Method not allowed.' });
@@ -41,49 +26,37 @@ export default async function generate(request, response) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return response.status(400).json({ success: false, error: 'Request body must be a JSON object.' });
   }
-
-  if (typeof body.prompt !== 'string' || !body.prompt.trim()) {
-    return response.status(400).json({ success: false, error: 'A valid text prompt is required.' });
-  }
-
-  if (
-    body.context !== undefined
-    && (!body.context || typeof body.context !== 'object' || Array.isArray(body.context))
-  ) {
+  if (body.context !== undefined && (!body.context || typeof body.context !== 'object' || Array.isArray(body.context))) {
     return response.status(400).json({ success: false, error: 'Context must be a JSON object.' });
   }
-
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
-  const context = body.context ?? defaultContext;
-  let result;
-
-  if (geminiConfigured) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-
-    try {
-      const provider = new GeminiAIProvider({
-        apiKey: process.env.GEMINI_API_KEY.trim(),
-        fetchImpl: (url, options) => globalThis.fetch(url, {
-          ...options,
-          signal: controller.signal,
-        }),
-      });
-      result = await generateAndValidateScene(body.prompt, { provider, context });
-    } catch (error) {
-      console.warn('[api/generate] Gemini unavailable; using mock provider.', {
-        error: error.message,
-      });
-    } finally {
-      clearTimeout(timeout);
+  const action = body.action || 'storyboard';
+  if (!['storyboard', 'compile'].includes(action)) {
+    return response.status(400).json({ success: false, error: 'Action must be "storyboard" or "compile".' });
+  }
+  if (action === 'storyboard' && (typeof body.prompt !== 'string' || !body.prompt.trim())) {
+    return response.status(400).json({ success: false, error: 'A valid text prompt is required.' });
+  }
+  if (action === 'compile' && (!body.storyboard || typeof body.storyboard !== 'object' || Array.isArray(body.storyboard))) {
+    return response.status(400).json({ success: false, error: 'A valid approved storyboard is required.' });
+  }
+  if (action === 'compile') {
+    const validation = validateStoryboard(body.storyboard);
+    if (!validation.valid) {
+      return response.status(400).json({ success: false, error: `Storyboard validation failed: ${validation.errors.join(' ')}` });
     }
   }
 
-  if (!result) {
-    result = await generateAndValidateScene(body.prompt, {
-      context: createMockContext(context),
+  try {
+    const result = await generateProductionAction({
+      action,
+      prompt: body.prompt,
+      storyboard: body.storyboard,
+      context: body.context ?? defaultContext,
+      apiKey: process.env.GEMINI_API_KEY,
     });
+    return response.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error('[api/generate] Production planning failed.', { action, error: error.message });
+    return response.status(500).json({ success: false, error: error.message });
   }
-
-  return response.status(200).json({ success: true, ...result });
 }

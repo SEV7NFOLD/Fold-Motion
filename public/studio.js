@@ -1,66 +1,394 @@
+import { PROJECT_STATES } from './workflow-states.mjs';
+
+const STORAGE_KEY = 'fold-motion.project.v2';
+const DEFAULT_CONTEXT = {
+  width: 1280,
+  height: 720,
+  fps: 24,
+  primaryColor: '#0F172A',
+  accentColor: '#38BDF8',
+};
 const viewTitles = {
   studio: 'Motion Studio',
   timeline: 'Timeline & Shots',
   qa: 'Technical QA',
 };
-
+const stateLabels = {
+  BRIEF: 'Waiting for a creative brief',
+  PLANNING: 'Developing story and acceptance criteria',
+  STORYBOARD_REVIEW: 'Human storyboard approval required',
+  BUILDING: 'Compiling approved shots',
+  RENDERING: 'Ready to render locally',
+  QA: 'Render evidence ready for review',
+  APPROVED: 'Final cut approved for delivery',
+  DELIVERED: 'Production delivered',
+};
 const navButtons = [...document.querySelectorAll('.nav-item[data-view]')];
 const panels = [...document.querySelectorAll('.view-panel[data-panel]')];
 const pageTitle = document.getElementById('page-title');
-const activeToolLabel = document.getElementById('active-tool');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const formMessage = document.getElementById('form-message');
-const specOutput = document.getElementById('spec-output');
-const resultsEmpty = document.getElementById('results-empty');
-const resultsContent = document.getElementById('results-content');
-const resultProvider = document.getElementById('result-provider');
 const submitButton = promptForm.querySelector('button[type="submit"]');
-const initialPrompt = promptInput.value;
+const storyboardReview = document.getElementById('storyboard-review');
+const compiledProduction = document.getElementById('compiled-production');
+const approveStoryboardButton = document.getElementById('approve-storyboard');
+const renderButton = document.getElementById('render-production');
+const qaStatus = document.getElementById('qa-status');
+const qaMetrics = document.getElementById('qa-metrics');
+const qaMessage = document.getElementById('qa-message');
+const finalApprovalButton = document.getElementById('approve-final-cut');
+const markDeliveredButton = document.getElementById('mark-delivered');
+const deliveryStatus = document.getElementById('delivery-status');
+const deliveryArtifacts = document.getElementById('delivery-artifacts');
 
-function showSceneResult(result) {
-  const { spec, provider, validatedAt } = result;
-  document.getElementById('result-id').textContent = spec.id;
-  document.getElementById('result-title').textContent = spec.title;
-  document.getElementById('result-dimensions').textContent = `${spec.width} × ${spec.height} @ ${spec.fps} fps`;
-  document.getElementById('result-duration').textContent = `${spec.durationInSeconds} seconds`;
-  document.getElementById('result-validated-at').textContent = new Date(validatedAt).toLocaleString();
-  resultProvider.textContent = `Provider: ${provider}`;
-  specOutput.textContent = JSON.stringify(spec, null, 2);
-  resultsEmpty.hidden = true;
-  resultsContent.hidden = false;
+function createLocalProject(brief = '') {
+  return {
+    id: `project-${Date.now()}`,
+    brief,
+    context: { ...DEFAULT_CONTEXT },
+    state: 'BRIEF',
+    storyboard: null,
+    acceptance: null,
+    timeline: null,
+    renderReport: null,
+    history: [{ state: 'BRIEF', at: new Date().toISOString() }],
+  };
 }
 
-function clearSceneResult() {
-  formMessage.textContent = '';
-  resultProvider.textContent = 'Waiting for a prompt';
-  resultsEmpty.hidden = false;
-  resultsEmpty.textContent = 'Submit a motion brief to generate and validate a scene specification.';
-  resultsContent.hidden = true;
-  specOutput.textContent = '';
+function readSavedProject() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return saved && PROJECT_STATES.includes(saved.state) ? saved : createLocalProject();
+  } catch {
+    return createLocalProject();
+  }
+}
+
+let project = readSavedProject();
+
+function persistProject() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+}
+
+async function requestJson(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const responseText = await response.text();
+  let result;
+  try {
+    result = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw new Error(`API returned non-JSON content (HTTP ${response.status}): ${responseText.slice(0, 300)}`);
+  }
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || `API request failed with HTTP ${response.status}.`);
+  }
+  return result;
+}
+
+async function transitionTo(nextState, evidence) {
+  const result = await requestJson('/api/state', {
+    project,
+    nextState,
+    evidence,
+  });
+  project = result.project;
+  persistProject();
+  renderProject();
 }
 
 function showView(view) {
   for (const button of navButtons) {
     const isActive = button.dataset.view === view;
     button.classList.toggle('is-active', isActive);
-    if (isActive) {
-      button.setAttribute('aria-current', 'page');
-    } else {
-      button.removeAttribute('aria-current');
-    }
+    if (isActive) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
   }
-
-  for (const panel of panels) {
-    panel.hidden = panel.dataset.panel !== view;
-  }
-
+  for (const panel of panels) panel.hidden = panel.dataset.panel !== view;
   pageTitle.textContent = viewTitles[view];
 }
 
-for (const button of navButtons) {
-  button.addEventListener('click', () => showView(button.dataset.view));
+function appendList(target, entries) {
+  target.replaceChildren();
+  for (const entry of entries || []) {
+    const item = document.createElement('li');
+    item.textContent = entry;
+    target.append(item);
+  }
 }
+
+function renderStoryboard() {
+  const storyboard = project.storyboard;
+  if (!storyboard) {
+    storyboardReview.hidden = true;
+    return;
+  }
+  storyboardReview.hidden = false;
+  document.getElementById('storyboard-title').textContent = storyboard.title;
+  document.getElementById('storyboard-concept').textContent = storyboard.narrativeConcept;
+  document.getElementById('storyboard-direction').textContent = storyboard.creativeDirection;
+  document.getElementById('storyboard-provider').textContent = `Provider: ${project.storyboardProvider || 'mock-provider'}`;
+  const shotContainer = document.getElementById('storyboard-shots');
+  shotContainer.replaceChildren();
+  for (const shot of storyboard.shots) {
+    const card = document.createElement('article');
+    card.className = 'storyboard-shot';
+    const title = document.createElement('h3');
+    title.textContent = `${shot.id} · ${shot.durationSeconds}s`;
+    card.append(title);
+    for (const [label, value] of [
+      ['Purpose', shot.purpose],
+      ['On-screen copy', shot.onScreenCopy],
+      ['Main visual', shot.mainVisual],
+      ['Composition', shot.composition],
+      ['Camera', shot.cameraBehavior],
+      ['Motion', shot.motionBehavior],
+      ['Transitions', `${shot.transitionIn} → ${shot.transitionOut}`],
+    ]) {
+      const paragraph = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = `${label}: `;
+      paragraph.append(strong, document.createTextNode(value));
+      card.append(paragraph);
+    }
+    const criteria = document.createElement('ul');
+    for (const criterion of shot.acceptanceCriteria) {
+      const item = document.createElement('li');
+      item.textContent = criterion;
+      criteria.append(item);
+    }
+    card.append(criteria);
+    shotContainer.append(card);
+  }
+  appendList(document.getElementById('storyboard-constraints'), storyboard.hardConstraints);
+  appendList(document.getElementById('technical-criteria'), storyboard.acceptanceCriteria.technical);
+  appendList(document.getElementById('creative-criteria'), storyboard.acceptanceCriteria.creative);
+  document.getElementById('acceptance-output').textContent = JSON.stringify(project.acceptance, null, 2);
+}
+
+function renderTimeline() {
+  const timeline = project.timeline;
+  compiledProduction.hidden = !timeline;
+  document.getElementById('timeline-render-controls').hidden = !timeline;
+  const visualization = document.getElementById('timeline-visualization');
+  const summary = document.getElementById('timeline-summary');
+  const timelineJson = document.getElementById('timeline-json');
+  if (!timeline) {
+    document.getElementById('timeline-title').textContent = 'No compiled sequence';
+    document.getElementById('timeline-format').textContent = 'Awaiting approval';
+    summary.hidden = true;
+    timelineJson.hidden = true;
+    visualization.innerHTML = '<p class="results-empty">Approve a storyboard to compile and visualize its multi-shot sequence.</p>';
+    return;
+  }
+  document.getElementById('timeline-title').textContent = timeline.title;
+  document.getElementById('timeline-format').textContent = `${timeline.width} × ${timeline.height} · ${timeline.fps} FPS`;
+  document.getElementById('result-title').textContent = timeline.title;
+  document.getElementById('result-shot-count').textContent = String(timeline.shots.length);
+  document.getElementById('result-dimensions').textContent = `${timeline.width} × ${timeline.height} @ ${timeline.fps} fps`;
+  document.getElementById('result-duration').textContent = `${timeline.durationInSeconds} seconds`;
+  document.getElementById('result-frame-count').textContent = String(timeline.totalFrames);
+  document.getElementById('result-provider').textContent = `Compiled by ${project.compileProvider || 'mock-provider'}`;
+  document.getElementById('spec-output').textContent = JSON.stringify(timeline, null, 2);
+  visualization.replaceChildren();
+  for (const shot of timeline.shots) {
+    const row = document.createElement('div');
+    row.className = 'timeline-shot';
+    const label = document.createElement('span');
+    label.className = 'timeline-shot-label';
+    label.textContent = shot.shotId;
+    const bar = document.createElement('div');
+    bar.className = 'timeline-shot-bar';
+    bar.style.width = `${Math.max(20, shot.durationFrames / timeline.totalFrames * 100)}%`;
+    bar.textContent = shot.spec.title;
+    const range = document.createElement('small');
+    range.textContent = `Frames ${shot.startFrame}–${shot.endFrame} · ${shot.durationSeconds.toFixed(2)} sec · ${shot.purpose}`;
+    bar.append(range);
+    row.append(label, bar);
+    visualization.append(row);
+  }
+  summary.hidden = false;
+  summary.textContent = `${timeline.shots.length} shots · ${timeline.totalFrames} frames · ${timeline.durationInSeconds.toFixed(2)} seconds`;
+  timelineJson.hidden = false;
+  timelineJson.textContent = JSON.stringify(timeline, null, 2);
+}
+
+function metricCard(title, pass, detail) {
+  const card = document.createElement('article');
+  card.className = `qa-metric ${pass ? 'is-pass' : 'is-fail'}`;
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  const result = document.createElement('strong');
+  result.textContent = pass ? 'PASS' : 'FAIL';
+  const description = document.createElement('p');
+  description.textContent = detail;
+  card.append(heading, result, description);
+  return card;
+}
+
+function renderQa() {
+  const report = project.renderReport;
+  finalApprovalButton.disabled = !(
+    project.state === 'QA'
+    && report?.productionQA?.pass
+    && report?.creativeQA?.pass
+  );
+  if (!report) {
+    qaStatus.textContent = 'Not run';
+    qaMetrics.innerHTML = '<p class="results-empty">Render the approved timeline to collect QA evidence.</p>';
+    return;
+  }
+  const production = report.productionQA;
+  const creative = report.creativeQA;
+  qaStatus.textContent = production.pass && creative.pass ? 'All checks passed' : 'Review required';
+  qaMetrics.replaceChildren(
+    metricCard(
+      'Dimensions',
+      production.dimensions.pass,
+      `${production.dimensions.actual.width} × ${production.dimensions.actual.height} (expected ${production.dimensions.expected.width} × ${production.dimensions.expected.height})`,
+    ),
+    metricCard('FPS', production.fps.pass, `${Number.isFinite(production.fps.actual) ? production.fps.actual : 'Unavailable'} fps (expected ${production.fps.expected})`),
+    metricCard(
+      'Frame integrity',
+      production.frameIntegrity.pass,
+      `${production.frameIntegrity.encodedVideoFrames} encoded / ${production.frameIntegrity.expectedFrames} expected frames; ${production.frameIntegrity.hashedFrameFiles} hashed SVG/PNG files`,
+    ),
+    metricCard(
+      'Duration',
+      production.duration.pass,
+      `${Number.isFinite(production.duration.actual) ? production.duration.actual.toFixed(2) : 'Unavailable'} sec (expected ${production.duration.expected.toFixed(2)} sec)`,
+    ),
+    metricCard(
+      'Contrast',
+      creative.contrast.pass,
+      `Minimum ${creative.contrast.minimumRatio.toFixed(2)}:1; required ${creative.contrast.requiredRatio}:1`,
+    ),
+    metricCard(
+      'Legibility',
+      creative.legibility.pass,
+      `${creative.legibility.textElementCount} text elements; minimum font size ${creative.legibility.minimumFontSize}px`,
+    ),
+    metricCard(
+      'Brand fidelity',
+      creative.brandFidelity.pass,
+      `Primary ${creative.brandFidelity.primaryColor}; accent ${creative.brandFidelity.accentColor}`,
+    ),
+  );
+}
+
+function renderDelivery() {
+  markDeliveredButton.disabled = project.state !== 'APPROVED';
+  markDeliveredButton.hidden = project.state === 'DELIVERED';
+  deliveryStatus.textContent = project.state === 'DELIVERED'
+    ? 'Delivered'
+    : project.state === 'APPROVED' ? 'Ready to deliver' : 'Approval required';
+  const artifacts = project.renderReport?.artifacts;
+  if (project.state !== 'DELIVERED' || !artifacts) {
+    deliveryArtifacts.innerHTML = '<p class="results-empty">Exports will be available after final-cut approval and delivery.</p>';
+    return;
+  }
+  deliveryArtifacts.replaceChildren();
+  for (const [label, url] of [
+    ['Final video (MP4)', artifacts.video],
+    ['Editable source project', artifacts.source],
+    ['Canonical timeline.json', artifacts.timeline],
+    ['Approved storyboard', artifacts.storyboard],
+    ['Acceptance specification', artifacts.acceptance],
+    ['Production QA report', artifacts.qa],
+  ]) {
+    if (typeof url !== 'string' || !url.startsWith('/output/') || url.includes('..')) continue;
+    const link = document.createElement('a');
+    link.className = 'delivery-artifact';
+    link.href = url;
+    link.textContent = label;
+    if (label.includes('MP4')) link.download = '';
+    deliveryArtifacts.append(link);
+  }
+}
+
+function renderProject() {
+  const currentIndex = PROJECT_STATES.indexOf(project.state);
+  document.getElementById('project-state-label').textContent = project.state;
+  document.getElementById('project-state-chip').textContent = stateLabels[project.state];
+  document.getElementById('pipeline-project-state').textContent = project.state;
+  for (const step of document.querySelectorAll('#state-steps [data-state]')) {
+    const index = PROJECT_STATES.indexOf(step.dataset.state);
+    step.classList.toggle('is-current', index === currentIndex);
+    step.classList.toggle('is-complete', index < currentIndex);
+  }
+  approveStoryboardButton.disabled = project.state !== 'STORYBOARD_REVIEW'
+    && project.state !== 'BUILDING';
+  for (const button of document.querySelectorAll('.render-trigger, #render-production')) {
+    button.disabled = project.state !== 'RENDERING';
+  }
+  approveStoryboardButton.textContent = project.state === 'BUILDING'
+    ? 'Retry production compilation'
+    : 'Approve storyboard & compile production code';
+  renderStoryboard();
+  renderTimeline();
+  renderQa();
+  renderDelivery();
+  persistProject();
+}
+
+async function buildProduction() {
+  if (project.state === 'STORYBOARD_REVIEW') {
+    await transitionTo('BUILDING', { storyboardApproved: true });
+  }
+  if (project.state !== 'BUILDING') return;
+  approveStoryboardButton.disabled = true;
+  formMessage.textContent = 'Storyboard approved. Compiling validated shot specifications…';
+  try {
+    const result = await requestJson('/api/generate', {
+      action: 'compile',
+      storyboard: project.storyboard,
+      context: project.context,
+    });
+    project.timeline = result.timeline;
+    project.compileProvider = result.provider;
+    await transitionTo('RENDERING');
+    formMessage.textContent = 'Production code compiled. Review the timeline, then render and run QA.';
+    renderProject();
+  } catch (error) {
+    formMessage.textContent = `Production compilation failed: ${error.message}`;
+    renderProject();
+  }
+}
+
+async function renderProduction() {
+  if (project.state !== 'RENDERING' || !project.timeline) return;
+  const renderMessage = document.getElementById('render-message');
+  for (const button of document.querySelectorAll('.render-trigger, #render-production')) button.disabled = true;
+  renderMessage.textContent = 'Rendering deterministic frames, encoding MP4, and running QA…';
+  try {
+    const result = await requestJson('/api/render', {
+      timeline: project.timeline,
+      storyboard: project.storyboard,
+      acceptance: project.acceptance,
+      context: project.context,
+    });
+    project.renderReport = result.report;
+    await transitionTo('QA');
+    renderMessage.textContent = result.qaCommandPassed
+      ? 'Render complete. Technical and creative QA evidence is ready for review.'
+      : `Render completed; QA command reported a failure: ${result.qaError || 'review the QA metrics.'}`;
+    qaMessage.textContent = result.qaError || '';
+    renderQa();
+    showView('qa');
+  } catch (error) {
+    renderMessage.textContent = `Local render or QA could not complete: ${error.message}`;
+  } finally {
+    for (const button of document.querySelectorAll('.render-trigger, #render-production')) {
+      button.disabled = project.state !== 'RENDERING';
+    }
+  }
+}
+
+for (const button of navButtons) button.addEventListener('click', () => showView(button.dataset.view));
 
 for (const button of document.querySelectorAll('.tool-pill')) {
   button.addEventListener('click', () => {
@@ -69,7 +397,7 @@ for (const button of document.querySelectorAll('.tool-pill')) {
       pill.classList.toggle('is-selected', selected);
       pill.setAttribute('aria-pressed', String(selected));
     }
-    activeToolLabel.textContent = button.querySelector('span').textContent;
+    document.getElementById('active-tool').textContent = button.querySelector('span').textContent;
   });
 }
 
@@ -80,79 +408,84 @@ for (const button of document.querySelectorAll('.category-chip')) {
     const currentPrompt = promptInput.value.trim();
     const categoryText = `Create a ${category.toLowerCase()} motion scene`;
     if (button.classList.contains('is-selected')) {
-      if (!currentPrompt) {
-        promptInput.value = categoryText;
-      } else if (!currentPrompt.toLowerCase().includes(category.toLowerCase())) {
-        promptInput.value = `${currentPrompt.replace(/[.\\s]+$/, '')} — ${categoryText}`;
+      if (!currentPrompt) promptInput.value = categoryText;
+      else if (!currentPrompt.toLowerCase().includes(category.toLowerCase())) {
+        promptInput.value = `${currentPrompt.replace(/[.\s]+$/, '')} — ${categoryText}`;
       }
-    } else if (currentPrompt === categoryText) {
-      promptInput.value = '';
-    }
+    } else if (currentPrompt === categoryText) promptInput.value = '';
     promptInput.focus();
   });
 }
 
 document.getElementById('new-production').addEventListener('click', () => {
+  project = createLocalProject();
+  promptInput.value = '';
+  formMessage.textContent = '';
+  document.getElementById('render-message').textContent = '';
+  qaMessage.textContent = '';
+  renderProject();
   showView('studio');
-  promptInput.value = initialPrompt;
-  clearSceneResult();
   promptInput.focus();
 });
 
 promptForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const prompt = promptInput.value.trim();
-
   if (!prompt) {
-    formMessage.textContent = 'Enter a motion brief before generating a scene specification.';
+    formMessage.textContent = 'Enter a motion brief before creating a storyboard.';
     promptInput.focus();
     return;
   }
-
+  if (!['BRIEF', 'PLANNING'].includes(project.state)) {
+    project = createLocalProject();
+  }
+  project.brief = prompt;
+  project.context = { ...DEFAULT_CONTEXT };
+  persistProject();
   submitButton.disabled = true;
-  submitButton.textContent = 'Synthesizing & validating…';
-  formMessage.textContent = 'Generating and validating with the configured scene provider…';
-  resultProvider.textContent = 'Generating…';
-  resultsEmpty.hidden = false;
-  resultsContent.hidden = true;
-  resultsEmpty.textContent = 'Generating and validating scene specification…';
-
+  submitButton.textContent = 'Developing storyboard…';
+  formMessage.textContent = 'Interpreting the brief and creating acceptance criteria…';
   try {
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        context: {
-          width: 1280,
-          height: 720,
-          fps: 24,
-          primaryColor: '#0F172A',
-          accentColor: '#38BDF8',
-        },
-      }),
+    if (project.state === 'BRIEF') await transitionTo('PLANNING');
+    const result = await requestJson('/api/generate', {
+      action: 'storyboard',
+      prompt,
+      context: project.context,
     });
-    const responseText = await response.text();
-    let result;
-    try {
-      result = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      const detail = responseText.trim().slice(0, 300) || response.statusText;
-      throw new Error(`Generation API returned a non-JSON response (HTTP ${response.status}): ${detail}`);
-    }
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.error || `Generation API failed with HTTP ${response.status}.`);
-    }
-
-    formMessage.textContent = `Validated scene specification generated by ${result.provider}. No video render was started.`;
-    showSceneResult(result);
+    project.storyboard = result.storyboard;
+    project.storyboardProvider = result.provider;
+    project.acceptance = result.acceptance;
+    await transitionTo('STORYBOARD_REVIEW');
+    formMessage.textContent = 'Storyboard ready. Human approval is required before production code is compiled.';
   } catch (error) {
-    formMessage.textContent = `Could not generate a scene specification: ${error.message}`;
-    resultProvider.textContent = 'Generation failed';
-    resultsEmpty.textContent = 'No result is available. Correct the brief or try again.';
+    formMessage.textContent = `Storyboard planning failed: ${error.message}`;
   } finally {
     submitButton.disabled = false;
-    submitButton.innerHTML = 'Synthesize &amp; validate spec <span aria-hidden="true">↗</span>';
+    submitButton.textContent = 'Generate creative storyboard ↗';
   }
 });
+
+approveStoryboardButton.addEventListener('click', buildProduction);
+renderButton.addEventListener('click', renderProduction);
+for (const button of document.querySelectorAll('.render-trigger')) button.addEventListener('click', renderProduction);
+
+finalApprovalButton.addEventListener('click', async () => {
+  qaMessage.textContent = '';
+  try {
+    await transitionTo('APPROVED', { finalCutApproved: true });
+    qaMessage.textContent = 'Final cut approved. Delivery exports can now be released.';
+  } catch (error) {
+    qaMessage.textContent = `Final approval blocked: ${error.message}`;
+  }
+});
+
+markDeliveredButton.addEventListener('click', async () => {
+  try {
+    await transitionTo('DELIVERED');
+  } catch (error) {
+    deliveryStatus.textContent = `Delivery blocked: ${error.message}`;
+  }
+});
+
+if (project.brief) promptInput.value = project.brief;
+renderProject();
