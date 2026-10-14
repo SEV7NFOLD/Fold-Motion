@@ -1,78 +1,95 @@
 # FOLD Motion — Recovery handoff
 
-This file documents the recovery work performed on branch `recovery/fold-motion-bootstrap` and the next steps to validate and continue development.
+This handoff describes the verified repository foundation and the production
+skill instructions added on `recovery/fold-motion-bootstrap`. The canonical
+requirements are in [the FOLD Motion v2.0 Skill Book](docs/FOLD-MOTION-SKILL-BOOK.md).
 
-## Project purpose and architecture
+## Current foundation
 
-- Purpose: Deterministic, code-first motion-production foundation. Generates deterministic SVG frames via an authored scene, rasterizes frames with Resvg, and encodes to H.264 MP4 via FFmpeg for inspection and delivery.
-- Architecture: Editable scene source → deterministic SVG → Resvg PNG frames → FFmpeg MP4 → FFprobe validation.
+The project is a local, deterministic rendering foundation:
 
-## Confirmed repository state (recovery branch)
+`scene state at frame-index timestamp -> SVG -> Resvg PNG -> FFmpeg MP4 -> FFprobe metadata validation`
 
-The following files were added or restored in the recovery branch:
+- Scene 01 derives its complete state from an explicit timestamp and shared
+  source used by preview and rendering.
+- The renderer produces 1280x720 output at 24 fps, writes source SVG and PNG
+  frames, creates a contact sheet, encodes H.264, and checks output metadata.
+- The local preview server binds to loopback; health checks cover runtime
+  prerequisites.
+- The runtime dependencies remain Node.js built-ins and the pinned
+  `@resvg/resvg-js` package. FFmpeg/FFprobe are external local prerequisites.
 
-- scripts/health-check.mjs
-- scripts/serve.mjs
-- scripts/render-scene-01.mjs (modified to be OS-portable)
-- src/runtime/health.mjs
-- src/runtime/static-server.mjs
-- public/scene-01-core.js
-- public/scene-01-svg.mjs
-- public/scene-01.html
-- public/scene-01.js
-- public/index.html
-- test/health.test.mjs
-- test/static-server.test.mjs
+Do not replace or bypass this deterministic rendering path as part of skill
+documentation work.
 
-A root package.json and .gitignore were added in this commit to restore the project manifest and ignore rules.
+## Skill system
 
-## Setup & execution (commands to run locally or in CI)
+`skills/master/SKILL.md` defines the operating contract and specialist routing.
+The 13 versioned specialist instructions are:
 
-1. Checkout the recovery branch:
+- `skills/brief-to-criteria/SKILL.md`
+- `skills/creative-director/SKILL.md`
+- `skills/storyboard-architect/SKILL.md`
+- `skills/typography-and-layout/SKILL.md`
+- `skills/svg-illustration/SKILL.md`
+- `skills/motion-engineer/SKILL.md`
+- `skills/product-animation/SKILL.md`
+- `skills/render-engineer/SKILL.md`
+- `skills/visual-critic/SKILL.md`
+- `skills/motion-critic/SKILL.md`
+- `skills/revision-engineer/SKILL.md`
+- `skills/audio-and-assembly/SKILL.md`
+- `skills/delivery-and-verification/SKILL.md`
 
-   git checkout recovery/fold-motion-bootstrap
+These Markdown files are production instructions. This repository does not yet
+contain a skill loader, model-provider gateway, executable project
+orchestrator, automated visual/motion critic, multi-shot production system, or
+audio workflow. A documented workflow is not evidence those capabilities have
+been implemented. No frontend was built for this work.
 
-2. Install dependencies (this will generate or update package-lock.json locally):
+## Setup and commands
 
-   npm ci
+Requirements: Node.js 20 or later, npm, Git, FFmpeg, and FFprobe. Install the
+pinned dependencies with `npm ci`, then run:
 
-   - If you prefer to generate a new lockfile instead of using an existing one, run `npm install`.
+```powershell
+npm run health
+npm test
+npm run render:scene-01
+```
 
-3. Run the health check (validates Node, npm, Git, FFmpeg/FFprobe, and Resvg availability):
+`npm run render:scene-01` requires FFmpeg and FFprobe on `PATH`; it creates a
+new `output/scene-01/<run-id>/` directory and refuses to overwrite an existing
+run directory.
 
-   npm run health
+## Skill verification
 
-   - Note: The health check will report PASS/FAIL per check and may exit with a non-zero status if a required tool is missing.
+`test/skills.test.mjs` checks that the master skill and all 13 canonical
+specialist files exist, have matching titles, and are linked from the master.
+It also checks selected operating constraints. These checks verify document
+structure and required guidance, not the existence of an executable
+orchestrator or the creative quality of rendered video.
 
-4. Run the automated tests:
+## Validation record
 
-   npm test
+Record actual command results for this checkout here. Automated tests do not
+substitute for rendered-frame creative QA.
 
-5. Run the scene renderer (this will create output/scene-01/<runId>/ with frames, contact sheet, MP4, and render-report.json):
+- `npm test`: PASS — 8 tests, 0 failures.
+- `npm run health`: PASS — Node.js 24.21.0, npm 11.19.0, Git, FFmpeg,
+  FFprobe, and Resvg available; 16.72 GiB free at check time.
+- `npm run render:scene-01`: PASS — 96 frames rendered; FFprobe verified
+  1280x720, 4.000-second, 24 fps output at
+  `output/scene-01/2026-10-12T15-44-12-624Z/scene-01.mp4`.
+- Visual/creative inspection: pending; do not claim completion without
+  reviewing the generated evidence.
 
-   npm run render:scene-01
+## Boundaries and next steps
 
-## Important runtime notes and dependencies
-
-- Node.js: Project expects Node >= 20 and `type: "module"` (ES modules with top-level await).
-- Native binding: @resvg/resvg-js is a native addon; npm install should fetch a prebuilt binary for your platform when available. If installation fails, capture the npm error output and share it for diagnosis.
-- FFmpeg/FFprobe: The renderer requires FFmpeg and FFprobe on PATH. The renderer was updated to choose the correct executable name for Windows (ffmpeg.exe / ffprobe.exe) or other platforms (ffmpeg / ffprobe).
-
-## What was not executed here
-
-- All runtime checks (npm ci, npm run health, npm test, npm run render:scene-01) are pending and must be executed in your environment or CI. The repository changes committed here only prepare the project for those checks.
-
-## Files changed in this commit
-
-- Added: package.json, .gitignore, HANDOFF.md
-- Modified: scripts/render-scene-01.mjs (to be cross-platform)
-
-## Next task (minimal validation)
-
-After you run the commands in the Setup section, please share the full terminal output for each command. If any step fails, paste the error and I will diagnose and prepare targeted fixes on the recovery branch.
-
-## For the next AI collaborator
-
-- Always inspect the branch `recovery/fold-motion-bootstrap` before making edits.
-- Do not modify the default branch in this recovery effort.
-- Keep changes minimal and document each commit with clear intent and scope.
+Follow the staged skill book as the canonical specification. Keep work on
+`recovery/fold-motion-bootstrap`; preserve unrelated staged or untracked files.
+The next production roadmap is defined by the skill book: extend technical QA,
+then add model integration through a provider abstraction, evidence-based
+visual critique and correction, multi-shot timeline/caching, audio as needed,
+and only then consider a Studio interface. Validate tool availability before
+claiming support, and do not build the frontend ahead of the production loop.
