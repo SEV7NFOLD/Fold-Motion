@@ -23,6 +23,10 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+function easeOutCubic(value) {
+  return 1 - (1 - value) ** 3;
+}
+
 function wrapText(content, maximumCharacters) {
   const lines = [];
   let line = '';
@@ -49,19 +53,29 @@ function wrapText(content, maximumCharacters) {
 }
 
 export function renderShotSvg(shot, progress, width, height) {
-  const fade = 0.18 + 0.82 * clamp(progress * 5, 0, 1);
-  const elements = shot.spec.elements.map((element) => {
+  const progressValue = clamp(progress, 0, 1);
+  const reveal = easeOutCubic(clamp(progressValue * 4, 0, 1));
+  const fade = 0.16 + 0.84 * reveal;
+  const primary = shot.palette?.primary
+    || shot.spec.elements.find((element) => element.type === 'rect')?.fill
+    || '#0B0F19';
+  const accent = shot.palette?.accent
+    || shot.spec.elements.find((element) => element.id.endsWith('-accent'))?.fill
+    || '#00F0FF';
+  const backgroundElements = [];
+  const foregroundElements = [];
+  for (const element of shot.spec.elements) {
     const fill = escapeXml(element.fill || '#F8FAFC');
     if (element.type === 'rect') {
       const animatedWidth = element.id.endsWith('-accent')
-        ? Math.max(1, element.width * clamp(progress * 2.2, 0.05, 1))
+        ? Math.max(1, element.width * easeOutCubic(clamp(progressValue * 2.2, 0.05, 1)))
         : element.width;
-      return `<rect x="${element.x}" y="${element.y}" width="${animatedWidth}" height="${element.height}" fill="${fill}" opacity="${element.id.endsWith('-background') ? 1 : fade}"/>`;
-    }
-    if (element.type === 'circle') {
-      return `<circle cx="${element.x}" cy="${element.y}" r="${element.radius ?? 12}" fill="${fill}" opacity="${fade}"/>`;
-    }
-    if (element.type === 'text') {
+      const markup = `<rect x="${element.x}" y="${element.y}" width="${animatedWidth}" height="${element.height}" fill="${fill}" opacity="${element.id.endsWith('-background') ? 1 : fade}"/>`;
+      const isBackground = element.x === 0 && element.y === 0 && element.width === width && element.height === height;
+      (isBackground ? backgroundElements : foregroundElements).push(markup);
+    } else if (element.type === 'circle') {
+      foregroundElements.push(`<circle cx="${element.x}" cy="${element.y}" r="${element.radius ?? 12}" fill="${fill}" opacity="${fade}"/>`);
+    } else if (element.type === 'text') {
       const requestedSize = Number.isFinite(element.fontSize) ? element.fontSize : 32;
       const fittedSize = Math.min(requestedSize, height * 0.15);
       const lines = wrapText(
@@ -73,14 +87,33 @@ export function renderShotSvg(shot, progress, width, height) {
       const textLines = lines.map((line, index) => (
         `<tspan x="${element.x}" dy="${index === 0 ? 0 : fittedSize * 1.2}">${escapeXml(line)}</tspan>`
       )).join('');
-      return `<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${fade}">${textLines}</text>`;
+      const glitchStrength = clamp((0.24 - progressValue) / 0.24, 0, 1);
+      const glitchLayers = glitchStrength > 0
+        ? `<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="#FF0055" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.48}" transform="translate(${Math.round(7 * glitchStrength)} ${Math.round(-2 * glitchStrength)}) skewX(-4)" clip-path="url(#glitch-slice)">${textLines}</text><text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${escapeXml(accent)}" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.38}" transform="translate(${Math.round(-5 * glitchStrength)} ${Math.round(2 * glitchStrength)})">${textLines}</text>`
+        : '';
+      foregroundElements.push(`${glitchLayers}<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" letter-spacing="${Math.max(0.4, fittedSize * 0.025)}" opacity="${fade}" filter="url(#text-glow)" style="font-kerning:normal">${textLines}</text>`);
     }
-    return '';
-  }).join('\n');
+  }
+  const atmosphere = `<rect width="${width}" height="${height}" fill="url(#ambient)" opacity=".7"/><rect width="${width}" height="${height}" fill="url(#grid)" opacity=".28"/><circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.26}" fill="none" stroke="${escapeXml(accent)}" stroke-width="1" opacity=".42" transform="rotate(${-18 + progressValue * 7} ${width * 0.76} ${height * 0.48})"/><circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.31}" fill="none" stroke="#FF0055" stroke-width="1" stroke-dasharray="3 12" opacity=".34" transform="rotate(${22 - progressValue * 11} ${width * 0.76} ${height * 0.48})"/><path d="M ${width * 0.08} ${height * 0.78} H ${width * (0.08 + 0.34 * reveal)}" fill="none" stroke="${escapeXml(accent)}" stroke-width="2" opacity=".78" filter="url(#accent-glow)"/><path d="M ${width * 0.08} ${height * 0.795} H ${width * (0.08 + 0.15 * reveal)}" fill="none" stroke="#FF0055" stroke-width="1" opacity=".72"/>`;
+  const metadata = escapeXml(JSON.stringify({
+    palette: shot.palette ?? { primary, accent },
+    hardConstraints: shot.hardConstraints ?? [],
+    copy: shot.spec.elements.filter((element) => element.type === 'text').map((element) => element.content),
+  }));
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-${elements}
+<defs>
+  <radialGradient id="ambient" cx="74%" cy="46%" r="68%"><stop offset="0" stop-color="${escapeXml(accent)}" stop-opacity=".22"/><stop offset=".42" stop-color="#FF0055" stop-opacity=".07"/><stop offset="1" stop-color="${escapeXml(primary)}" stop-opacity="0"/></radialGradient>
+  <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M 42 0 L 0 0 0 42" fill="none" stroke="${escapeXml(accent)}" stroke-width=".5" opacity=".42"/></pattern>
+  <filter id="text-glow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="5" result="blur"/><feFlood flood-color="${escapeXml(accent)}" flood-opacity=".34"/><feComposite in2="blur" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="accent-glow" x="-30%" y="-300%" width="160%" height="700%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <clipPath id="glitch-slice"><rect x="0" y="${height * 0.42}" width="${width}" height="${height * 0.2}"/></clipPath>
+</defs>
+<metadata>${metadata}</metadata>
+${backgroundElements.join('\n')}
+${atmosphere}
+${foregroundElements.join('\n')}
 </svg>`;
 }
 

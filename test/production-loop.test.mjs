@@ -41,6 +41,16 @@ test('compilation creates a continuous canonical timeline and measurable creativ
   const { timeline } = await compileCreativePlan(storyboard, context);
 
   assert.equal(validateTimeline(timeline).valid, true);
+  assert.deepEqual(timeline.palette, {
+    primary: context.primaryColor,
+    accent: context.accentColor,
+  });
+  assert.deepEqual(timeline.hardConstraints, storyboard.hardConstraints);
+  assert.ok(timeline.shots.every((shot) => (
+    shot.palette.primary === context.primaryColor
+    && shot.palette.accent === context.accentColor
+    && shot.hardConstraints.length === storyboard.hardConstraints.length
+  )));
   assert.equal(timeline.totalFrames, 192);
   assert.deepEqual(
     timeline.shots.map(({ startFrame, endFrame }) => [startFrame, endFrame]),
@@ -101,6 +111,9 @@ test('render frame SVG uses deterministic escaped copy and production QA require
   };
   const svg = renderShotSvg(htmlSafeShot, 0.5, 640, 360);
   assert.match(svg, /&lt;safe &amp; exact&gt;/);
+  assert.match(svg, /text-glow/);
+  assert.match(svg, /#FF0055/);
+  assert.match(svg, /hardConstraints/);
   assert.equal(renderShotSvg(htmlSafeShot, 0.5, 640, 360), svg);
 
   assert.equal(validateProductionReport({
@@ -113,4 +126,46 @@ test('render frame SVG uses deterministic escaped copy and production QA require
     productionQA: { pass: true },
     creativeQA: { pass: true },
   }).valid, true);
+});
+
+test('fallback storyboards and timelines preserve supplied copy and brand palette', async () => {
+  const customContext = {
+    ...context,
+    headline: 'MOVE WITH INTENT',
+    subheadline: 'Designed for the next generation',
+    primaryColor: '#112233',
+    accentColor: '#44AABB',
+  };
+  const storyboard = buildMockStoryboard('A product launch', customContext);
+  assert.ok(storyboard.shots.some((shot) => shot.onScreenCopy === customContext.headline));
+  assert.ok(storyboard.shots.some((shot) => shot.onScreenCopy === customContext.subheadline));
+
+  const { timeline } = await compileCreativePlan(storyboard, customContext);
+  assert.equal(timeline.palette.primary, customContext.primaryColor);
+  assert.equal(timeline.palette.accent, customContext.accentColor);
+  assert.ok(timeline.shots.every((shot) => (
+    shot.spec.elements.some((element) => element.type === 'text' && element.content === customContext.subheadline)
+  )));
+  const svg = renderShotSvg(timeline.shots[0], 0.5, timeline.width, timeline.height);
+  assert.match(svg, /#112233/);
+  assert.match(svg, /#44AABB/);
+  assert.match(svg, /Designed for the next generation/);
+});
+
+test('provider storyboards cannot discard explicitly supplied headline or sub-headline copy', async () => {
+  const generated = buildMockStoryboard('Provider-generated copy', context);
+  const result = await createCreativePlan('A launch brief', {
+    ...context,
+    headline: 'EXACT PRIMARY COPY',
+    subheadline: 'Exact supporting copy',
+  }, {
+    name: 'test-provider',
+    async generateStoryboard() {
+      return generated;
+    },
+  });
+
+  assert.equal(result.storyboard.shots[0].onScreenCopy, 'EXACT PRIMARY COPY');
+  assert.equal(result.storyboard.shots.at(-1).onScreenCopy, 'Exact supporting copy');
+  assert.equal(generated.shots[0].onScreenCopy, 'Provider-generated copy');
 });

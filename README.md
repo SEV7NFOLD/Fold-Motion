@@ -16,6 +16,10 @@ and acceptance specification. Approve the storyboard to compile the shot specs
 and canonical `timeline.json`; then render the sequence and run technical and
 creative QA. Final-cut approval and delivery are separate explicit gates.
 Project state is saved in the browser's local storage.
+The Studio accepts an optional exact headline and sub-headline plus primary
+and accent colors; these values are carried into the timeline and rendered
+frames. Generation and rendering show phase-based telemetry and timestamped
+logs while work is in progress.
 
 ## Production loop
 
@@ -41,6 +45,21 @@ colors. These measurable checks do not replace a human's visual review. The loca
 and accent-line reveals; camera and transition descriptions remain part of the
 approved storyboard for future renderer capabilities.
 
+## Deploy to Render
+
+The repository includes a Docker image with Node.js 20 and FFmpeg, plus a
+Render Blueprint (`render.yaml`) for a Free web service in Ohio. In Render,
+create a new Blueprint Instance from this repository and apply the
+`fold-motion-studio` service. The service binds to Render's `PORT` and serves
+the Studio and its generation, state, and rendering APIs.
+
+The Free service has ephemeral storage: rendered videos and QA evidence under
+`/app/output` can be lost when the service sleeps, restarts, or is redeployed.
+Download important outputs promptly or move to a paid plan with a persistent
+disk for durable render storage. Add `GEMINI_API_KEY` when prompted during
+Blueprint setup to enable Gemini-backed storyboard and shot-spec generation;
+without it, the deterministic mock provider remains available.
+
 ## Deploy to Vercel
 
 Deploy from the repository root. `vercel.json` publishes `public/`; the `api/`
@@ -49,14 +68,11 @@ repository root as the Root Directory and the **Other** framework preset.
 
 Set `GEMINI_API_KEY` in Vercel project settings to enable Gemini 3.8 Flash for
 storyboard and shot-spec generation. The key remains server-side. Gemini
-requests have a six-second timeout; provider failures or invalid structured
-output are logged and use the deterministic mock provider. The generation API
-returns a valid structured response either way.
-
-Video rendering requires a local FFmpeg/FFprobe installation. The Vercel render
-endpoint returns an explicit unsupported response rather than claiming a cloud
-render occurred; use the local Studio server for frame synthesis, QA, and
-delivery exports.
+requests have a 30-second timeout. Provider failures and invalid structured
+output are logged and returned as explicit errors; deterministic mock
+generation is used only when no Gemini key is configured. The Vercel render
+endpoint returns an explicit unsupported response; use the Render deployment
+for cloud rendering, QA, and delivery exports.
 
 ## Verify
 

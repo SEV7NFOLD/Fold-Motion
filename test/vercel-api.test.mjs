@@ -88,9 +88,18 @@ test('Vercel generation function rejects invalid prompts and request methods', a
 
 test('Vercel generation function compiles an approved storyboard into a canonical timeline', async () => {
   const planResponse = createResponse();
+  const context = {
+    width: 640,
+    height: 360,
+    fps: 24,
+    headline: 'A CUSTOM HEADLINE',
+    subheadline: 'The exact supporting line',
+    primaryColor: '#112233',
+    accentColor: '#44AABB',
+  };
   await generate({
     method: 'POST',
-    body: { prompt: 'A cinematic title', context: { width: 640, height: 360, fps: 24 } },
+    body: { prompt: 'A cinematic title', context },
   }, planResponse);
   const compileResponse = createResponse();
   await generate({
@@ -98,15 +107,25 @@ test('Vercel generation function compiles an approved storyboard into a canonica
     body: {
       action: 'compile',
       storyboard: planResponse.body.storyboard,
-      context: { width: 640, height: 360, fps: 24 },
+      context,
     },
   }, compileResponse);
 
+  assert.ok(planResponse.body.storyboard.shots.some((shot) => shot.onScreenCopy === context.headline));
+  assert.ok(planResponse.body.storyboard.shots.some((shot) => shot.onScreenCopy === context.subheadline));
   assert.equal(compileResponse.statusCode, 200);
   assert.equal(compileResponse.body.action, 'compile');
   assert.equal(compileResponse.body.provider, 'mock-provider');
   assert.equal(compileResponse.body.timeline.shots.length, planResponse.body.storyboard.shots.length);
   assert.equal(compileResponse.body.timeline.totalFrames, 192);
+  assert.deepEqual(compileResponse.body.timeline.palette, {
+    primary: context.primaryColor,
+    accent: context.accentColor,
+  });
+  assert.ok(compileResponse.body.timeline.shots.every((shot) => (
+    shot.spec.elements.some((element) => element.content === context.subheadline)
+  )));
+  assert.ok(compileResponse.body.timeline.hardConstraints.length > 0);
   assert.deepEqual(
     compileResponse.body.timeline.shots.map(({ startFrame, endFrame }) => [startFrame, endFrame]),
     [[0, 71], [72, 143], [144, 191]],
@@ -183,7 +202,7 @@ test('Vercel generation function uses Gemini when the server key is configured',
   }
 });
 
-test('Vercel generation function falls back to mock when Gemini returns an error', async () => {
+test('Vercel generation function reports Gemini errors instead of silently falling back', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFetch = globalThis.fetch;
   const previousConsoleWarn = console.warn;
@@ -199,10 +218,9 @@ test('Vercel generation function falls back to mock when Gemini returns an error
       body: { prompt: 'A cinematic title' },
     }, response);
 
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.success, true);
-    assert.equal(response.body.provider, 'mock-provider');
-    assert.ok(response.body.storyboard.shots.length > 0);
+    assert.equal(response.statusCode, 500);
+    assert.equal(response.body.success, false);
+    assert.match(response.body.error, /Gemini storyboard request failed/);
     assert.equal(warningLogged, true);
   } finally {
     console.warn = previousConsoleWarn;
@@ -215,7 +233,8 @@ test('Vercel generation function falls back to mock when Gemini returns an error
   }
 });
 
-test('Vercel generation function falls back when the Gemini request times out', async () => {
+test('Vercel generation function reports Gemini timeout failures', async (testContext) => {
+  testContext.mock.timers.enable({ apis: ['setTimeout'] });
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFetch = globalThis.fetch;
   const previousConsoleWarn = console.warn;
@@ -234,14 +253,17 @@ test('Vercel generation function falls back when the Gemini request times out', 
 
   try {
     const response = createResponse();
-    await generate({
+    const pending = generate({
       method: 'POST',
       body: { prompt: 'A cinematic title' },
     }, response);
+    await new Promise((resolve) => setImmediate(resolve));
+    testContext.mock.timers.tick(30_000);
+    await pending;
 
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.success, true);
-    assert.equal(response.body.provider, 'mock-provider');
+    assert.equal(response.statusCode, 500);
+    assert.equal(response.body.success, false);
+    assert.match(response.body.error, /Gemini storyboard request failed/);
     assert.equal(requestSignal.aborted, true);
     assert.equal(warningLogged, true);
   } finally {
@@ -255,7 +277,7 @@ test('Vercel generation function falls back when the Gemini request times out', 
   }
 });
 
-test('Vercel generation function falls back when Gemini provider setup fails', async () => {
+test('Vercel generation function reports Gemini provider setup failures', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFetch = globalThis.fetch;
   const previousConsoleWarn = console.warn;
@@ -270,9 +292,9 @@ test('Vercel generation function falls back when Gemini provider setup fails', a
       body: { prompt: 'A cinematic title' },
     }, response);
 
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.success, true);
-    assert.equal(response.body.provider, 'mock-provider');
+    assert.equal(response.statusCode, 500);
+    assert.equal(response.body.success, false);
+    assert.match(response.body.error, /fetchImpl is not a function/);
   } finally {
     console.warn = previousConsoleWarn;
     globalThis.fetch = previousFetch;

@@ -30,7 +30,7 @@ test('MockAIProvider generates a scene using default context', async () => {
     { id: 'bg-rect', type: 'rect' },
     { id: 'title-text', type: 'text' },
   ]);
-  assert.equal(scene.elements[0].fill, '#0F172A');
+  assert.equal(scene.elements[0].fill, '#0B0F19');
   assert.equal(scene.elements[1].content, 'A moving title');
 });
 

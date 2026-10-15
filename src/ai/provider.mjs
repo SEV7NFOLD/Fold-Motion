@@ -54,7 +54,7 @@ export class MockAIProvider extends BaseAIProvider {
           y: 0,
           width,
           height,
-          fill: context.primaryColor || '#0F172A',
+          fill: context.primaryColor || '#0B0F19',
         },
         {
           id: 'title-text',
@@ -62,7 +62,7 @@ export class MockAIProvider extends BaseAIProvider {
           content: prompt.slice(0, 30),
           x: width / 2,
           y: height / 2,
-          fill: context.accentColor || '#38BDF8',
+          fill: context.accentColor || '#00F0FF',
           fontSize: 48,
           anchor: 'middle',
         },
@@ -142,6 +142,8 @@ export class GeminiAIProvider extends BaseAIProvider {
       [
         'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON.',
         'Include at least two purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
+        'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
+        'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         `Creative brief:\n${prompt}`,
         `Production context:\n${JSON.stringify(context)}`,
       ].join('\n\n'),
@@ -184,6 +186,7 @@ export class GeminiAIProvider extends BaseAIProvider {
       [
         'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot.',
         'Return a JSON array in the same order and with the same item count as the storyboard shots. Preserve exact on-screen copy, use the requested dimensions/FPS, include a full-canvas background and readable text elements, and use the brand primary/accent colors.',
+        'Preserve any supplied subheadline as an additional readable text element in every shot.',
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,
         `Production context:\n${JSON.stringify(context)}`,
       ].join('\n\n'),

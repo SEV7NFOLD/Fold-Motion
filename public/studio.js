@@ -5,8 +5,10 @@ const DEFAULT_CONTEXT = {
   width: 1280,
   height: 720,
   fps: 24,
-  primaryColor: '#0F172A',
-  accentColor: '#38BDF8',
+  primaryColor: '#0B0F19',
+  accentColor: '#00F0FF',
+  headline: '',
+  subheadline: '',
 };
 const viewTitles = {
   studio: 'Motion Studio',
@@ -41,6 +43,66 @@ const finalApprovalButton = document.getElementById('approve-final-cut');
 const markDeliveredButton = document.getElementById('mark-delivered');
 const deliveryStatus = document.getElementById('delivery-status');
 const deliveryArtifacts = document.getElementById('delivery-artifacts');
+const telemetryPanel = document.getElementById('telemetry-panel');
+const telemetryTitle = document.getElementById('telemetry-title');
+const telemetryPercent = document.getElementById('telemetry-percent');
+const telemetryProgress = document.getElementById('telemetry-progress-fill');
+const telemetryTrack = telemetryProgress.parentElement;
+const telemetryLogs = document.getElementById('telemetry-logs');
+
+function logTelemetry(stage, message, percent) {
+  telemetryPanel.hidden = false;
+  telemetryTitle.textContent = stage;
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  telemetryPercent.textContent = `${value}%`;
+  telemetryProgress.style.width = `${value}%`;
+  telemetryTrack.setAttribute('aria-valuenow', String(value));
+  const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+  telemetryLogs.textContent += `${timestamp}  ${message}\n`;
+  telemetryLogs.textContent = telemetryLogs.textContent.split('\n').slice(-101).join('\n');
+  telemetryLogs.scrollTop = telemetryLogs.scrollHeight;
+}
+
+function beginTelemetry(stage, message, percent) {
+  telemetryLogs.textContent = '';
+  telemetryPanel.querySelector('.status-dot').classList.remove('telemetry-failed');
+  telemetryPanel.querySelector('.status-dot').classList.add('pulsing');
+  logTelemetry(stage, message, percent);
+}
+
+function setTelemetryBusy(busy) {
+  telemetryTrack.classList.toggle('is-indeterminate', busy);
+}
+
+function finishTelemetry(stage, message, percent = 100) {
+  setTelemetryBusy(false);
+  logTelemetry(stage, message, percent);
+  telemetryPanel.querySelector('.status-dot').classList.remove('pulsing', 'telemetry-failed');
+}
+
+function failTelemetry(stage, message) {
+  setTelemetryBusy(false);
+  logTelemetry(stage, message, Number.parseInt(telemetryPercent.textContent, 10) || 0);
+  const dot = telemetryPanel.querySelector('.status-dot');
+  dot.classList.remove('pulsing');
+  dot.classList.add('telemetry-failed');
+}
+
+function startTelemetryHeartbeat(message) {
+  return setInterval(() => {
+    logTelemetry('Still working', message, Number.parseInt(telemetryPercent.textContent, 10) || 0);
+  }, 15_000);
+}
+
+function readBriefContext() {
+  return {
+    ...DEFAULT_CONTEXT,
+    headline: document.getElementById('headline-input').value.trim(),
+    subheadline: document.getElementById('subheadline-input').value.trim(),
+    primaryColor: document.getElementById('primary-color-input').value,
+    accentColor: document.getElementById('accent-color-input').value,
+  };
+}
 
 function createLocalProject(brief = '') {
   return {
@@ -336,26 +398,37 @@ function renderProject() {
 }
 
 async function buildProduction() {
-  if (project.state === 'STORYBOARD_REVIEW') {
-    await transitionTo('BUILDING', { storyboardApproved: true });
-  }
-  if (project.state !== 'BUILDING') return;
+  if (!['STORYBOARD_REVIEW', 'BUILDING'].includes(project.state)) return;
   approveStoryboardButton.disabled = true;
-  formMessage.textContent = 'Storyboard approved. Compiling validated shot specifications…';
+  formMessage.textContent = 'Approving storyboard and compiling validated shot specifications…';
+  beginTelemetry('Approving storyboard', 'Recording approval and preparing deterministic shot compilation.', 5);
+  setTelemetryBusy(true);
+  const heartbeat = startTelemetryHeartbeat('Production compilation is still running; waiting for the provider response.');
   try {
+    if (project.state === 'STORYBOARD_REVIEW') {
+      await transitionTo('BUILDING', { storyboardApproved: true });
+      approveStoryboardButton.disabled = true;
+    }
+    logTelemetry('Compiling production', 'Storyboard approved; validating shot specifications and applying the selected palette.', 12);
     const result = await requestJson('/api/generate', {
       action: 'compile',
       storyboard: project.storyboard,
       context: project.context,
     });
+    setTelemetryBusy(false);
+    logTelemetry('Shot specifications received', `${result.provider} returned ${result.timeline.shots.length} shots for timeline validation.`, 78);
     project.timeline = result.timeline;
     project.compileProvider = result.provider;
     await transitionTo('RENDERING');
+    finishTelemetry('Compilation complete', 'Timeline, copy, hard constraints, and palette are ready for rendering.', 100);
     formMessage.textContent = 'Production code compiled. Review the timeline, then render and run QA.';
     renderProject();
   } catch (error) {
+    failTelemetry('Compilation failed', error.message);
     formMessage.textContent = `Production compilation failed: ${error.message}`;
     renderProject();
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -364,6 +437,9 @@ async function renderProduction() {
   const renderMessage = document.getElementById('render-message');
   for (const button of document.querySelectorAll('.render-trigger, #render-production')) button.disabled = true;
   renderMessage.textContent = 'Rendering deterministic frames, encoding MP4, and running QA…';
+  beginTelemetry('Rendering production', 'Renderer accepted the validated timeline; generating frames and running QA.', 8);
+  setTelemetryBusy(true);
+  const heartbeat = startTelemetryHeartbeat('Frame rendering and video encoding are in progress; waiting for render and QA results.');
   try {
     const result = await requestJson('/api/render', {
       timeline: project.timeline,
@@ -371,8 +447,15 @@ async function renderProduction() {
       acceptance: project.acceptance,
       context: project.context,
     });
+    setTelemetryBusy(false);
+    logTelemetry('Frames rendered', 'Renderer returned the video and frame evidence; finalizing production QA.', 88);
     project.renderReport = result.report;
     await transitionTo('QA');
+    finishTelemetry(
+      result.qaCommandPassed ? 'Production and QA complete' : 'Render complete with QA warning',
+      result.qaCommandPassed ? 'Verified render and QA evidence are ready for review.' : (result.qaError || 'Review the reported QA metrics.'),
+      100,
+    );
     renderMessage.textContent = result.qaCommandPassed
       ? 'Render complete. Technical and creative QA evidence is ready for review.'
       : `Render completed; QA command reported a failure: ${result.qaError || 'review the QA metrics.'}`;
@@ -380,8 +463,10 @@ async function renderProduction() {
     renderQa();
     showView('qa');
   } catch (error) {
+    failTelemetry('Render failed', error.message);
     renderMessage.textContent = `Local render or QA could not complete: ${error.message}`;
   } finally {
+    clearInterval(heartbeat);
     for (const button of document.querySelectorAll('.render-trigger, #render-production')) {
       button.disabled = project.state !== 'RENDERING';
     }
@@ -420,6 +505,10 @@ for (const button of document.querySelectorAll('.category-chip')) {
 document.getElementById('new-production').addEventListener('click', () => {
   project = createLocalProject();
   promptInput.value = '';
+  document.getElementById('headline-input').value = '';
+  document.getElementById('subheadline-input').value = '';
+  document.getElementById('primary-color-input').value = DEFAULT_CONTEXT.primaryColor;
+  document.getElementById('accent-color-input').value = DEFAULT_CONTEXT.accentColor;
   formMessage.textContent = '';
   document.getElementById('render-message').textContent = '';
   qaMessage.textContent = '';
@@ -440,26 +529,37 @@ promptForm.addEventListener('submit', async (event) => {
     project = createLocalProject();
   }
   project.brief = prompt;
-  project.context = { ...DEFAULT_CONTEXT };
+  project.context = readBriefContext();
   persistProject();
   submitButton.disabled = true;
   submitButton.textContent = 'Developing storyboard…';
   formMessage.textContent = 'Interpreting the brief and creating acceptance criteria…';
+  beginTelemetry('Planning storyboard', 'Validating your brief and sending it to the configured creative provider.', 6);
+  setTelemetryBusy(true);
+  const heartbeat = startTelemetryHeartbeat('Storyboard generation is still running; waiting for structured creative direction.');
   try {
     if (project.state === 'BRIEF') await transitionTo('PLANNING');
+    setTelemetryBusy(false);
+    logTelemetry('Brief accepted', 'Project state is PLANNING; generating storyboard and acceptance criteria.', 22);
+    setTelemetryBusy(true);
     const result = await requestJson('/api/generate', {
       action: 'storyboard',
       prompt,
       context: project.context,
     });
+    setTelemetryBusy(false);
+    logTelemetry('Storyboard received', `${result.provider} returned ${result.storyboard.shots.length} shots and acceptance criteria.`, 78);
     project.storyboard = result.storyboard;
     project.storyboardProvider = result.provider;
     project.acceptance = result.acceptance;
     await transitionTo('STORYBOARD_REVIEW');
+    finishTelemetry('Storyboard ready for review', 'Storyboard and acceptance criteria are ready for human approval.', 100);
     formMessage.textContent = 'Storyboard ready. Human approval is required before production code is compiled.';
   } catch (error) {
+    failTelemetry('Storyboard planning failed', error.message);
     formMessage.textContent = `Storyboard planning failed: ${error.message}`;
   } finally {
+    clearInterval(heartbeat);
     submitButton.disabled = false;
     submitButton.textContent = 'Generate creative storyboard ↗';
   }
@@ -488,4 +588,10 @@ markDeliveredButton.addEventListener('click', async () => {
 });
 
 if (project.brief) promptInput.value = project.brief;
+if (project.context) {
+  document.getElementById('headline-input').value = project.context.headline || '';
+  document.getElementById('subheadline-input').value = project.context.subheadline || '';
+  document.getElementById('primary-color-input').value = project.context.primaryColor || DEFAULT_CONTEXT.primaryColor;
+  document.getElementById('accent-color-input').value = project.context.accentColor || DEFAULT_CONTEXT.accentColor;
+}
 renderProject();

@@ -15,8 +15,8 @@ const DEFAULT_SCENE_CONTEXT = {
   width: 1280,
   height: 720,
   fps: 24,
-  primaryColor: '#0F172A',
-  accentColor: '#38BDF8',
+  primaryColor: '#0B0F19',
+  accentColor: '#00F0FF',
 };
 const execFileAsync = promisify(execFile);
 

@@ -5,8 +5,8 @@ const DEFAULTS = Object.freeze({
   height: 720,
   fps: 24,
   durationInSeconds: 8,
-  primaryColor: '#0F172A',
-  accentColor: '#38BDF8',
+  primaryColor: '#0B0F19',
+  accentColor: '#00F0FF',
 });
 
 function validString(value) {
@@ -71,6 +71,10 @@ export function normalizeProductionContext(context = {}) {
       normalized[key] = DEFAULTS[key];
     }
   }
+  for (const key of ['headline', 'subheadline']) {
+    if (typeof normalized[key] !== 'string') normalized[key] = '';
+    normalized[key] = normalized[key].trim();
+  }
   return normalized;
 }
 
@@ -79,13 +83,15 @@ export function buildMockStoryboard(prompt, context = {}) {
     throw new Error('A valid text prompt is required to create a storyboard.');
   }
   const normalizedContext = normalizeProductionContext(context);
-  const headline = prompt.trim().replace(/[.!?]+$/, '').slice(0, 54);
+  const headline = (normalizedContext.headline || prompt.trim().replace(/[.!?]+$/, '')).slice(0, 54);
+  const subheadline = normalizedContext.subheadline
+    || (prompt.trim().length > headline.length ? prompt.trim().slice(headline.length).trim().replace(/^[,.:;—\-\s]+/, '') : '');
   const shots = [
     {
       id: 'shot-01',
       purpose: 'Establish the visual world and create anticipation.',
       durationSeconds: 3,
-      onScreenCopy: 'A NEW SIGNAL',
+      onScreenCopy: subheadline || headline,
       mainVisual: 'A restrained geometric field with a single illuminated focal point.',
       composition: 'Centered focal point with generous negative space.',
       cameraBehavior: 'Slow, steady push toward the focal point.',
@@ -113,7 +119,7 @@ export function buildMockStoryboard(prompt, context = {}) {
       id: 'shot-03',
       purpose: 'Resolve the idea and leave the viewer with a memorable finish.',
       durationSeconds: 2,
-      onScreenCopy: 'BUILT TO MOVE',
+      onScreenCopy: subheadline || headline,
       mainVisual: 'A compact brand lockup on a calm, high-contrast field.',
       composition: 'Centered lockup with a clear ending hold.',
       cameraBehavior: 'Camera settles and holds through the final frame.',
@@ -270,6 +276,16 @@ function makeShotSpec(storyboardShot, index, context) {
         fontSize: Math.max(32, Math.round(context.height * 0.067)),
         anchor: 'middle',
       },
+      ...(context.subheadline ? [{
+        id: `shot-${index + 1}-subheadline`,
+        type: 'text',
+        content: context.subheadline,
+        x: context.width / 2,
+        y: context.height * 0.61,
+        fill: '#F8FAFC',
+        fontSize: Math.max(16, Math.round(context.height * 0.027)),
+        anchor: 'middle',
+      }] : []),
     ],
   };
 }
@@ -281,13 +297,13 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
   }
   let cursor = 0;
   const shots = storyboard.shots.map((shot, index) => {
-    const spec = shotSpecs[index];
-    const validation = validateSceneSpec(spec);
+    const sourceSpec = shotSpecs[index];
+    const validation = validateSceneSpec(sourceSpec);
     if (!validation.valid) {
       throw new Error(`Compiled shot "${shot.id}" is invalid: ${validation.errors.join(' ')}`);
     }
+    const spec = { ...sourceSpec, elements: [...sourceSpec.elements] };
     const expectedDurationFrames = Math.round(shot.durationSeconds * normalizedContext.fps);
-    const hasRenderableElements = spec.elements.every((element) => isRenderableElement(element, normalizedContext));
     const hasFullBackground = spec.elements.some((element) => (
       element.type === 'rect'
       && element.x === 0
@@ -299,6 +315,24 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     const preservesCopy = spec.elements.some((element) => (
       element.type === 'text' && element.content === shot.onScreenCopy
     ));
+    if (normalizedContext.subheadline && !spec.elements.some((element) => (
+      element.type === 'text' && element.content === normalizedContext.subheadline
+    ))) {
+      spec.elements.push({
+        id: `shot-${index + 1}-subheadline`,
+        type: 'text',
+        content: normalizedContext.subheadline,
+        x: normalizedContext.width / 2,
+        y: normalizedContext.height * 0.61,
+        fill: '#F8FAFC',
+        fontSize: Math.max(16, Math.round(normalizedContext.height * 0.027)),
+        anchor: 'middle',
+      });
+    }
+    const preservesSubheadline = !normalizedContext.subheadline || spec.elements.some((element) => (
+      element.type === 'text' && element.content === normalizedContext.subheadline
+    ));
+    const hasRenderableElements = spec.elements.every((element) => isRenderableElement(element, normalizedContext));
     const includesAccent = spec.elements.some((element) => (
       element.fill?.toLowerCase() === normalizedContext.accentColor.toLowerCase()
     ));
@@ -309,6 +343,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
       || Math.round(spec.durationInSeconds * normalizedContext.fps) !== expectedDurationFrames
       || !hasFullBackground
       || !preservesCopy
+      || !preservesSubheadline
       || !includesAccent
       || !hasRenderableElements
     ) {
@@ -328,6 +363,11 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
       durationSeconds: durationFrames / normalizedContext.fps,
       transitionIn: shot.transitionIn,
       transitionOut: shot.transitionOut,
+      palette: {
+        primary: normalizedContext.primaryColor,
+        accent: normalizedContext.accentColor,
+      },
+      hardConstraints: [...storyboard.hardConstraints],
       spec: { ...spec, width: normalizedContext.width, height: normalizedContext.height, fps: normalizedContext.fps, durationInSeconds: durationFrames / normalizedContext.fps },
     };
   });
@@ -338,6 +378,11 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     width: normalizedContext.width,
     height: normalizedContext.height,
     fps: normalizedContext.fps,
+    palette: {
+      primary: normalizedContext.primaryColor,
+      accent: normalizedContext.accentColor,
+    },
+    hardConstraints: [...storyboard.hardConstraints],
     totalFrames: cursor,
     durationInSeconds: cursor / normalizedContext.fps,
     shots,
@@ -359,6 +404,20 @@ export function validateTimeline(timeline) {
   }
   if (timeline.schemaVersion !== '1.0') {
     errors.push('Timeline schemaVersion must be "1.0".');
+  }
+  if (timeline.palette !== undefined && (
+    !timeline.palette
+    || !/^#[\da-f]{6}$/i.test(timeline.palette.primary || '')
+    || !/^#[\da-f]{6}$/i.test(timeline.palette.accent || '')
+  )) {
+    errors.push('Timeline palette must contain valid primary and accent colors.');
+  }
+  if (timeline.hardConstraints !== undefined && (
+    !Array.isArray(timeline.hardConstraints)
+    || timeline.hardConstraints.length === 0
+    || !timeline.hardConstraints.every(validString)
+  )) {
+    errors.push('Timeline hardConstraints must be a non-empty array of strings.');
   }
   if (!Array.isArray(timeline.shots) || timeline.shots.length === 0) {
     errors.push('Timeline must contain at least one shot.');
@@ -388,6 +447,20 @@ export function validateTimeline(timeline) {
         || Math.abs(shot.durationSeconds - shot.durationFrames / timeline.fps) > 0.0001
       ) {
         errors.push(`Timeline shot "${shot.shotId}" purpose or duration is invalid.`);
+      }
+      if (shot.palette !== undefined && (
+        !shot.palette
+        || !/^#[\da-f]{6}$/i.test(shot.palette.primary || '')
+        || !/^#[\da-f]{6}$/i.test(shot.palette.accent || '')
+      )) {
+        errors.push(`Timeline shot "${shot.shotId}" palette is invalid.`);
+      }
+      if (shot.hardConstraints !== undefined && (
+        !Array.isArray(shot.hardConstraints)
+        || shot.hardConstraints.length === 0
+        || !shot.hardConstraints.every(validString)
+      )) {
+        errors.push(`Timeline shot "${shot.shotId}" hardConstraints are invalid.`);
       }
       const sceneResult = validateSceneSpec(shot.spec);
       if (!sceneResult.valid) errors.push(`Timeline shot "${shot.shotId}" scene is invalid: ${sceneResult.errors.join(' ')}`);
@@ -469,9 +542,18 @@ function shotBackground(spec) {
 
 export async function createCreativePlan(prompt, context = {}, provider = null) {
   const normalizedContext = normalizeProductionContext(context);
-  const storyboard = provider?.generateStoryboard
+  const generatedStoryboard = provider?.generateStoryboard
     ? await provider.generateStoryboard(prompt, normalizedContext)
     : buildMockStoryboard(prompt, normalizedContext);
+  const storyboard = generatedStoryboard && Array.isArray(generatedStoryboard.shots)
+    ? { ...generatedStoryboard, shots: generatedStoryboard.shots.map((shot) => ({ ...shot })) }
+    : generatedStoryboard;
+  if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
+    if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
+    if (normalizedContext.subheadline && storyboard.shots.length > 1) {
+      storyboard.shots.at(-1).onScreenCopy = normalizedContext.subheadline;
+    }
+  }
   const validation = validateStoryboard(storyboard);
   if (!validation.valid) throw new Error(`Generated storyboard is invalid: ${validation.errors.join(' ')}`);
   return {

@@ -83,10 +83,16 @@
               <form class="prompt-card panel" id="prompt-form">
                 <div class="card-heading">
                   <div><p class="eyebrow">Active tool <span class="accent" id="active-tool">Flow Design</span></p><h2>Describe your motion brief</h2></div>
-                  <span class="mock-tag">GEMINI 3.8 / DETERMINISTIC MOCK</span>
+                  <span class="mock-tag">GEMINI 3.8 / OFFLINE MOCK</span>
                 </div>
                 <label class="sr-only" for="prompt-input">Motion brief</label>
                 <textarea id="prompt-input" name="prompt" rows="4" placeholder="Describe a scene, its visual language, and how it should move…" required>Kinetic typography intro with neon blue branding</textarea>
+                <div class="brief-controls">
+                  <label>Headline<input id="headline-input" name="headline" type="text" maxlength="54" placeholder="Derived from your brief"></label>
+                  <label>Sub-headline<input id="subheadline-input" name="subheadline" type="text" maxlength="100" placeholder="Optional supporting copy"></label>
+                  <label>Primary color<input id="primary-color-input" name="primaryColor" type="color" value="#0b0f19"></label>
+                  <label>Accent color<input id="accent-color-input" name="accentColor" type="color" value="#00f0ff"></label>
+                </div>
                 <div class="prompt-footer">
                   <span class="helper-text"><span class="status-dot"></span> Storyboard first · human approval before compile</span>
                   <button class="primary-button" type="submit">Generate creative storyboard <span aria-hidden="true">↗</span></button>
@@ -96,13 +102,25 @@
               <aside class="pipeline-card panel">
                 <div class="card-heading"><div><p class="eyebrow">Workspace status</p><h2>Pipeline overview</h2></div><span class="pulse-mark" aria-hidden="true"></span></div>
                 <div class="pipeline-list">
-                  <div><span>Creative provider</span><strong class="state-cyan">Gemini 3.8 / mock fallback</strong></div>
+                  <div><span>Creative provider</span><strong class="state-cyan">Gemini 3.8 / offline mock</strong></div>
                   <div><span>Storyboard gate</span><strong>Human approval required</strong></div>
                   <div><span>Local video render</span><strong>FFmpeg + frame QA</strong></div>
                   <div><span>Project state</span><strong class="mono" id="pipeline-project-state">BRIEF</strong></div>
                 </div>
                 <a class="text-link" href="./scene-01.html">Preview deterministic sample <span aria-hidden="true">→</span></a>
               </aside>
+            </section>
+
+            <section id="telemetry-panel" class="telemetry-panel panel" aria-labelledby="telemetry-title" aria-live="polite" hidden>
+              <div class="telemetry-header">
+                <span class="status-dot pulsing"></span>
+                <strong id="telemetry-title">Initializing production pipeline...</strong>
+                <span id="telemetry-percent" class="mono">0%</span>
+              </div>
+              <div class="progress-bar-track" role="progressbar" aria-label="Production progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="telemetry-progress-fill" class="progress-bar-fill"></div>
+              </div>
+              <pre id="telemetry-logs" class="telemetry-logs" aria-live="off"></pre>
             </section>
 
             <section class="storyboard-review panel" id="storyboard-review" aria-labelledby="storyboard-heading" hidden>

@@ -19,7 +19,7 @@ export async function generateProductionAction({
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const provider = new GeminiAIProvider({
       apiKey: apiKey.trim(),
@@ -30,11 +30,11 @@ export async function generateProductionAction({
     });
     return { action, ...(await run(provider)) };
   } catch (error) {
-    logger.warn('[api/generate] Gemini unavailable; using deterministic mock provider.', {
+    logger.warn('[api/generate] Gemini production planning failed.', {
       action,
       error: error.message,
     });
-    return { action, ...(await run(null)) };
+    throw new Error(`Gemini ${action} request failed: ${error.message}`);
   } finally {
     clearTimeout(timeout);
   }

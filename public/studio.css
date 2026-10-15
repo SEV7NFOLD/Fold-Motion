@@ -9,7 +9,7 @@
   --surface-raised: #101520;
   --line: rgba(148, 163, 184, 0.13);
   --muted: #8993a6;
-  --cyan: #5ce1ec;
+  --cyan: #00f0ff;
   --mono: 'Cascadia Code', Consolas, monospace;
 }
 
@@ -152,6 +152,23 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .primary-button span { margin-left: 5px; }
 .form-message { min-height: 0; margin: 0; color: #f0ac9f; font-size: 14px; }
 .form-message:not(:empty) { margin-top: 10px; }
+.brief-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px 72px; gap: 10px; margin-top: 12px; }
+.brief-controls label { display: grid; gap: 5px; color: #aeb8c8; font: 10px var(--mono); }
+.brief-controls input { min-width: 0; height: 36px; border: 1px solid #263342; border-radius: 7px; padding: 7px 9px; color: #e9edf5; background: #090d14; font: 12px var(--mono); }
+.brief-controls input[type="color"] { width: 100%; padding: 4px; cursor: pointer; }
+.brief-controls input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.telemetry-panel { margin-top: 16px; padding: 15px; background: #0b0f19; }
+.telemetry-header { display: flex; align-items: center; gap: 9px; min-width: 0; color: #e8f2f5; }
+.telemetry-header strong { overflow: hidden; flex: 1; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.telemetry-header .mono { color: var(--cyan); font-size: 12px; }
+.status-dot.pulsing { width: 8px; height: 8px; background: var(--cyan); box-shadow: 0 0 12px #00f0ff99; animation: telemetry-pulse 1.4s ease-in-out infinite; }
+.status-dot.telemetry-failed { background: #ff667f; box-shadow: 0 0 10px #ff005566; }
+.progress-bar-track { height: 6px; overflow: hidden; margin-top: 12px; border: 1px solid #283746; border-radius: 99px; background: #080b12; }
+.progress-bar-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #00f0ff, #ff0055); box-shadow: 0 0 12px #00f0ff66; transition: width .45s cubic-bezier(.22, 1, .36, 1); }
+.progress-bar-track.is-indeterminate .progress-bar-fill { width: 38% !important; animation: telemetry-progress 1.4s ease-in-out infinite alternate; }
+.telemetry-logs { max-height: 142px; overflow: auto; margin: 11px 0 0; border: 1px solid #202a36; border-radius: 7px; padding: 9px 11px; color: #a7c6d1; background: #080b12; font: 11px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@keyframes telemetry-pulse { 50% { opacity: .45; box-shadow: 0 0 3px #00f0ff33; } }
+@keyframes telemetry-progress { to { transform: translateX(164%); } }
 .spec-result { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
 .result-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .result-heading .eyebrow { margin: 0 0 4px; }
@@ -230,6 +247,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
   .qa-grid { grid-template-columns: 1fr; }
   .qa-card p:not(.eyebrow) { min-height: 0; }
   .state-steps { grid-template-columns: repeat(8, 120px); }
+  .brief-controls { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 680px) {
   .sidebar { position: static; width: auto; height: auto; padding: 12px 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
