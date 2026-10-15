@@ -27,6 +27,15 @@ logs while work is in progress. A floating telemetry dock remains visible
 across workspace tabs, can be minimized, and preserves its full log, progress,
 pipeline state, and collapsed/expanded preference across page reloads.
 
+## Storyboard API
+
+`POST /api/storyboard` accepts a JSON body with a required `brief` and optional
+`brand`, `duration` (6–120 seconds), `aspectRatio` (`16:9`, `9:16`, `4:5`, or
+`1:1`), `niche`, and `skipAI` boolean. It returns the deterministic rule-engine
+baseline enhanced with AI copy when available, plus the selected `source`,
+elapsed `totalMs`, provider `attempts`, and final `storyboard`. Use
+`GET /health` for the service health status.
+
 ## Production loop
 
 The orchestrator enforces:

@@ -53,6 +53,82 @@ test('serves JavaScript module files with a browser-compatible MIME type', async
   }
 });
 
+test('GET /health returns a healthy status and timestamp', async () => {
+  const server = await createStaticServer({ root: path.resolve('public') });
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/health`);
+    const result = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(result.status, 'healthy');
+    assert.ok(Number.isFinite(Date.parse(result.timestamp)));
+  } finally {
+    await server.close();
+  }
+});
+
+test('POST /api/storyboard returns a deterministic storyboard when skipAI is true', async () => {
+  const server = await createStaticServer({ root: path.resolve('public') });
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/storyboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        brief: 'A hotel launch film',
+        brand: 'The George Hotel',
+        duration: 15,
+        aspectRatio: '9:16',
+        niche: 'hospitality',
+        skipAI: true,
+      }),
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(result.success, true);
+    assert.equal(result.source, 'rules');
+    assert.equal(result.storyboard.brand, 'The George Hotel');
+    assert.equal(result.storyboard.niche, 'hospitality');
+    assert.equal(result.storyboard.aspectRatio, '9:16');
+    assert.equal(
+      result.storyboard.scenes.reduce((total, scene) => total + scene.duration, 0),
+      15,
+    );
+    assert.ok(result.totalMs >= 0);
+    assert.deepEqual(result.attempts, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test('POST /api/storyboard rejects missing briefs and invalid options', async () => {
+  const server = await createStaticServer({ root: path.resolve('public') });
+  const endpoint = `http://${server.host}:${server.port}/api/storyboard`;
+  const post = (body) => fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  try {
+    const missingBrief = await post({ brief: '  ' });
+    assert.equal(missingBrief.status, 400);
+    assert.match((await missingBrief.json()).error, /brief.*required/i);
+
+    const invalidOptions = await post({ brief: 'A hotel film', aspectRatio: '2:1' });
+    assert.equal(invalidOptions.status, 400);
+    assert.match((await invalidOptions.json()).error, /aspectRatio/);
+
+    const invalidDuration = await post({ brief: 'A hotel film', duration: 500 });
+    assert.equal(invalidDuration.status, 400);
+    assert.match((await invalidDuration.json()).error, /duration/);
+  } finally {
+    await server.close();
+  }
+});
+
 test('POST /api/generate begins with a validated storyboard and acceptance criteria', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'fold-motion-generate-'));
   const server = await createStaticServer({ root });

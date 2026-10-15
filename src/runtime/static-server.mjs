@@ -9,6 +9,7 @@ import { generateProductionAction } from './creative-api.mjs';
 import { getGeminiKeyPool } from '../ai/provider.mjs';
 import { validateStoryboard, validateTimeline } from '../production/production.mjs';
 import { transitionProject } from '../orchestrator/project-state.mjs';
+import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
 const MAX_RENDER_BODY_BYTES = 8 * 1024 * 1024;
@@ -283,36 +284,53 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
   await access(resolvedRoot);
 
   const server = http.createServer(async (request, response) => {
-    const { pathname } = new URL(request.url, 'http://127.0.0.1');
-    if (pathname === '/api/generate') {
-      await handleGenerateRequest(request, response);
-      return;
-    }
-    if (pathname === '/api/render') {
-      await handleRenderRequest(request, response, resolvedRoot);
-      return;
-    }
-    if (pathname === '/api/state') {
-      await handleStateRequest(request, response);
-      return;
-    }
-
-    if (!['GET', 'HEAD'].includes(request.method)) {
-      response.writeHead(405, { Allow: 'GET, HEAD' }).end();
-      return;
-    }
-
-    const isOutput = pathname.startsWith('/output/');
-    const filePath = isOutput
-      ? resolveOutputPath(resolvedRoot, request.url)
-      : resolveStaticPath(resolvedRoot, request.url);
-    if (!filePath) {
-      response.writeHead(403).end();
-      return;
-    }
-
     try {
-      await access(filePath);
+      const { pathname } = new URL(request.url, 'http://127.0.0.1');
+      if (pathname === '/api/storyboard') {
+        await handleStoryboardRequest(request, response);
+        return;
+      }
+      if (pathname === '/api/generate') {
+        await handleGenerateRequest(request, response);
+        return;
+      }
+      if (pathname === '/api/render') {
+        await handleRenderRequest(request, response, resolvedRoot);
+        return;
+      }
+      if (pathname === '/api/state') {
+        await handleStateRequest(request, response);
+        return;
+      }
+      if (pathname === '/health') {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end();
+          return;
+        }
+        sendJson(response, 200, { status: 'healthy', timestamp: new Date().toISOString() });
+        return;
+      }
+
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        response.writeHead(405, { Allow: 'GET, HEAD' }).end();
+        return;
+      }
+
+      const isOutput = pathname.startsWith('/output/');
+      const filePath = isOutput
+        ? resolveOutputPath(resolvedRoot, request.url)
+        : resolveStaticPath(resolvedRoot, request.url);
+      if (!filePath) {
+        response.writeHead(403).end();
+        return;
+      }
+
+      try {
+        await access(filePath);
+      } catch {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
+        return;
+      }
       response.writeHead(200, {
         'Content-Type': isOutput && path.extname(filePath) === '.mp4'
           ? 'video/mp4'
@@ -326,8 +344,16 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
       } else {
         createReadStream(filePath).pipe(response);
       }
-    } catch {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
+    } catch (error) {
+      console.error('[server-error]', error?.stack ?? error);
+      if (response.headersSent) {
+        response.destroy(error);
+      } else {
+        sendJson(response, 500, {
+          success: false,
+          error: error instanceof Error ? error.message : 'Internal Server Error',
+        });
+      }
     }
   });
 
