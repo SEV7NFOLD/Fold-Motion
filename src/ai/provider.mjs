@@ -141,12 +141,23 @@ export function getGeminiKeyPool(environment = process.env) {
   return [...new Set(keys)];
 }
 
+const OPENAI_COMPATIBLE_SYSTEM_PROMPT = [
+  'You are an automated motion design API.',
+  'Return only valid raw JSON matching the requested schema. Use only schema-defined keys.',
+  'Every headline must contain 3 to 25 characters, inclusive.',
+  'Every subheadline must contain 5 to 40 characters, inclusive.',
+  'Include exactly 2 to 4 shots in every storyboard.',
+  'Do not include markdown, conversational preambles, safety tags, or text outside the JSON value.',
+  'Preserve explicit user-provided copy and constraints exactly.',
+].join('\n');
+
 export class OpenAICompatibleAIProvider extends BaseAIProvider {
   constructor({
     name,
     endpoint,
     apiKey,
     model,
+    fallbackModels = [],
     fetchImpl = globalThis.fetch,
     headers = {},
   } = {}) {
@@ -160,6 +171,9 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
     super({ name, apiKey });
     this.endpoint = endpoint;
     this.model = model;
+    this.fallbackModels = [...new Set(fallbackModels.filter(
+      (fallbackModel) => typeof fallbackModel === 'string' && fallbackModel.trim() && fallbackModel !== model,
+    ).map((fallbackModel) => fallbackModel.trim()))];
     this.fetchImpl = fetchImpl;
     this.headers = headers;
   }
@@ -192,63 +206,112 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   }
 
   async generateStructuredJson(instruction) {
-    let response;
-    try {
-      response = await this.fetchImpl(this.endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          ...this.headers,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert motion design director. Return only valid raw JSON matching the requested FOLD Motion schema. Do not include markdown fences, conversational text, safety preambles, or any content outside the JSON value.',
-            },
-            { role: 'user', content: instruction },
-          ],
-          response_format: { type: 'json_object' },
-        }),
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch (error) {
-      throw new Error(`${this.name} request failed: ${error.message}`);
-    }
+    const timeoutMs = this.endpoint.includes('openrouter.ai') ? 35_000 : 20_000;
+    const models = [this.model, ...this.fallbackModels];
 
-    if (!response.ok) {
-      let detail = '';
+    for (let index = 0; index < models.length; index += 1) {
+      const model = models[index];
+      const requestBody = {
+        model,
+        messages: [
+          { role: 'system', content: OPENAI_COMPATIBLE_SYSTEM_PROMPT },
+          { role: 'user', content: instruction },
+        ],
+        response_format: { type: 'json_object' },
+      };
+
+      let response;
       try {
-        const errorBody = await response.json();
-        detail = errorBody.error?.message;
-      } catch {
-        try {
-          detail = (await response.text()).trim().slice(0, 300);
-        } catch {
-          detail = '';
+        response = await this.fetchImpl(this.endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            ...this.headers,
+          },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (error) {
+        throw new Error(`${this.name} request failed: ${error.message}`);
+      }
+
+      if (!response.ok) {
+        let detail = await this.readErrorDetail(response);
+        if (response.status === 400 && /response[_\s-]?format|json[_\s-]?object/i.test(detail)) {
+          const retryBody = { ...requestBody };
+          delete retryBody.response_format;
+          try {
+            response = await this.fetchImpl(this.endpoint, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+                ...this.headers,
+              },
+              body: JSON.stringify(retryBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+          } catch (error) {
+            throw new Error(`${this.name} retry without JSON mode failed: ${error.message}`);
+          }
+          if (!response.ok) detail = await this.readErrorDetail(response);
+        }
+
+        if (!response.ok) {
+          if (index < models.length - 1 && this.isModelUnavailable(response.status, detail)) {
+            continue;
+          }
+          const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
+          throw new Error(`${this.name} API returned HTTP ${response.status}${suffix}`);
         }
       }
-      const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
-      throw new Error(`${this.name} API returned HTTP ${response.status}${suffix}`);
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        throw new Error(`${this.name} returned an unreadable API response: ${error.message}`);
+      }
+      const rawContent = data.choices?.[0]?.message?.content;
+      if (rawContent === undefined || rawContent === null || rawContent === '') {
+        throw new Error(`${this.name} returned no structured production content.`);
+      }
+      try {
+        return extractAndParseJSON(rawContent);
+      } catch (error) {
+        throw new Error(`${this.name} returned invalid production JSON: ${error.message}`);
+      }
     }
 
-    let data;
+    throw new Error(`${this.name} has no available configured models.`);
+  }
+
+  async readErrorDetail(response) {
+    let body = '';
     try {
-      data = await response.json();
-    } catch (error) {
-      throw new Error(`${this.name} returned an unreadable API response: ${error.message}`);
+      const errorBody = await response.json();
+      body = typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody);
+    } catch {
+      try {
+        body = await response.text();
+      } catch {
+        body = '';
+      }
     }
-    const rawContent = data.choices?.[0]?.message?.content;
-    if (rawContent === undefined || rawContent === null || rawContent === '') {
-      throw new Error(`${this.name} returned no structured production content.`);
-    }
+    let detail = body;
     try {
-      return extractAndParseJSON(rawContent);
-    } catch (error) {
-      throw new Error(`${this.name} returned invalid production JSON: ${error.message}`);
+      const parsed = JSON.parse(body);
+      detail = parsed.error?.message || body;
+    } catch {
+      // Non-JSON provider errors are surfaced as plain text.
     }
+    return detail.trim().slice(0, 500);
+  }
+
+  isModelUnavailable(status, detail) {
+    return (status === 400 || status === 404)
+      && /model.{0,40}(not found|unavailable|decommission|does not exist|unsupported)|(?:not found|unavailable|decommission|does not exist|unsupported).{0,40}model/i.test(detail);
   }
 }
 

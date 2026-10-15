@@ -86,6 +86,12 @@ timeouts, and invalid structured output trigger the next provider; logs and
 Studio telemetry report each attempt and rotation without exposing
 credentials. Provider responses are sanitized to extract valid JSON from
 markdown fences or surrounding explanatory text before schema validation.
+OpenRouter requests allow up to 35 seconds; other OpenAI-compatible requests
+allow 20 seconds. Groq retries the `llama-3.1-8b-instant` model if
+`llama-3.3-70b-versatile` is reported unavailable. OpenAI-compatible requests
+also retry without JSON response-format mode when the endpoint rejects it, and
+their system prompt requires 2–4 shots with bounded generated headlines and
+subheadlines.
 Deterministic mock generation is used only after all configured providers fail
 or when no provider credentials are configured. The Vercel render endpoint
 returns an explicit unsupported response; use the Render deployment for cloud

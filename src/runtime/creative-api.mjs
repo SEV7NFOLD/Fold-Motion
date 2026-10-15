@@ -79,7 +79,8 @@ export async function generateProductionAction({
       environmentKey: 'GROQ_API_KEY',
       keyNumber: 1,
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'openai/gpt-oss-120b',
+      model: 'llama-3.3-70b-versatile',
+      fallbackModels: ['llama-3.1-8b-instant'],
     },
     {
       name: 'OpenRouter',
@@ -118,6 +119,7 @@ export async function generateProductionAction({
         endpoint: config.endpoint,
         apiKey: key,
         model: config.model,
+        fallbackModels: config.fallbackModels,
         fetchImpl,
         headers: config.headers,
       });

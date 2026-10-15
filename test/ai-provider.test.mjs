@@ -6,6 +6,7 @@ import {
   GeminiAIProvider,
   getGeminiKeyPool,
   MockAIProvider,
+  OpenAICompatibleAIProvider,
 } from '../src/ai/provider.mjs';
 import { validateSceneSpec } from '../scripts/qa/validate-scene-spec.mjs';
 
@@ -40,6 +41,115 @@ test('extractAndParseJSON handles objects, arrays, markdown, and conversational 
   assert.deepEqual(extractAndParseJSON(`\`\`\`json\n${JSON.stringify(array)}\n\`\`\``), array);
   assert.throws(() => extractAndParseJSON('User Safety: safe, no JSON here.'), /Invalid JSON output from provider/);
   assert.throws(() => extractAndParseJSON(42), /not a valid string or object/);
+});
+
+test('OpenRouter retries without response_format and uses the 35-second timeout', async () => {
+  const requests = [];
+  const timeoutValues = [];
+  const originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutValues.push(milliseconds);
+    return originalTimeout(milliseconds);
+  };
+  try {
+    const provider = new OpenAICompatibleAIProvider({
+      name: 'OpenRouter',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: 'router-secret',
+      model: 'openrouter/free',
+      headers: { 'HTTP-Referer': 'https://fold-motion.onrender.com' },
+      fetchImpl: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        requests.push({ options, body });
+        if (requests.length === 1) {
+          return {
+            ok: false,
+            status: 400,
+            async json() {
+              return { error: { message: 'response_format json_object is not supported.' } };
+            },
+          };
+        }
+        return {
+          ok: true,
+          async json() {
+            return { choices: [{ message: { content: 'User Safety: safe\n```json\n{"ok":true}\n```' } }] };
+          },
+        };
+      },
+    });
+
+    assert.deepEqual(await provider.generateStructuredJson('Make a storyboard.'), { ok: true });
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests.map(({ body }) => Boolean(body.response_format)), [true, false]);
+    assert.equal(requests[1].options.headers.Authorization, 'Bearer router-secret');
+    assert.equal(requests[1].options.headers['HTTP-Referer'], 'https://fold-motion.onrender.com');
+    assert.deepEqual(timeoutValues, [35_000, 35_000]);
+    assert.match(requests[0].body.messages[0].content, /3 to 25 characters/);
+    assert.match(requests[0].body.messages[0].content, /5 to 40 characters/);
+    assert.match(requests[0].body.messages[0].content, /exactly 2 to 4 shots/);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
+test('OpenAI-compatible providers use the 20-second timeout outside OpenRouter', async () => {
+  const timeoutValues = [];
+  const originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutValues.push(milliseconds);
+    return originalTimeout(milliseconds);
+  };
+  try {
+    const provider = new OpenAICompatibleAIProvider({
+      name: 'Groq',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: 'groq-secret',
+      model: 'llama-3.3-70b-versatile',
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          return { choices: [{ message: { content: '{"ok":true}' } }] };
+        },
+      }),
+    });
+    assert.deepEqual(await provider.generateStructuredJson('Make a storyboard.'), { ok: true });
+    assert.deepEqual(timeoutValues, [20_000]);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
+});
+
+test('OpenAI-compatible provider retries a decommissioned model with its next configured model', async () => {
+  const models = [];
+  const provider = new OpenAICompatibleAIProvider({
+    name: 'Groq',
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    apiKey: 'groq-secret',
+    model: 'llama-3.3-70b-versatile',
+    fallbackModels: ['llama-3.1-8b-instant'],
+    fetchImpl: async (_url, options) => {
+      const { model } = JSON.parse(options.body);
+      models.push(model);
+      return model === 'llama-3.3-70b-versatile'
+        ? {
+          ok: false,
+          status: 400,
+          async json() {
+            return { error: { message: 'The model has been decommissioned.' } };
+          },
+        }
+        : {
+          ok: true,
+          async json() {
+            return { choices: [{ message: { content: '{"ok":true}' } }] };
+          },
+        };
+    },
+  });
+
+  assert.deepEqual(await provider.generateStructuredJson('Make a storyboard.'), { ok: true });
+  assert.deepEqual(models, ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']);
 });
 
 test('MockAIProvider generates a scene using default context', async () => {
