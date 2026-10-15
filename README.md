@@ -65,8 +65,9 @@ Download important outputs promptly or move to a paid plan with a persistent
 disk for durable render storage. Add `GEMINI_API_KEY` when prompted during
 Blueprint setup to enable Gemini-backed storyboard and shot-spec generation;
 optionally add `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated
-`GEMINI_API_KEYS` value for sequential failover. Without a configured key, the
-deterministic mock provider remains available.
+`GEMINI_API_KEYS` value for sequential failover. `GROQ_API_KEY` and
+`OPENROUTER_API_KEY` are optional provider fallbacks, tried in that order after
+Gemini. The deterministic mock provider remains the final fallback.
 
 ## Deploy to Vercel
 
@@ -78,12 +79,14 @@ Set `GEMINI_API_KEY` in Vercel project settings to enable Gemini 3.8 Flash for
 storyboard and shot-spec generation. The key remains server-side. Gemini
 requests have a 30-second timeout. To configure failover, optionally add
 `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated `GEMINI_API_KEYS`
-list. Keys are tried sequentially; provider failures and invalid structured
-output are logged without exposing credentials, and deterministic mock
-generation is used only when no key is configured or all configured keys
-fail. The Studio telemetry log reports each key attempt and rotation. The
-Vercel render endpoint returns an explicit unsupported response; use the
-Render deployment for cloud rendering, QA, and delivery exports.
+list. Gemini keys are tried sequentially, followed by Groq (`GROQ_API_KEY`)
+and OpenRouter (`OPENROUTER_API_KEY`) when configured. Provider failures,
+timeouts, and invalid structured output trigger the next provider; logs and
+Studio telemetry report each attempt and rotation without exposing
+credentials. Deterministic mock generation is used only after all configured
+providers fail or when no provider credentials are configured. The Vercel
+render endpoint returns an explicit unsupported response; use the Render
+deployment for cloud rendering, QA, and delivery exports.
 
 ## Verify
 

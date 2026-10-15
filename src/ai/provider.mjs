@@ -87,6 +87,115 @@ export function getGeminiKeyPool(environment = process.env) {
   return [...new Set(keys)];
 }
 
+export class OpenAICompatibleAIProvider extends BaseAIProvider {
+  constructor({
+    name,
+    endpoint,
+    apiKey,
+    model,
+    fetchImpl = globalThis.fetch,
+    headers = {},
+  } = {}) {
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+      throw new Error(`${name || 'AI'} API key is required.`);
+    }
+    if (typeof fetchImpl !== 'function') {
+      throw new Error('A fetch implementation is required for the AI provider.');
+    }
+
+    super({ name, apiKey });
+    this.endpoint = endpoint;
+    this.model = model;
+    this.fetchImpl = fetchImpl;
+    this.headers = headers;
+  }
+
+  async generateStoryboard(prompt, context = {}) {
+    return this.generateStructuredJson([
+      'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON.',
+      'Return an object with id, title, audience, platform, narrativeConcept, creativeDirection, shots, hardConstraints, and acceptanceCriteria.',
+      'Include at least two purposeful shots. Every shot must include id, purpose, positive durationSeconds, onScreenCopy, mainVisual, composition, cameraBehavior, motionBehavior, transitionIn, transitionOut, and acceptanceCriteria.',
+      'Include acceptanceCriteria.technical and acceptanceCriteria.creative arrays. Preserve exact supplied headlines, subheadlines, hard constraints, and brand colors.',
+      `Creative brief:\n${prompt}`,
+      `Production context:\n${JSON.stringify(context)}`,
+    ].join('\n\n'));
+  }
+
+  async compileStoryboard(storyboard, context = {}) {
+    const result = await this.generateStructuredJson([
+      'Compile the approved FOLD Motion storyboard into deterministic scene specifications.',
+      'Return a JSON object with a "shotSpecs" array containing one scene specification per storyboard shot, in the same order.',
+      'Each scene must include id, title, width, height, fps, durationInSeconds, and elements. Each element must include id and type; include x, y, width, height, fill, content, fontSize, and anchor as appropriate.',
+      'Preserve exact on-screen copy, include a full-canvas background and readable text elements, use the requested dimensions and FPS, and use both brand colors. Include supplied subheadline copy in every shot.',
+      `Approved storyboard:\n${JSON.stringify(storyboard)}`,
+      `Production context:\n${JSON.stringify(context)}`,
+    ].join('\n\n'));
+    const shotSpecs = Array.isArray(result) ? result : result?.shotSpecs;
+    if (!Array.isArray(shotSpecs)) {
+      throw new Error(`${this.name} returned shot specifications in an invalid format.`);
+    }
+    return shotSpecs;
+  }
+
+  async generateStructuredJson(instruction) {
+    let response;
+    try {
+      response = await this.fetchImpl(this.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          ...this.headers,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert motion design director. Return only strict valid JSON matching the requested FOLD Motion schema.',
+            },
+            { role: 'user', content: instruction },
+          ],
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      throw new Error(`${this.name} request failed: ${error.message}`);
+    }
+
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const errorBody = await response.json();
+        detail = errorBody.error?.message;
+      } catch {
+        try {
+          detail = (await response.text()).trim().slice(0, 300);
+        } catch {
+          detail = '';
+        }
+      }
+      const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
+      throw new Error(`${this.name} API returned HTTP ${response.status}${suffix}`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error(`${this.name} returned an unreadable API response: ${error.message}`);
+    }
+    const rawText = data.choices?.[0]?.message?.content?.trim();
+    if (!rawText) throw new Error(`${this.name} returned no structured production content.`);
+    try {
+      return JSON.parse(rawText);
+    } catch (error) {
+      throw new Error(`${this.name} returned invalid production JSON: ${error.message}`);
+    }
+  }
+}
+
 export class GeminiAIProvider extends BaseAIProvider {
   constructor({ apiKey, model = 'gemini-3.8-flash', fetchImpl = globalThis.fetch } = {}) {
     if (typeof apiKey !== 'string' || !apiKey.trim()) {
