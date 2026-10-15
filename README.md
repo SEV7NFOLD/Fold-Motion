@@ -79,8 +79,9 @@ Set `GEMINI_API_KEY` in Vercel project settings to enable Gemini 3.8 Flash for
 storyboard and shot-spec generation. The key remains server-side. Gemini
 requests have a 30-second timeout. To configure failover, optionally add
 `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated `GEMINI_API_KEYS`
-list. Gemini keys are tried sequentially, followed by Groq (`GROQ_API_KEY`)
-and OpenRouter (`OPENROUTER_API_KEY`) when configured. Provider failures,
+list. Gemini keys are tried sequentially, followed by Groq (`GROQ_API_KEY`,
+`openai/gpt-oss-120b`) and OpenRouter (`OPENROUTER_API_KEY`, `openrouter/free`)
+when configured. Provider failures,
 timeouts, and invalid structured output trigger the next provider; logs and
 Studio telemetry report each attempt and rotation without exposing
 credentials. Deterministic mock generation is used only after all configured

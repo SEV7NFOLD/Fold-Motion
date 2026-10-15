@@ -79,14 +79,14 @@ export async function generateProductionAction({
       environmentKey: 'GROQ_API_KEY',
       keyNumber: 1,
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.1-70b-versatile',
+      model: 'openai/gpt-oss-120b',
     },
     {
       name: 'OpenRouter',
       environmentKey: 'OPENROUTER_API_KEY',
       keyNumber: 1,
       endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-      model: 'mistralai/mistral-7b-instruct:free',
+      model: 'openrouter/free',
       headers: {
         'HTTP-Referer': 'https://fold-motion.onrender.com',
         'X-Title': 'FOLD Motion Studio',

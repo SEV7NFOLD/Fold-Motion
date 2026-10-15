@@ -151,8 +151,8 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
     if (url.includes('api.groq.com')) return 'Groq';
     return 'OpenRouter';
   }), ['Gemini', 'Groq', 'OpenRouter']);
-  assert.equal(JSON.parse(requests[1].options.body).model, 'llama-3.1-70b-versatile');
-  assert.equal(JSON.parse(requests[2].options.body).model, 'mistralai/mistral-7b-instruct:free');
+  assert.equal(JSON.parse(requests[1].options.body).model, 'openai/gpt-oss-120b');
+  assert.equal(JSON.parse(requests[2].options.body).model, 'openrouter/free');
   assert.equal(requests[2].options.headers['HTTP-Referer'], 'https://fold-motion.onrender.com');
   assert.equal(result.provider, 'OpenRouter');
   assert.deepEqual(result.storyboard, storyboard);
