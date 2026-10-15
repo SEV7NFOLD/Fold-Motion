@@ -32,7 +32,7 @@ function createResponse(payload, status = 200) {
     status,
     async json() {
       return status === 200
-        ? { candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }] }
+        ? { candidates: [{ content: { parts: [{ text: typeof payload === 'string' ? payload : JSON.stringify(payload) }] } }] }
         : { error: { message: 'Temporarily unavailable.' } };
     },
   };
@@ -44,7 +44,7 @@ function createOpenAIResponse(payload, status = 200) {
     status,
     async json() {
       return status === 200
-        ? { choices: [{ message: { content: JSON.stringify(payload) } }] }
+        ? { choices: [{ message: { content: typeof payload === 'string' ? payload : JSON.stringify(payload) } }] }
         : { error: { message: 'Temporarily unavailable.' } };
     },
   };
@@ -63,7 +63,7 @@ test('Gemini generation retries keys sequentially and succeeds with the next key
       attemptedKeys.push(key);
       return key === 'first-secret'
         ? createResponse({}, 503)
-        : createResponse(storyboard);
+        : createResponse(`User Safety: safe\n\`\`\`json\n${JSON.stringify(storyboard)}\n\`\`\``);
     },
     logger: {
       info(message, details) { logs.push({ level: 'info', message, details }); },
@@ -138,7 +138,7 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
       requests.push({ url, options });
       if (url.includes('generativelanguage.googleapis.com')) return createResponse({}, 503);
       if (url.includes('api.groq.com')) return createOpenAIResponse({}, 503);
-      return createOpenAIResponse(storyboard);
+      return createOpenAIResponse(`Here is the storyboard:\n\`\`\`json\n${JSON.stringify(storyboard)}\n\`\`\``);
     },
     logger: {
       info(message, details) { logs.push({ level: 'info', message, details }); },
@@ -156,6 +156,7 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
   assert.equal(requests[2].options.headers['HTTP-Referer'], 'https://fold-motion.onrender.com');
   assert.equal(result.provider, 'OpenRouter');
   assert.deepEqual(result.storyboard, storyboard);
+  assert.match(JSON.parse(requests[2].options.body).messages[0].content, /Return only valid raw JSON/);
   assert.ok(result.telemetry.some(({ stage }) => stage === 'Rotating to OpenRouter'));
   assert.ok(logs.every(({ message, details }) => (
     !message.includes('gemini-secret')
@@ -204,7 +205,7 @@ test('Groq is tried when Gemini keys are absent and OpenRouter is skipped when u
     environment: { GROQ_API_KEY: 'groq-secret' },
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
-      return createOpenAIResponse(storyboard);
+      return createOpenAIResponse(`User Safety: safe\n${JSON.stringify(storyboard)}\nCompleted.`);
     },
     logger: { info() {}, warn() {} },
   });
@@ -212,6 +213,7 @@ test('Groq is tried when Gemini keys are absent and OpenRouter is skipped when u
   assert.equal(requests.length, 1);
   assert.match(requests[0].url, /^https:\/\/api\.groq\.com\//);
   assert.equal(result.provider, 'Groq');
+  assert.deepEqual(result.storyboard, storyboard);
 });
 
 test('OpenAI-compatible fallback compiles a storyboard from a shotSpecs response object', async () => {

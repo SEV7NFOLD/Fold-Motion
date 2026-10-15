@@ -2,6 +2,60 @@
  * Base AI Provider interface for FOLD Motion.
  * All concrete providers (OpenAI, Anthropic, Gemini, Mock) must implement this.
  */
+export function extractAndParseJSON(rawContent) {
+  if (rawContent !== null && typeof rawContent === 'object') return rawContent;
+  if (typeof rawContent !== 'string') {
+    throw new Error('Provider response content is not a valid string or object.');
+  }
+
+  const cleaned = rawContent.replace(/```[a-z0-9_-]*\s*/gi, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed !== null && typeof parsed === 'object') return parsed;
+  } catch {
+    // Provider output may contain explanatory text around the JSON payload.
+  }
+
+  let lastParseError;
+  for (let start = 0; start < cleaned.length; start += 1) {
+    const opening = cleaned[start];
+    if (opening !== '{' && opening !== '[') continue;
+
+    const stack = [opening];
+    let inString = false;
+    let escaped = false;
+    for (let cursor = start + 1; cursor < cleaned.length; cursor += 1) {
+      const character = cleaned[cursor];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') {
+        inString = true;
+      } else if (character === '{' || character === '[') {
+        stack.push(character);
+      } else if (character === '}' || character === ']') {
+        const expectedOpening = character === '}' ? '{' : '[';
+        if (stack.pop() !== expectedOpening) break;
+        if (stack.length === 0) {
+          try {
+            const parsed = JSON.parse(cleaned.slice(start, cursor + 1));
+            if (parsed !== null && typeof parsed === 'object') return parsed;
+          } catch (error) {
+            lastParseError = error;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  const detail = lastParseError ? ` ${lastParseError.message}` : '';
+  throw new Error(`Invalid JSON output from provider.${detail}`);
+}
+
 export class BaseAIProvider {
   constructor(options = {}) {
     this.name = options.name || 'base-provider';
@@ -152,7 +206,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
           messages: [
             {
               role: 'system',
-              content: 'You are an expert motion design director. Return only strict valid JSON matching the requested FOLD Motion schema.',
+              content: 'You are an expert motion design director. Return only valid raw JSON matching the requested FOLD Motion schema. Do not include markdown fences, conversational text, safety preambles, or any content outside the JSON value.',
             },
             { role: 'user', content: instruction },
           ],
@@ -186,10 +240,12 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
     } catch (error) {
       throw new Error(`${this.name} returned an unreadable API response: ${error.message}`);
     }
-    const rawText = data.choices?.[0]?.message?.content?.trim();
-    if (!rawText) throw new Error(`${this.name} returned no structured production content.`);
+    const rawContent = data.choices?.[0]?.message?.content;
+    if (rawContent === undefined || rawContent === null || rawContent === '') {
+      throw new Error(`${this.name} returned no structured production content.`);
+    }
     try {
-      return JSON.parse(rawText);
+      return extractAndParseJSON(rawContent);
     } catch (error) {
       throw new Error(`${this.name} returned invalid production JSON: ${error.message}`);
     }
@@ -262,7 +318,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     };
     return this.generateStructuredJson(
       [
-        'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON.',
+        'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         'Include at least two purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
@@ -306,7 +362,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     };
     const shotSpecs = await this.generateStructuredJson(
       [
-        'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot.',
+        'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         'Return a JSON array in the same order and with the same item count as the storyboard shots. Preserve exact on-screen copy, use the requested dimensions/FPS, include a full-canvas background and readable text elements, and use the brand primary/accent colors.',
         'Preserve any supplied subheadline as an additional readable text element in every shot.',
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -333,6 +389,11 @@ export class GeminiAIProvider extends BaseAIProvider {
           },
           body: JSON.stringify({
             contents: [{ parts: [{ text: instruction }] }],
+            systemInstruction: {
+              parts: [{
+                text: 'Return only valid raw JSON matching the provided response schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
+              }],
+            },
             generationConfig: { responseMimeType: 'application/json', responseSchema },
           }),
           signal: AbortSignal.timeout(30_000),
@@ -370,7 +431,7 @@ export class GeminiAIProvider extends BaseAIProvider {
       .trim();
     if (!rawText) throw new Error('Gemini returned no structured production content.');
     try {
-      return JSON.parse(rawText);
+      return extractAndParseJSON(rawText);
     } catch (error) {
       throw new Error(`Gemini returned invalid production JSON: ${error.message}`);
     }
@@ -425,10 +486,15 @@ export class GeminiAIProvider extends BaseAIProvider {
             'x-goog-api-key': this.apiKey,
           },
           body: JSON.stringify({
+            systemInstruction: {
+              parts: [{
+                text: 'Return only valid raw JSON matching the provided scene specification schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
+              }],
+            },
             contents: [{
               parts: [{
                 text: [
-                  'Generate one FOLD Motion scene specification as JSON. The scene must match the supplied context for dimensions, frame rate, duration, and colors. Create a concise title, a stable kebab-case scene id, and an elements array containing objects with string id and type fields. Do not include markdown.',
+                  'Generate one FOLD Motion scene specification as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text. The scene must match the supplied context for dimensions, frame rate, duration, and colors. Create a concise title, a stable kebab-case scene id, and an elements array containing objects with string id and type fields.',
                   `Motion brief:\n${prompt}`,
                   `Scene context:\n${JSON.stringify(context)}`,
                 ].join('\n\n'),
@@ -478,7 +544,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     }
 
     try {
-      return JSON.parse(rawText);
+      return extractAndParseJSON(rawText);
     } catch (error) {
       throw new Error(`Gemini returned invalid scene JSON: ${error.message}`);
     }

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BaseAIProvider, GeminiAIProvider, getGeminiKeyPool, MockAIProvider } from '../src/ai/provider.mjs';
+import {
+  BaseAIProvider,
+  extractAndParseJSON,
+  GeminiAIProvider,
+  getGeminiKeyPool,
+  MockAIProvider,
+} from '../src/ai/provider.mjs';
 import { validateSceneSpec } from '../scripts/qa/validate-scene-spec.mjs';
 
 test('BaseAIProvider stores provider options and requires an implementation', async () => {
@@ -22,6 +28,18 @@ test('Gemini key pool trims, orders, and deduplicates configured keys', () => {
     GEMINI_API_KEYS: 'second-key, third-key, first-key, ,fourth-key ',
   }), ['first-key', 'second-key', 'third-key', 'fourth-key']);
   assert.deepEqual(getGeminiKeyPool({}), []);
+});
+
+test('extractAndParseJSON handles objects, arrays, markdown, and conversational preambles', () => {
+  const object = { title: 'A {balanced} title', shots: [{ id: 'shot-1' }] };
+  const array = [{ id: 'scene-1' }, { id: 'scene-2' }];
+
+  assert.deepEqual(extractAndParseJSON(object), object);
+  assert.deepEqual(extractAndParseJSON('User Safety: safe\n```json\n{"ok":true}\n```\nGeneration complete.'), { ok: true });
+  assert.deepEqual(extractAndParseJSON(`Here is the requested result:\n${JSON.stringify(object)}\nHope this helps.`), object);
+  assert.deepEqual(extractAndParseJSON(`\`\`\`json\n${JSON.stringify(array)}\n\`\`\``), array);
+  assert.throws(() => extractAndParseJSON('User Safety: safe, no JSON here.'), /Invalid JSON output from provider/);
+  assert.throws(() => extractAndParseJSON(42), /not a valid string or object/);
 });
 
 test('MockAIProvider generates a scene using default context', async () => {
@@ -119,7 +137,11 @@ test('GeminiAIProvider requests JSON and parses a scene specification', async ()
       return {
         ok: true,
         async json() {
-          return { candidates: [{ content: { parts: [{ text: JSON.stringify(spec) }] } }] };
+          return {
+            candidates: [{
+              content: { parts: [{ text: `User Safety: safe\n\`\`\`json\n${JSON.stringify(spec)}\n\`\`\`` }] },
+            }],
+          };
         },
       };
     },
@@ -134,6 +156,7 @@ test('GeminiAIProvider requests JSON and parses a scene specification', async ()
   assert.equal(result.id, spec.id);
   assert.equal(result.width, 1920);
   assert.equal(JSON.parse(requestedOptions.body).generationConfig.responseMimeType, 'application/json');
+  assert.match(JSON.parse(requestedOptions.body).systemInstruction.parts[0].text, /Return only valid raw JSON/);
   assert.equal(validateSceneSpec(result).valid, true);
 });
 
@@ -212,7 +235,10 @@ test('GeminiAIProvider generates structured storyboard and shot-spec responses',
       return {
         ok: true,
         async json() {
-          return { candidates: [{ content: { parts: [{ text: JSON.stringify(response) }] } }] };
+          const content = requests.length === 1
+            ? `User Safety: safe\n\`\`\`json\n${JSON.stringify(response)}\n\`\`\``
+            : `Here are the scene specifications:\n${JSON.stringify(response)}`;
+          return { candidates: [{ content: { parts: [{ text: content }] } }] };
         },
       };
     },
@@ -224,4 +250,5 @@ test('GeminiAIProvider generates structured storyboard and shot-spec responses',
   assert.match(requests[0].url, /gemini-3\.8-flash/);
   assert.equal(requests[0].body.generationConfig.responseSchema.properties.shots.type, 'ARRAY');
   assert.equal(requests[1].body.generationConfig.responseSchema.type, 'ARRAY');
+  assert.match(requests[0].body.contents[0].parts[0].text, /Return only a raw JSON value/);
 });

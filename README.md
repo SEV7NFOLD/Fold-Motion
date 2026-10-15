@@ -84,10 +84,12 @@ list. Gemini keys are tried sequentially, followed by Groq (`GROQ_API_KEY`,
 when configured. Provider failures,
 timeouts, and invalid structured output trigger the next provider; logs and
 Studio telemetry report each attempt and rotation without exposing
-credentials. Deterministic mock generation is used only after all configured
-providers fail or when no provider credentials are configured. The Vercel
-render endpoint returns an explicit unsupported response; use the Render
-deployment for cloud rendering, QA, and delivery exports.
+credentials. Provider responses are sanitized to extract valid JSON from
+markdown fences or surrounding explanatory text before schema validation.
+Deterministic mock generation is used only after all configured providers fail
+or when no provider credentials are configured. The Vercel render endpoint
+returns an explicit unsupported response; use the Render deployment for cloud
+rendering, QA, and delivery exports.
 
 ## Verify
 
