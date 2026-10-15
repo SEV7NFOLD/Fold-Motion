@@ -25,8 +25,11 @@
           </nav>
           <div class="recent-projects">
             <p class="eyebrow">Recent projects</p>
-            <a href="./scene-01.html">Signal / 001 <span>4.0s</span></a>
-            <a href="./scene-01.html">Precision in Motion <span>SVG</span></a>
+            <div class="recent-project-list" id="recent-project-list" aria-label="Delivered projects"></div>
+            <div class="sample-project-links">
+              <a href="./scene-01.html">Signal / 001 <span>4.0s</span></a>
+              <a href="./scene-01.html">Precision in Motion <span>SVG</span></a>
+            </div>
           </div>
         </div>
         <div class="profile">
@@ -111,18 +114,6 @@
               </aside>
             </section>
 
-            <section id="telemetry-panel" class="telemetry-panel panel" aria-labelledby="telemetry-title" aria-live="polite" hidden>
-              <div class="telemetry-header">
-                <span class="status-dot pulsing"></span>
-                <strong id="telemetry-title">Initializing production pipeline...</strong>
-                <span id="telemetry-percent" class="mono">0%</span>
-              </div>
-              <div class="progress-bar-track" role="progressbar" aria-label="Production progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <div id="telemetry-progress-fill" class="progress-bar-fill"></div>
-              </div>
-              <pre id="telemetry-logs" class="telemetry-logs" aria-live="off"></pre>
-            </section>
-
             <section class="storyboard-review panel" id="storyboard-review" aria-labelledby="storyboard-heading" hidden>
               <div class="results-toolbar"><div><p class="eyebrow">Gate 1 · Human approval required</p><h2 id="storyboard-heading">Creative direction &amp; storyboard review</h2></div><span class="result-provider" id="storyboard-provider"></span></div>
               <div class="storyboard-summary"><div><h3 id="storyboard-title"></h3><p id="storyboard-concept"></p></div><p id="storyboard-direction"></p></div>
@@ -183,6 +174,23 @@
           </section>
         </div>
       </main>
+      <section id="telemetry-panel" class="telemetry-panel panel minimized" aria-labelledby="telemetry-title">
+        <div class="telemetry-dock-header">
+          <div class="telemetry-dock-heading">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="telemetry-status" class="telemetry-status">IDLE</span>
+            <strong id="telemetry-title" aria-live="polite">Ready for production brief.</strong>
+            <span id="telemetry-percent" class="mono">0%</span>
+          </div>
+          <button id="telemetry-toggle-btn" class="telemetry-toggle" type="button" aria-expanded="false" aria-controls="telemetry-dock-body">▲ Expand</button>
+        </div>
+        <div id="telemetry-dock-body" class="telemetry-dock-body">
+          <div class="progress-bar-track" role="progressbar" aria-label="Production progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="telemetry-progress-fill" class="progress-bar-fill"></div>
+          </div>
+          <div id="telemetry-logs" class="telemetry-logs" role="log" aria-live="off" aria-label="Production telemetry history"></div>
+        </div>
+      </section>
     </div>
   </body>
 </html>

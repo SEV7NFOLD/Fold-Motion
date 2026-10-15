@@ -1,6 +1,8 @@
 import { PROJECT_STATES } from './workflow-states.mjs';
 
 const STORAGE_KEY = 'fold-motion.project.v2';
+const PROJECTS_STORAGE_KEY = 'fold_motion_projects_archive';
+const TELEMETRY_STORAGE_KEY = 'fold_motion_telemetry_session';
 const DEFAULT_CONTEXT = {
   width: 1280,
   height: 720,
@@ -49,19 +51,112 @@ const telemetryPercent = document.getElementById('telemetry-percent');
 const telemetryProgress = document.getElementById('telemetry-progress-fill');
 const telemetryTrack = telemetryProgress.parentElement;
 const telemetryLogs = document.getElementById('telemetry-logs');
+const telemetryStatus = document.getElementById('telemetry-status');
+const telemetryToggle = document.getElementById('telemetry-toggle-btn');
+const telemetryDot = telemetryPanel.querySelector('.status-dot');
+const recentProjectList = document.getElementById('recent-project-list');
 
-function logTelemetry(stage, message, percent) {
+function getStoredTelemetry() {
+  const initial = {
+    logs: [],
+    lastPercent: 0,
+    lastStage: 'Ready for production brief.',
+    lastMessage: 'Telemetry dock is ready.',
+    status: 'IDLE',
+    pipelineState: 'BRIEF',
+    minimized: true,
+  };
+  try {
+    const stored = localStorage.getItem(TELEMETRY_STORAGE_KEY);
+    if (!stored) return initial;
+    const parsed = JSON.parse(stored);
+    const logs = Array.isArray(parsed.logs)
+      ? parsed.logs.filter((entry) => (
+        entry
+        && typeof entry.timestamp === 'string'
+        && typeof entry.stage === 'string'
+        && typeof entry.message === 'string'
+      ))
+      : [];
+    return {
+      ...initial,
+      ...parsed,
+      logs,
+      lastPercent: Number.isFinite(parsed.lastPercent)
+        ? Math.max(0, Math.min(100, Math.round(parsed.lastPercent)))
+        : initial.lastPercent,
+      status: ['IDLE', 'ACTIVE', 'COMPLETE', 'FAILED', 'PAUSED'].includes(parsed.status)
+        ? parsed.status
+        : initial.status,
+      minimized: typeof parsed.minimized === 'boolean' ? parsed.minimized : initial.minimized,
+    };
+  } catch (error) {
+    console.warn('Failed to load telemetry from storage.', error);
+    return initial;
+  }
+}
+
+function saveTelemetry(sessionData) {
+  try {
+    localStorage.setItem(TELEMETRY_STORAGE_KEY, JSON.stringify(sessionData));
+  } catch (error) {
+    console.warn('Failed to save telemetry to storage.', error);
+  }
+}
+
+function renderTelemetryUI(sessionData) {
   telemetryPanel.hidden = false;
-  telemetryTitle.textContent = stage;
-  const previous = Number.parseInt(telemetryPercent.textContent, 10) || 0;
-  const value = Math.max(0, Math.min(100, Math.round(Number.isFinite(percent) ? percent : previous)));
-  telemetryPercent.textContent = `${value}%`;
-  telemetryProgress.style.width = `${value}%`;
-  telemetryTrack.setAttribute('aria-valuenow', String(value));
-  const timestamp = new Date().toLocaleTimeString([], { hour12: false });
-  telemetryLogs.textContent += `${timestamp}  ${message}\n`;
-  telemetryLogs.textContent = telemetryLogs.textContent.split('\n').slice(-101).join('\n');
+  telemetryTitle.textContent = sessionData.lastStage;
+  telemetryPercent.textContent = `${sessionData.lastPercent}%`;
+  telemetryProgress.style.width = `${sessionData.lastPercent}%`;
+  telemetryTrack.setAttribute('aria-valuenow', String(sessionData.lastPercent));
+  telemetryStatus.textContent = sessionData.status;
+  telemetryStatus.className = `telemetry-status is-${sessionData.status.toLowerCase()}`;
+  telemetryDot.classList.toggle('pulsing', sessionData.status === 'ACTIVE');
+  telemetryDot.classList.toggle('telemetry-failed', sessionData.status === 'FAILED');
+  telemetryPanel.classList.toggle('minimized', sessionData.minimized);
+  telemetryToggle.textContent = sessionData.minimized ? '▲ Expand' : '▼ Minimize';
+  telemetryToggle.setAttribute('aria-expanded', String(!sessionData.minimized));
+
+  telemetryLogs.replaceChildren();
+  for (const entry of sessionData.logs) {
+    const row = document.createElement('div');
+    row.className = 'telemetry-line';
+    const timestamp = document.createElement('span');
+    timestamp.className = 'timestamp';
+    timestamp.textContent = entry.timestamp;
+    const stage = document.createElement('span');
+    stage.className = 'stage';
+    stage.textContent = entry.stage;
+    const message = document.createElement('span');
+    message.className = 'message';
+    message.textContent = entry.message;
+    row.append(timestamp, stage, message);
+    if (Number.isFinite(entry.percent)) {
+      const percent = document.createElement('span');
+      percent.className = 'mono';
+      percent.textContent = `${entry.percent}%`;
+      row.append(percent);
+    }
+    telemetryLogs.append(row);
+  }
   telemetryLogs.scrollTop = telemetryLogs.scrollHeight;
+}
+
+function logTelemetry(stage, message, percent, status) {
+  const sessionData = getStoredTelemetry();
+  const value = Number.isFinite(percent)
+    ? Math.max(0, Math.min(100, Math.round(percent)))
+    : sessionData.lastPercent;
+  const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+  sessionData.logs.push({ timestamp, stage, message, percent: Number.isFinite(percent) ? value : null });
+  sessionData.lastPercent = value;
+  sessionData.lastStage = stage;
+  sessionData.lastMessage = message;
+  sessionData.status = status || sessionData.status;
+  sessionData.pipelineState = project?.state || sessionData.pipelineState;
+  saveTelemetry(sessionData);
+  renderTelemetryUI(sessionData);
 }
 
 function emitServerTelemetry(events) {
@@ -73,10 +168,11 @@ function emitServerTelemetry(events) {
 }
 
 function beginTelemetry(stage, message, percent) {
-  telemetryLogs.textContent = '';
-  telemetryPanel.querySelector('.status-dot').classList.remove('telemetry-failed');
-  telemetryPanel.querySelector('.status-dot').classList.add('pulsing');
-  logTelemetry(stage, message, percent);
+  setTelemetryBusy(true);
+  const sessionData = getStoredTelemetry();
+  sessionData.minimized = false;
+  saveTelemetry(sessionData);
+  logTelemetry(stage, message, percent, 'ACTIVE');
 }
 
 function setTelemetryBusy(busy) {
@@ -85,16 +181,36 @@ function setTelemetryBusy(busy) {
 
 function finishTelemetry(stage, message, percent = 100) {
   setTelemetryBusy(false);
-  logTelemetry(stage, message, percent);
-  telemetryPanel.querySelector('.status-dot').classList.remove('pulsing', 'telemetry-failed');
+  logTelemetry(stage, message, percent, 'COMPLETE');
 }
 
 function failTelemetry(stage, message) {
   setTelemetryBusy(false);
-  logTelemetry(stage, message, Number.parseInt(telemetryPercent.textContent, 10) || 0);
-  const dot = telemetryPanel.querySelector('.status-dot');
-  dot.classList.remove('pulsing');
-  dot.classList.add('telemetry-failed');
+  logTelemetry(stage, message, undefined, 'FAILED');
+}
+
+function restoreTelemetrySession() {
+  const sessionData = getStoredTelemetry();
+  if (sessionData.status === 'ACTIVE') {
+    sessionData.status = 'PAUSED';
+    sessionData.lastStage = 'Production paused after page refresh';
+    sessionData.lastMessage = 'The previous request was interrupted by a page refresh; start again to resume work.';
+    sessionData.logs.push({
+      timestamp: new Date().toLocaleTimeString([], { hour12: false }),
+      stage: 'Session restored',
+      message: sessionData.lastMessage,
+      percent: sessionData.lastPercent,
+    });
+    saveTelemetry(sessionData);
+  }
+  renderTelemetryUI(sessionData);
+}
+
+function toggleTelemetryDock() {
+  const sessionData = getStoredTelemetry();
+  sessionData.minimized = !sessionData.minimized;
+  saveTelemetry(sessionData);
+  renderTelemetryUI(sessionData);
 }
 
 function startTelemetryHeartbeat(message) {
@@ -125,6 +241,127 @@ function createLocalProject(brief = '') {
     renderReport: null,
     history: [{ state: 'BRIEF', at: new Date().toISOString() }],
   };
+}
+
+function getSavedProjects() {
+  try {
+    const data = localStorage.getItem(PROJECTS_STORAGE_KEY);
+    if (!data) return [];
+    const projects = JSON.parse(data);
+    if (!Array.isArray(projects)) {
+      console.warn('Project archive is not a list; ignoring its contents.');
+      return [];
+    }
+    return projects.filter((entry) => (
+      entry
+      && typeof entry.id === 'string'
+      && entry.project
+      && typeof entry.project === 'object'
+      && entry.project.state === 'DELIVERED'
+    ));
+  } catch (error) {
+    console.warn('Failed to load project archive.', error);
+    return [];
+  }
+}
+
+function projectDisplayName(savedProject) {
+  const briefTitle = typeof savedProject.brief === 'string'
+    ? savedProject.brief.split(/\r?\n/, 1)[0].replace(/^Project:\s*/i, '').trim()
+    : '';
+  return savedProject.storyboard?.title
+    || savedProject.context?.headline
+    || briefTitle
+    || 'Untitled Motion';
+}
+
+function projectDuration(savedProject) {
+  const duration = savedProject.timeline?.durationInSeconds
+    ?? savedProject.storyboard?.shots?.reduce((total, shot) => total + (Number(shot.durationSeconds) || 0), 0);
+  return Number.isFinite(duration) && duration > 0 ? `${duration.toFixed(1)}s` : '—';
+}
+
+function renderProjectsSidebar() {
+  const savedProjects = getSavedProjects();
+  recentProjectList.replaceChildren();
+  if (savedProjects.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'archive-empty';
+    empty.textContent = 'No delivered projects yet.';
+    recentProjectList.append(empty);
+    return;
+  }
+
+  for (const saved of savedProjects) {
+    const button = document.createElement('button');
+    button.className = 'archive-project';
+    button.type = 'button';
+    button.dataset.projectId = saved.id;
+    button.classList.toggle('is-active', project.id === saved.id);
+    button.setAttribute('aria-label', `Load ${projectDisplayName(saved.project)}, ${projectDuration(saved.project)}`);
+    if (project.id === saved.id) button.setAttribute('aria-current', 'true');
+
+    const name = document.createElement('span');
+    name.className = 'archive-project-copy';
+    name.textContent = projectDisplayName(saved.project);
+    const duration = document.createElement('span');
+    duration.className = 'archive-project-duration';
+    duration.textContent = projectDuration(saved.project);
+    button.append(name, duration);
+    recentProjectList.append(button);
+  }
+}
+
+function persistCurrentProject() {
+  if (project.state !== 'DELIVERED') return false;
+  const archive = getSavedProjects();
+  const record = {
+    id: project.id,
+    name: projectDisplayName(project),
+    brief: project.brief,
+    status: 'DELIVERED',
+    archivedAt: new Date().toISOString(),
+    duration: projectDuration(project),
+    project: JSON.parse(JSON.stringify(project)),
+  };
+  const existingIndex = archive.findIndex((entry) => entry.id === record.id);
+  if (existingIndex >= 0) archive.splice(existingIndex, 1);
+  archive.unshift(record);
+
+  try {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(archive));
+  } catch (error) {
+    console.error('Failed to save delivered project to the archive.', error);
+    logTelemetry('Project archive failed', `The project was delivered but could not be saved to browser storage: ${error.message}`, undefined, 'COMPLETE');
+    deliveryStatus.textContent = 'Delivered · archive save failed';
+    return false;
+  }
+  renderProjectsSidebar();
+  logTelemetry('Project archived', 'Delivered project saved to recent project history.', 100, 'COMPLETE');
+  return true;
+}
+
+function loadArchivedProject(projectId) {
+  const saved = getSavedProjects().find((entry) => entry.id === projectId);
+  if (!saved) {
+    logTelemetry('Project archive error', 'The selected delivered project is no longer available in browser storage.', undefined, 'FAILED');
+    return;
+  }
+  project = JSON.parse(JSON.stringify(saved.project));
+  project.context = { ...DEFAULT_CONTEXT, ...(project.context || {}) };
+  promptInput.value = project.brief || '';
+  document.getElementById('headline-input').value = project.context.headline || '';
+  document.getElementById('subheadline-input').value = project.context.subheadline || '';
+  document.getElementById('primary-color-input').value = project.context.primaryColor;
+  document.getElementById('accent-color-input').value = project.context.accentColor;
+  formMessage.textContent = '';
+  document.getElementById('render-message').textContent = '';
+  qaMessage.textContent = '';
+  persistProject();
+  renderProject();
+  renderProjectsSidebar();
+  showView('studio');
+  logTelemetry('Project restored', `${projectDisplayName(project)} restored from delivered project history.`, 100, 'COMPLETE');
 }
 
 function readSavedProject() {
@@ -170,6 +407,7 @@ async function transitionTo(nextState, evidence) {
   });
   project = result.project;
   persistProject();
+  if (nextState === 'DELIVERED') persistCurrentProject();
   renderProject();
 }
 
@@ -404,6 +642,7 @@ function renderProject() {
   renderTimeline();
   renderQa();
   renderDelivery();
+  renderProjectsSidebar();
   persistProject();
 }
 
@@ -484,6 +723,7 @@ async function renderProduction() {
 }
 
 for (const button of navButtons) button.addEventListener('click', () => showView(button.dataset.view));
+telemetryToggle.addEventListener('click', toggleTelemetryDock);
 
 for (const button of document.querySelectorAll('.tool-pill')) {
   button.addEventListener('click', () => {
@@ -514,6 +754,7 @@ for (const button of document.querySelectorAll('.category-chip')) {
 
 document.getElementById('new-production').addEventListener('click', () => {
   project = createLocalProject();
+  logTelemetry('New production ready', 'Telemetry is ready for a new brief.', 0, 'IDLE');
   promptInput.value = '';
   document.getElementById('headline-input').value = '';
   document.getElementById('subheadline-input').value = '';
@@ -525,6 +766,11 @@ document.getElementById('new-production').addEventListener('click', () => {
   renderProject();
   showView('studio');
   promptInput.focus();
+});
+
+recentProjectList.addEventListener('click', (event) => {
+  const projectButton = event.target.closest('button[data-project-id]');
+  if (projectButton) loadArchivedProject(projectButton.dataset.projectId);
 });
 
 promptForm.addEventListener('submit', async (event) => {
@@ -604,4 +850,5 @@ if (project.context) {
   document.getElementById('primary-color-input').value = project.context.primaryColor || DEFAULT_CONTEXT.primaryColor;
   document.getElementById('accent-color-input').value = project.context.accentColor || DEFAULT_CONTEXT.accentColor;
 }
+restoreTelemetrySession();
 renderProject();

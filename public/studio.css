@@ -44,9 +44,14 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .nav-icon { display: inline-block; width: 23px; color: inherit; font-size: 14px; }
 .recent-projects { padding-top: 19px; border-top: 1px solid var(--line); }
 .recent-projects .eyebrow { padding: 0 9px; margin: 0 0 10px; }
-.recent-projects a { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border-radius: 7px; color: #cbd5e1; font-size: 14px; }
-.recent-projects a:hover { background: #10151f; color: #fff; }
-.recent-projects a span { font: 14px var(--mono); color: #a8b5c7; }
+.recent-projects a, .archive-project { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 7px; padding: 9px; color: #cbd5e1; background: transparent; font: 14px 'Segoe UI', system-ui, sans-serif; text-align: left; cursor: pointer; }
+.recent-projects a:hover, .archive-project:hover { background: #10151f; color: #fff; }
+.recent-projects a span, .archive-project-duration { flex: 0 0 auto; color: #a8b5c7; font: 10px var(--mono); }
+.recent-project-list { display: grid; max-height: min(34vh, 300px); gap: 2px; overflow-y: auto; }
+.archive-project.is-active { border: 1px solid #00f0ff55; color: var(--cyan); background: #102027; }
+.archive-project-copy { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.archive-empty { margin: 0; padding: 8px 9px; color: #778398; font: 10px/1.5 var(--mono); }
+.sample-project-links { padding-top: 5px; }
 .profile { display: flex; align-items: center; gap: 10px; padding: 13px 7px 2px; border-top: 1px solid var(--line); }
 .profile-avatar { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 50%; color: white; font-size: 9px; font-weight: 700; background: linear-gradient(135deg, #6366f1, #9333ea); }
 .profile strong, .profile small { display: block; }
@@ -157,16 +162,33 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .brief-controls input { min-width: 0; height: 36px; border: 1px solid #263342; border-radius: 7px; padding: 7px 9px; color: #e9edf5; background: #090d14; font: 12px var(--mono); }
 .brief-controls input[type="color"] { width: 100%; padding: 4px; cursor: pointer; }
 .brief-controls input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.telemetry-panel { margin-top: 16px; padding: 15px; background: #0b0f19; }
-.telemetry-header { display: flex; align-items: center; gap: 9px; min-width: 0; color: #e8f2f5; }
-.telemetry-header strong { overflow: hidden; flex: 1; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.telemetry-header .mono { color: var(--cyan); font-size: 12px; }
+.telemetry-panel { position: fixed; right: 0; bottom: 0; left: 248px; z-index: 9999; display: flex; max-height: 320px; flex-direction: column; overflow: hidden; border: 0; border-top: 1px solid #00f0ff33; border-radius: 12px 0 0; background: rgba(11, 15, 25, .97); box-shadow: 0 -10px 30px #0009; backdrop-filter: blur(12px); transition: transform .3s cubic-bezier(.4, 0, .2, 1); }
+.telemetry-dock-header { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #ffffff0d; padding: 8px 16px 8px 20px; background: #0b0f19; }
+.telemetry-dock-heading { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; color: #e8f2f5; }
+.telemetry-dock-heading strong { overflow: hidden; flex: 1; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.telemetry-dock-heading .mono { color: var(--cyan); font-size: 12px; }
+.telemetry-status { flex: 0 0 auto; border: 1px solid #445263; border-radius: 99px; padding: 3px 7px; color: #aab8c8; font: 9px var(--mono); letter-spacing: .07em; }
+.telemetry-status.is-active { border-color: #00f0ff66; color: var(--cyan); }
+.telemetry-status.is-complete { border-color: #54d6a166; color: #8be3b4; }
+.telemetry-status.is-failed { border-color: #ff667f88; color: #ff8a9c; }
+.telemetry-toggle { flex: 0 0 auto; border: 1px solid #293645; border-radius: 6px; padding: 5px 8px; color: #cbd5e1; background: #111722; font: 10px var(--mono); cursor: pointer; }
+.telemetry-toggle:hover { border-color: #00f0ff66; color: var(--cyan); }
+.telemetry-dock-body { overflow-y: auto; max-height: 276px; padding: 12px 20px 15px; transition: opacity .2s ease; }
+.telemetry-panel.minimized { transform: translateY(calc(100% - 44px)); }
+.telemetry-panel.minimized .telemetry-dock-body { visibility: hidden; opacity: 0; }
+.telemetry-panel .progress-bar-track { margin-top: 0; }
 .status-dot.pulsing { width: 8px; height: 8px; background: var(--cyan); box-shadow: 0 0 12px #00f0ff99; animation: telemetry-pulse 1.4s ease-in-out infinite; }
 .status-dot.telemetry-failed { background: #ff667f; box-shadow: 0 0 10px #ff005566; }
 .progress-bar-track { height: 6px; overflow: hidden; margin-top: 12px; border: 1px solid #283746; border-radius: 99px; background: #080b12; }
 .progress-bar-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #00f0ff, #ff0055); box-shadow: 0 0 12px #00f0ff66; transition: width .45s cubic-bezier(.22, 1, .36, 1); }
 .progress-bar-track.is-indeterminate .progress-bar-fill { width: 38% !important; animation: telemetry-progress 1.4s ease-in-out infinite alternate; }
-.telemetry-logs { max-height: 142px; overflow: auto; margin: 11px 0 0; border: 1px solid #202a36; border-radius: 7px; padding: 9px 11px; color: #a7c6d1; background: #080b12; font: 11px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.telemetry-logs { max-height: 218px; overflow: auto; margin-top: 10px; border: 1px solid #202a36; border-radius: 7px; padding: 9px 11px; color: #a7c6d1; background: #080b12; font: 11px/1.65 var(--mono); }
+.telemetry-line { display: grid; grid-template-columns: 66px minmax(100px, max-content) minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
+.telemetry-line + .telemetry-line { margin-top: 2px; }
+.telemetry-line .timestamp { color: #718096; }
+.telemetry-line .stage { color: var(--cyan); }
+.telemetry-line .message { min-width: 0; color: #a7c6d1; }
+main.main-content { padding-bottom: 48px; }
 @keyframes telemetry-pulse { 50% { opacity: .45; box-shadow: 0 0 3px #00f0ff33; } }
 @keyframes telemetry-progress { to { transform: translateX(164%); } }
 .spec-result { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
@@ -248,6 +270,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
   .qa-card p:not(.eyebrow) { min-height: 0; }
   .state-steps { grid-template-columns: repeat(8, 120px); }
   .brief-controls { grid-template-columns: 1fr 1fr; }
+  .telemetry-panel { left: 210px; }
 }
 @media (max-width: 680px) {
   .sidebar { position: static; width: auto; height: auto; padding: 12px 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -259,6 +282,14 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
   .nav-icon { width: auto; margin-right: 4px; }
   .recent-projects, .profile { display: none; }
   .main-content { margin-left: 0; }
+  .telemetry-panel { left: 0; }
+  .telemetry-dock-header { gap: 7px; padding-inline: 10px; }
+  .telemetry-dock-heading { gap: 6px; }
+  .telemetry-dock-heading strong { font-size: 11px; }
+  .telemetry-status { font-size: 8px; }
+  .telemetry-toggle { padding-inline: 6px; font-size: 9px; }
+  .telemetry-dock-body { padding-inline: 10px; }
+  .telemetry-line { grid-template-columns: 55px minmax(75px, max-content) minmax(0, 1fr); gap: 7px; font-size: 10px; }
   .topbar { height: 48px; padding-inline: 16px; }
   .branch-pill { padding: 6px 8px; font-size: 8px; }
   .content-wrap { padding: 17px 15px 40px; }

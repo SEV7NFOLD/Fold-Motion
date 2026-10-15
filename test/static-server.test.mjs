@@ -26,6 +26,10 @@ test('serves the studio entry point at the site root', async () => {
     assert.match(response.headers.get('content-type'), /^text\/html;/);
     assert.match(html, /FOLD Motion — Studio/);
     assert.match(html, /studio\.js/);
+    assert.match(html, /id="recent-project-list"/);
+    assert.match(html, /id="telemetry-panel" class="telemetry-panel panel minimized"/);
+    assert.match(html, /id="telemetry-toggle-btn"/);
+    assert.match(html, /id="telemetry-logs"/);
   } finally {
     await server.close();
   }

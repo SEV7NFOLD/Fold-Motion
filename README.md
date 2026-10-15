@@ -16,10 +16,16 @@ and acceptance specification. Approve the storyboard to compile the shot specs
 and canonical `timeline.json`; then render the sequence and run technical and
 creative QA. Final-cut approval and delivery are separate explicit gates.
 Project state is saved in the browser's local storage.
+Delivered productions are archived in the browser's local storage and appear in
+the Recent projects sidebar with their titles and durations. Selecting an
+archived project restores its brief, storyboard, timeline, and delivery data;
+starting a new production leaves the archive intact.
 The Studio accepts an optional exact headline and sub-headline plus primary
 and accent colors; these values are carried into the timeline and rendered
 frames. Generation and rendering show phase-based telemetry and timestamped
-logs while work is in progress.
+logs while work is in progress. A floating telemetry dock remains visible
+across workspace tabs, can be minimized, and preserves its full log, progress,
+pipeline state, and collapsed/expanded preference across page reloads.
 
 ## Production loop
 
