@@ -53,7 +53,8 @@ const telemetryLogs = document.getElementById('telemetry-logs');
 function logTelemetry(stage, message, percent) {
   telemetryPanel.hidden = false;
   telemetryTitle.textContent = stage;
-  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  const previous = Number.parseInt(telemetryPercent.textContent, 10) || 0;
+  const value = Math.max(0, Math.min(100, Math.round(Number.isFinite(percent) ? percent : previous)));
   telemetryPercent.textContent = `${value}%`;
   telemetryProgress.style.width = `${value}%`;
   telemetryTrack.setAttribute('aria-valuenow', String(value));
@@ -61,6 +62,14 @@ function logTelemetry(stage, message, percent) {
   telemetryLogs.textContent += `${timestamp}  ${message}\n`;
   telemetryLogs.textContent = telemetryLogs.textContent.split('\n').slice(-101).join('\n');
   telemetryLogs.scrollTop = telemetryLogs.scrollHeight;
+}
+
+function emitServerTelemetry(events) {
+  for (const event of events || []) {
+    if (event && typeof event.stage === 'string' && typeof event.message === 'string') {
+      logTelemetry(event.stage, event.message, event.percent);
+    }
+  }
 }
 
 function beginTelemetry(stage, message, percent) {
@@ -146,6 +155,7 @@ async function requestJson(url, body) {
   } catch {
     throw new Error(`API returned non-JSON content (HTTP ${response.status}): ${responseText.slice(0, 300)}`);
   }
+  emitServerTelemetry(result.telemetry);
   if (!response.ok || !result.success) {
     throw new Error(result.error || `API request failed with HTTP ${response.status}.`);
   }

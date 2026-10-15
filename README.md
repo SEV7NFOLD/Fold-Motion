@@ -58,7 +58,9 @@ The Free service has ephemeral storage: rendered videos and QA evidence under
 Download important outputs promptly or move to a paid plan with a persistent
 disk for durable render storage. Add `GEMINI_API_KEY` when prompted during
 Blueprint setup to enable Gemini-backed storyboard and shot-spec generation;
-without it, the deterministic mock provider remains available.
+optionally add `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated
+`GEMINI_API_KEYS` value for sequential failover. Without a configured key, the
+deterministic mock provider remains available.
 
 ## Deploy to Vercel
 
@@ -68,11 +70,14 @@ repository root as the Root Directory and the **Other** framework preset.
 
 Set `GEMINI_API_KEY` in Vercel project settings to enable Gemini 3.8 Flash for
 storyboard and shot-spec generation. The key remains server-side. Gemini
-requests have a 30-second timeout. Provider failures and invalid structured
-output are logged and returned as explicit errors; deterministic mock
-generation is used only when no Gemini key is configured. The Vercel render
-endpoint returns an explicit unsupported response; use the Render deployment
-for cloud rendering, QA, and delivery exports.
+requests have a 30-second timeout. To configure failover, optionally add
+`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated `GEMINI_API_KEYS`
+list. Keys are tried sequentially; provider failures and invalid structured
+output are logged without exposing credentials, and deterministic mock
+generation is used only when no key is configured or all configured keys
+fail. The Studio telemetry log reports each key attempt and rotation. The
+Vercel render endpoint returns an explicit unsupported response; use the
+Render deployment for cloud rendering, QA, and delivery exports.
 
 ## Verify
 

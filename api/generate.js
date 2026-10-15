@@ -1,5 +1,6 @@
 import { generateProductionAction } from '../src/runtime/creative-api.mjs';
 import { validateStoryboard } from '../src/production/production.mjs';
+import { getGeminiKeyPool } from '../src/ai/provider.mjs';
 
 const defaultContext = {
   width: 1280,
@@ -52,11 +53,15 @@ export default async function generate(request, response) {
       prompt: body.prompt,
       storyboard: body.storyboard,
       context: body.context ?? defaultContext,
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKeys: getGeminiKeyPool(),
     });
     return response.status(200).json({ success: true, ...result });
   } catch (error) {
     console.error('[api/generate] Production planning failed.', { action, error: error.message });
-    return response.status(500).json({ success: false, error: error.message });
+    return response.status(500).json({
+      success: false,
+      error: error.message,
+      telemetry: error.telemetry,
+    });
   }
 }

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { generateProductionAction } from './creative-api.mjs';
+import { getGeminiKeyPool } from '../ai/provider.mjs';
 import { validateStoryboard, validateTimeline } from '../production/production.mjs';
 import { transitionProject } from '../orchestrator/project-state.mjs';
 
@@ -121,11 +122,11 @@ async function handleGenerateRequest(request, response) {
       prompt: body.prompt,
       storyboard: body.storyboard,
       context: body.context ?? DEFAULT_SCENE_CONTEXT,
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKeys: getGeminiKeyPool(),
     });
     sendJson(response, 200, { success: true, ...result });
   } catch (error) {
-    sendJson(response, 500, { success: false, error: error.message });
+    sendJson(response, 500, { success: false, error: error.message, telemetry: error.telemetry });
   }
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BaseAIProvider, GeminiAIProvider, MockAIProvider } from '../src/ai/provider.mjs';
+import { BaseAIProvider, GeminiAIProvider, getGeminiKeyPool, MockAIProvider } from '../src/ai/provider.mjs';
 import { validateSceneSpec } from '../scripts/qa/validate-scene-spec.mjs';
 
 test('BaseAIProvider stores provider options and requires an implementation', async () => {
@@ -12,6 +12,16 @@ test('BaseAIProvider stores provider options and requires an implementation', as
     provider.generateSceneSpec('A scene'),
     /generateSceneSpec\(\) must be implemented/,
   );
+});
+
+test('Gemini key pool trims, orders, and deduplicates configured keys', () => {
+  assert.deepEqual(getGeminiKeyPool({
+    GEMINI_API_KEY: ' first-key ',
+    GEMINI_API_KEY_2: 'second-key',
+    GEMINI_API_KEY_3: '',
+    GEMINI_API_KEYS: 'second-key, third-key, first-key, ,fourth-key ',
+  }), ['first-key', 'second-key', 'third-key', 'fourth-key']);
+  assert.deepEqual(getGeminiKeyPool({}), []);
 });
 
 test('MockAIProvider generates a scene using default context', async () => {
