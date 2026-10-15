@@ -4,10 +4,12 @@ import { createStaticServer } from '../src/runtime/static-server.mjs';
 const port = Number.parseInt(process.env.PORT ?? '4173', 10);
 const server = await createStaticServer({
   root: path.join(process.cwd(), 'public'),
+  host: process.env.HOST ?? '0.0.0.0',
   port,
 });
 
-console.log(`FOLD Motion preview: http://${server.host}:${server.port}`);
+const displayHost = server.host === '0.0.0.0' ? 'localhost' : server.host;
+console.log(`FOLD Motion preview: http://${displayHost}:${server.port}`);
 
 const stop = async () => {
   await server.close();
