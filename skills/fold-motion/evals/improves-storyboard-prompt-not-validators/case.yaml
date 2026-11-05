@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: improves-storyboard-prompt-not-validators
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Edits storyboard-director.mjs and keeps the exported STORYBOARD_DIRECTOR string. Adds specific guidance against wordiness and for variety between shots
+  using only what the engine can render (scale, position, alignment, accent placement, pacing), keeps the exact-copy rule and the description of what the renderer can make,
+  adds nothing that asks for camera moves, footage or sound, and does not claim the improvement is proven without seeing live Gemini output.

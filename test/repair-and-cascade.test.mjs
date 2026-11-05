@@ -223,3 +223,71 @@ test('normalizeHexColor accepts common color spellings', () => {
   assert.equal(normalizeHexColor('#00F0FFCC'), '#00F0FF');
   assert.equal(normalizeHexColor('transparent'), undefined);
 });
+
+test('Gemini storyboard and compile requests carry the FOLD Motion craft prompts', async () => {
+  const { STORYBOARD_DIRECTOR, SHOT_COMPILER } = await import('../src/ai/prompts/index.mjs');
+  const plan = await createCreativePlan('A title', {}, null);
+  const bodies = [];
+  const fetchImpl = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    const isCompile = bodies.length > 1;
+    return geminiResponse(isCompile ? plan.storyboard.shots.map(perfectSpec) : plan.storyboard);
+  };
+  const { GeminiAIProvider } = await import('../src/ai/provider.mjs');
+  const provider = new GeminiAIProvider({ apiKey: 'k', fetchImpl });
+  await provider.generateStoryboard('A title', {});
+  await provider.compileStoryboard(plan.storyboard, context);
+  assert.ok(bodies[0].contents[0].parts[0].text.includes(STORYBOARD_DIRECTOR));
+  assert.ok(bodies[1].contents[0].parts[0].text.includes(SHOT_COMPILER));
+  assert.match(bodies[1].contents[0].parts[0].text, /id ending in "-background"/);
+});
+
+test('OpenAI-compatible fallbacks get the same craft prompts', async () => {
+  const { STORYBOARD_DIRECTOR, SHOT_COMPILER } = await import('../src/ai/prompts/index.mjs');
+  const { OpenAICompatibleAIProvider } = await import('../src/ai/provider.mjs');
+  const sent = [];
+  const provider = new OpenAICompatibleAIProvider({
+    name: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: 'k', model: 'm',
+    fetchImpl: async (_url, options) => {
+      sent.push(JSON.parse(options.body).messages[1].content);
+      return { ok: true, status: 200, async json() { return { choices: [{ message: { content: '{"shotSpecs":[]}' } }] }; } };
+    },
+  });
+  await provider.generateStoryboard('A title', {});
+  await provider.compileStoryboard({ shots: [] }, context);
+  assert.ok(sent[0].includes(STORYBOARD_DIRECTOR));
+  assert.ok(sent[1].includes(SHOT_COMPILER));
+});
+
+test('a background without a "-background" id is renamed so it never flashes dark', () => {
+  const shot = storyboard.shots[0];
+  const input = perfectSpec(shot);
+  input.elements[0].id = 'bg';
+  const { spec, repairs } = repairShotSpec(input, shot, 0, { ...context });
+  assert.equal(spec.elements[0].id, 'shot-1-background');
+  assert.ok(repairs.some((message) => message.includes('stays opaque')));
+});
+
+test('light brand backgrounds pass contrast QA, including with low-contrast model output', async () => {
+  const { evaluateCreativeQA } = await import('../src/production/production.mjs');
+  const light = { ...context, primaryColor: '#F0EDE8', accentColor: '#7C3AED' };
+  const { storyboard: board } = await createCreativePlan('A bright product reveal', light, null);
+
+  const offline = await generateProductionAction({
+    action: 'compile', storyboard: board, context: light, apiKeys: [], logger: quiet, environment: {},
+  });
+  assert.equal(evaluateCreativeQA(offline.timeline, light).contrast.pass, true);
+
+  const ai = await generateProductionAction({
+    action: 'compile', storyboard: board, context: light, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => geminiResponse(board.shots.map((shot) => {
+      const spec = perfectSpec(shot);
+      spec.elements[0].fill = '#F0EDE8';
+      return spec; // white copy on a paper-white background
+    })),
+  });
+  assert.equal(ai.provider, 'Gemini 3.5 Flash-Lite');
+  assert.equal(evaluateCreativeQA(ai.timeline, light).contrast.pass, true);
+  assert.ok(ai.repairs.some((message) => message.includes('contrast')));
+});

@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "1.0",
+  "id": "storyboard-nocturne",
+  "title": "Nocturne",
+  "width": 1280,
+  "height": 720,
+  "fps": 24,
+  "palette": {
+    "primary": "#0B0B10",
+    "accent": "#C9A86A"
+  },
+  "hardConstraints": [
+    "Use the product name exactly as written: Nocturne.",
+    "Render at 1280 × 720 and 24 fps.",
+    "Keep all copy inside the safe area."
+  ],
+  "totalFrames": 204,
+  "durationInSeconds": 8.5,
+  "shots": [
+    {
+      "shotId": "shot-01",
+      "purpose": "Hook: introduce the name with nothing competing for attention.",
+      "startFrame": 0,
+      "endFrame": 71,
+      "durationFrames": 72,
+      "durationSeconds": 3,
+      "transitionIn": "Opens on the brand background as the name fades up.",
+      "transitionOut": "Cut to the next shot.",
+      "palette": {
+        "primary": "#0B0B10",
+        "accent": "#C9A86A"
+      },
+      "hardConstraints": [
+        "Use the product name exactly as written: Nocturne.",
+        "Render at 1280 × 720 and 24 fps.",
+        "Keep all copy inside the safe area."
+      ],
+      "spec": {
+        "id": "shot-01-scene",
+        "title": "Nocturne",
+        "width": 1280,
+        "height": 720,
+        "fps": 24,
+        "durationInSeconds": 3,
+        "promptSource": "Hook: introduce the name with nothing competing for attention.",
+        "elements": [
+          {
+            "id": "shot-1-background",
+            "type": "rect",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#0B0B10"
+          },
+          {
+            "id": "shot-1-accent",
+            "type": "rect",
+            "x": 153.6,
+            "y": 496.79999999999995,
+            "width": 358.40000000000003,
+            "height": 4.32,
+            "fill": "#C9A86A"
+          },
+          {
+            "id": "shot-1-copy",
+            "type": "text",
+            "content": "Nocturne",
+            "x": 640,
+            "y": 360,
+            "fill": "#F8FAFC",
+            "fontSize": 48,
+            "anchor": "middle"
+          }
+        ]
+      }
+    },
+    {
+      "shotId": "shot-02",
+      "purpose": "Message: say what the scent is in one line.",
+      "startFrame": 72,
+      "endFrame": 143,
+      "durationFrames": 72,
+      "durationSeconds": 3,
+      "transitionIn": "Cut in.",
+      "transitionOut": "Cut to the closing shot.",
+      "palette": {
+        "primary": "#0B0B10",
+        "accent": "#C9A86A"
+      },
+      "hardConstraints": [
+        "Use the product name exactly as written: Nocturne.",
+        "Render at 1280 × 720 and 24 fps.",
+        "Keep all copy inside the safe area."
+      ],
+      "spec": {
+        "id": "shot-02-scene",
+        "title": "Nocturne, after dark, unforgettable",
+        "width": 1280,
+        "height": 720,
+        "fps": 24,
+        "durationInSeconds": 3,
+        "promptSource": "Message: say what the scent is in one line.",
+        "elements": [
+          {
+            "id": "shot-2-background",
+            "type": "rect",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#0B0B10"
+          },
+          {
+            "id": "shot-2-accent",
+            "type": "rect",
+            "x": 153.6,
+            "y": 496.79999999999995,
+            "width": 358.40000000000003,
+            "height": 4.32,
+            "fill": "#C9A86A"
+          },
+          {
+            "id": "shot-2-copy",
+            "type": "text",
+            "content": "Nocturne, after dark, unforgettable",
+            "x": 560,
+            "y": 360,
+            "fill": "#F8FAFC",
+            "fontSize": 72,
+            "anchor": "start"
+          }
+        ]
+      }
+    },
+    {
+      "shotId": "shot-03",
+      "purpose": "Resolution: invite the viewer to act.",
+      "startFrame": 144,
+      "endFrame": 203,
+      "durationFrames": 60,
+      "durationSeconds": 2.5,
+      "transitionIn": "Cut in.",
+      "transitionOut": "Ends on a stable hold with no fade or blank frame.",
+      "palette": {
+        "primary": "#0B0B10",
+        "accent": "#C9A86A"
+      },
+      "hardConstraints": [
+        "Use the product name exactly as written: Nocturne.",
+        "Render at 1280 × 720 and 24 fps.",
+        "Keep all copy inside the safe area."
+      ],
+      "spec": {
+        "id": "shot-03-scene",
+        "title": "After dark",
+        "width": 1280,
+        "height": 720,
+        "fps": 24,
+        "durationInSeconds": 2.5,
+        "promptSource": "Resolution: invite the viewer to act.",
+        "elements": [
+          {
+            "id": "shot-3-background",
+            "type": "rect",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 720,
+            "fill": "#0B0B10"
+          },
+          {
+            "id": "shot-3-accent",
+            "type": "rect",
+            "x": 153.6,
+            "y": 496.79999999999995,
+            "width": 358.40000000000003,
+            "height": 4.32,
+            "fill": "#C9A86A"
+          },
+          {
+            "id": "shot-3-copy",
+            "type": "text",
+            "content": "After dark",
+            "x": 640,
+            "y": 360,
+            "fill": "#F8FAFC",
+            "fontSize": 48,
+            "anchor": "middle"
+          }
+        ]
+      }
+    }
+  ]
+}

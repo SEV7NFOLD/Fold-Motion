@@ -24,28 +24,13 @@ documentation work.
 
 ## Skill system
 
-`skills/master/SKILL.md` defines the operating contract and specialist routing.
-The 13 versioned specialist instructions are:
-
-- `skills/brief-to-criteria/SKILL.md`
-- `skills/creative-director/SKILL.md`
-- `skills/storyboard-architect/SKILL.md`
-- `skills/typography-and-layout/SKILL.md`
-- `skills/svg-illustration/SKILL.md`
-- `skills/motion-engineer/SKILL.md`
-- `skills/product-animation/SKILL.md`
-- `skills/render-engineer/SKILL.md`
-- `skills/visual-critic/SKILL.md`
-- `skills/motion-critic/SKILL.md`
-- `skills/revision-engineer/SKILL.md`
-- `skills/audio-and-assembly/SKILL.md`
-- `skills/delivery-and-verification/SKILL.md`
-
-These Markdown files are production instructions. This repository does not yet
-contain a skill loader, model-provider gateway, executable project
-orchestrator, automated visual/motion critic, multi-shot production system, or
-audio workflow. A documented workflow is not evidence those capabilities have
-been implemented. No frontend was built for this work.
+`skills/fold-motion/` is a single skill for agents working on FOLD Motion.
+`SKILL.md` holds the operating rules and routes to references for each of the
+six production stages, the engine's real capabilities, the scene spec, the
+Gemini runtime, and the SEV7N FOLD brand. `templates/` has a defect report, an
+example storyboard and its acceptance spec; `evals/` has behavior test cases.
+Gemini's own production instructions live in `src/ai/prompts/`.
+`test/skills.test.mjs` fails when the skill and the code drift apart.
 
 ## Setup and commands
 

@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: writes-defect-report-for-clipped-headline
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  A defect report that follows the skill's template. It identifies shot-02, converts 4 seconds to frame 96 at 24 fps (or gives the shot's frame range 72-143),
+  traces the cause to the copy element being anchored "start" at x 560 with long copy that the renderer wraps at about 23 characters,
+  proposes the smallest fix (anchor "middle" at x 640, or shorter copy or a smaller size), names the frames to re-check,
+  and does not claim to have looked at rendered frames, since only the timeline was provided.

@@ -1,0 +1,28 @@
+[
+  {
+    "stage": "Gemini key attempt",
+    "message": "Attempting Gemini request with API key #1 of 3."
+  },
+  {
+    "stage": "Gemini key failed",
+    "kind": "quota",
+    "message": "Gemini API key #1 failed: Gemini API returned HTTP 429: You exceeded your current quota, please check your plan and billing details. Quota exceeded for metric: generate_content_free_tier_requests, limit: 20, model: gemini-3.8-flash"
+  },
+  {
+    "stage": "Gemini keys skipped",
+    "kind": "quota",
+    "message": "Gemini quota reached. Skipping 2 remaining keys: keys in one Google project share a single quota (set GEMINI_ROTATE_ON_QUOTA=true if they come from separate projects)."
+  },
+  {
+    "stage": "Gemini key pool exhausted",
+    "message": "Gemini stopped after 1 of 3 keys."
+  },
+  {
+    "stage": "AI provider pool exhausted",
+    "message": "All configured AI providers failed or no provider keys are configured; continuing with deterministic mock generation."
+  },
+  {
+    "stage": "Offline mock ready",
+    "message": "Deterministic mock generation completed."
+  }
+]

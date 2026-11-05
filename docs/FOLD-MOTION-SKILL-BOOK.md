@@ -7,6 +7,8 @@
 **Purpose:** Autonomous, code-first motion design and creative production  
 **Core principle:** Generate what is difficult to control. Code what must be exact.
 
+> **How this book relates to the skill.** This book explains *why* FOLD Motion works the way it does and where it is going. The working instructions (*how*) live in `skills/fold-motion/`, grounded in the code as it is today. Where this book describes capabilities the engine does not have yet, `skills/fold-motion/references/engine.md` and the code are authoritative.
+
 ---
 
 # 01. THE MISSION

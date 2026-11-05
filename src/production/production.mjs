@@ -1,5 +1,6 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
+import { contrastRatio, readableTextColor } from './color.mjs';
 
 const DEFAULTS = Object.freeze({
   width: 1280,
@@ -116,13 +117,12 @@ export function buildMockStoryboard(prompt, context = {}) {
       purpose: 'Establish the visual world and create anticipation.',
       durationSeconds: 3,
       onScreenCopy: subheadline || headline,
-      mainVisual: 'A restrained geometric field with a single illuminated focal point.',
+      mainVisual: 'The supporting line set large on the brand background, with the accent glow and rings on the right.',
       composition: 'Centered focal point with generous negative space.',
-      cameraBehavior: 'Slow, steady push toward the focal point.',
-      motionBehavior: 'Fine grid and framing lines reveal before the focal point brightens.',
-      transitionIn: 'Fade up from the primary brand color.',
-      transitionOut: 'The focal point expands into the next shot.',
-      soundCue: 'Low, restrained tonal swell.',
+      cameraBehavior: 'Locked off.',
+      motionBehavior: 'Copy fades up and rises with a short glitch, the accent bar draws on, then everything holds.',
+      transitionIn: 'Opens on the brand background as the copy fades up.',
+      transitionOut: 'Cut to the next shot.',
       acceptanceCriteria: ['The opening reads clearly without competing elements.'],
     },
     {
@@ -130,13 +130,12 @@ export function buildMockStoryboard(prompt, context = {}) {
       purpose: 'Deliver the central message with a clear visual hierarchy.',
       durationSeconds: 3,
       onScreenCopy: headline || 'MAKE IT MOVE',
-      mainVisual: 'Oversized kinetic typography supported by a precise accent line.',
+      mainVisual: 'The headline at full size, underlined by the accent bar.',
       composition: 'Headline occupies the central safe area; supporting detail remains subordinate.',
-      cameraBehavior: 'Measured lateral drift that settles before the copy resolves.',
-      motionBehavior: 'Headline enters with a short eased rise and settles into a stable hold.',
-      transitionIn: 'Carry the previous focal point into the headline baseline.',
-      transitionOut: 'The accent line draws toward the closing action.',
-      soundCue: 'A concise percussive accent at the headline reveal.',
+      cameraBehavior: 'Locked off.',
+      motionBehavior: 'Headline rises in with a short glitch and settles into a stable hold.',
+      transitionIn: 'Cut in.',
+      transitionOut: 'Cut to the closing shot.',
       acceptanceCriteria: ['The exact headline remains readable and dominant.'],
     },
     {
@@ -144,13 +143,12 @@ export function buildMockStoryboard(prompt, context = {}) {
       purpose: 'Resolve the idea and leave the viewer with a memorable finish.',
       durationSeconds: 2,
       onScreenCopy: subheadline || headline,
-      mainVisual: 'A compact brand lockup on a calm, high-contrast field.',
+      mainVisual: 'The closing line centered on a calm, high-contrast field.',
       composition: 'Centered lockup with a clear ending hold.',
-      cameraBehavior: 'Camera settles and holds through the final frame.',
-      motionBehavior: 'Supporting geometry resolves into a crisp brand signature.',
-      transitionIn: 'The previous accent line resolves into the lockup.',
-      transitionOut: 'End on a stable hold; no unintended fade or blank frame.',
-      soundCue: 'Short tonal resolution with a clean tail.',
+      cameraBehavior: 'Locked off; holds through the final frame.',
+      motionBehavior: 'Copy fades up, the accent bar draws on, and the frame holds to the end.',
+      transitionIn: 'Cut in.',
+      transitionOut: 'Ends on a stable hold with no fade or blank frame.',
       acceptanceCriteria: ['The final message is visible on the last frame.'],
     },
   ];
@@ -296,7 +294,7 @@ function makeShotSpec(storyboardShot, index, context) {
         content: storyboardShot.onScreenCopy,
         x: context.width / 2,
         y: context.height / 2,
-        fill: '#F8FAFC',
+        fill: readableTextColor(context.primaryColor),
         fontSize: Math.max(32, Math.round(context.height * 0.067)),
         anchor: 'middle',
       },
@@ -306,7 +304,7 @@ function makeShotSpec(storyboardShot, index, context) {
         content: context.subheadline,
         x: context.width / 2,
         y: context.height * 0.61,
-        fill: '#F8FAFC',
+        fill: readableTextColor(context.primaryColor),
         fontSize: Math.max(16, Math.round(context.height * 0.027)),
         anchor: 'middle',
       }] : []),
@@ -348,7 +346,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
         content: normalizedContext.subheadline,
         x: normalizedContext.width / 2,
         y: normalizedContext.height * 0.61,
-        fill: '#F8FAFC',
+        fill: readableTextColor(normalizedContext.primaryColor),
         fontSize: Math.max(16, Math.round(normalizedContext.height * 0.027)),
         anchor: 'middle',
       });
@@ -516,20 +514,6 @@ export function validateTimeline(timeline) {
   return { valid: errors.length === 0, errors };
 }
 
-function hexRgb(color) {
-  if (typeof color !== 'string' || !/^#[\da-f]{6}$/i.test(color)) return null;
-  return [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16) / 255)
-    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-}
-
-function contrastRatio(first, second) {
-  const firstLuminance = hexRgb(first);
-  const secondLuminance = hexRgb(second);
-  if (!firstLuminance || !secondLuminance) return null;
-  const luminance = (rgb) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-  const values = [luminance(firstLuminance), luminance(secondLuminance)].sort((a, b) => b - a);
-  return (values[0] + 0.05) / (values[1] + 0.05);
-}
 
 export function evaluateCreativeQA(timeline, context = {}) {
   const normalizedContext = normalizeProductionContext(context);

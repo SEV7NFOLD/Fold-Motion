@@ -1,0 +1,64 @@
+{
+  "id": "storyboard-nocturne",
+  "title": "Nocturne",
+  "audience": "Fragrance buyers discovering a new evening scent",
+  "platform": "1280 × 720, 24 fps",
+  "narrativeConcept": "The name emerges from darkness the way light catches black glass: one word, then a promise, then the invitation.",
+  "creativeDirection": "Near-black background with a disciplined gold accent. One centered line per shot, generous negative space, and the built-in glow and rings standing in for light on glass. Copy grows calmer and larger toward the end.",
+  "shots": [
+    {
+      "id": "shot-01",
+      "purpose": "Hook: introduce the name with nothing competing for attention.",
+      "durationSeconds": 3,
+      "onScreenCopy": "Nocturne",
+      "mainVisual": "The name alone, centered, with the accent glow on the right.",
+      "composition": "Centered, large, a thin gold accent bar beneath at the lower left third.",
+      "cameraBehavior": "Locked off.",
+      "motionBehavior": "The name rises in with a short glitch while the accent bar draws on, then holds.",
+      "transitionIn": "Opens on the brand background as the name fades up.",
+      "transitionOut": "Cut to the next shot.",
+      "acceptanceCriteria": ["\"Nocturne\" is fully visible and legible from frame 18 to the end of the shot."]
+    },
+    {
+      "id": "shot-02",
+      "purpose": "Message: say what the scent is in one line.",
+      "durationSeconds": 3,
+      "onScreenCopy": "Light on black glass",
+      "mainVisual": "The line centered at full size.",
+      "composition": "Same centered system and accent placement as shot 1.",
+      "cameraBehavior": "Locked off.",
+      "motionBehavior": "The line rises in with a short glitch, then holds long enough to read twice.",
+      "transitionIn": "Cut in.",
+      "transitionOut": "Cut to the closing shot.",
+      "acceptanceCriteria": ["The whole line sits inside the safe area on every frame."]
+    },
+    {
+      "id": "shot-03",
+      "purpose": "Resolution: invite the viewer to act.",
+      "durationSeconds": 2.5,
+      "onScreenCopy": "After dark",
+      "mainVisual": "The closing line centered, the accent bar fully drawn.",
+      "composition": "Centered, the largest type of the film.",
+      "cameraBehavior": "Locked off; holds through the final frame.",
+      "motionBehavior": "Fades up, then holds still to the last frame.",
+      "transitionIn": "Cut in.",
+      "transitionOut": "Ends on a stable hold with no fade or blank frame.",
+      "acceptanceCriteria": ["\"After dark\" and the gold accent are visible on the last frame."]
+    }
+  ],
+  "hardConstraints": [
+    "Use the product name exactly as written: Nocturne.",
+    "Render at 1280 × 720 and 24 fps.",
+    "Keep all copy inside the safe area."
+  ],
+  "acceptanceCriteria": {
+    "technical": [
+      "Output is 1280 × 720 at 24 fps.",
+      "Total duration is 8.5 seconds, within one frame."
+    ],
+    "creative": [
+      "Every line of copy has at least 4.5:1 contrast with the background.",
+      "The gold accent appears in every shot and nowhere else competes with the copy."
+    ]
+  }
+}

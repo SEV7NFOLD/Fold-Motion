@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: plans-light-brand-teaser-within-engine
+expected_outcome: |
+  A storyboard JSON with every required field (id, title, audience, platform, narrativeConcept, creativeDirection, shots, hardConstraints, acceptanceCriteria with technical and creative).
+  2 to 4 shots whose durations total about 6 seconds, the first shot's copy exactly "Ember", every shot's copy at most 40 characters,
+  camera, motion and transitions described in terms of the built-in motion and hard cuts, no footage, photography, logo images or sound,
+  and criteria that can be checked on frames. If text color comes up, it is dark on the cream background.

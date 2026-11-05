@@ -659,16 +659,29 @@ function specToSvg(spec, label, palette = {}) {
   return svg;
 }
 
+/** Mirrors src/production/color.mjs: light or dark text, whichever reads better on the background. */
+function readableText(background) {
+  const channels = [1, 3, 5].map((offset) => {
+    const value = Number.parseInt(background.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  const lightContrast = (0.9536 + 0.05) / (luminance + 0.05);
+  const darkContrast = (luminance + 0.05) / (0.0048 + 0.05);
+  return lightContrast >= darkContrast ? '#F8FAFC' : '#0B0F19';
+}
+
 /** Storyboard shots have no spec yet: preview them with the deterministic layout. */
 function storyboardSpec(shot, context) {
   const { width, height, primaryColor, accentColor, subheadline } = cleanContext(context);
+  const textFill = readableText(primaryColor);
   const elements = [
     { type: 'rect', x: 0, y: 0, width, height, fill: primaryColor },
     { type: 'rect', x: width * 0.12, y: height * 0.69, width: width * 0.28, height: Math.max(4, height * 0.006), fill: accentColor },
-    { type: 'text', content: shot.onScreenCopy, x: width / 2, y: height / 2, fill: '#F8FAFC', fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle' },
+    { type: 'text', content: shot.onScreenCopy, x: width / 2, y: height / 2, fill: textFill, fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle' },
   ];
   if (subheadline && subheadline !== shot.onScreenCopy) {
-    elements.push({ type: 'text', content: subheadline, x: width / 2, y: height * 0.61, fill: '#F8FAFC', fontSize: Math.max(16, Math.round(height * 0.027)), anchor: 'middle' });
+    elements.push({ type: 'text', content: subheadline, x: width / 2, y: height * 0.61, fill: textFill, fontSize: Math.max(16, Math.round(height * 0.027)), anchor: 'middle' });
   }
   return { width, height, elements };
 }

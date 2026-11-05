@@ -1,3 +1,5 @@
+import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
+
 /**
  * Base AI Provider interface for FOLD Motion.
  * All concrete providers (OpenAI, Anthropic, Gemini, Mock) must implement this.
@@ -125,10 +127,10 @@ function sceneRules(context = {}) {
   return [
     'Rules for every scene specification:',
     `- width ${width}, height ${height}, fps ${fps}; durationInSeconds equals the storyboard shot's durationSeconds.`,
-    `- The first element is the background: type "rect", x 0, y 0, width ${width}, height ${height}, fill "${primary}".`,
+    `- The first element is the background: type "rect", id ending in "-background", x 0, y 0, width ${width}, height ${height}, fill "${primary}".`,
     '- Allowed element types are "rect", "circle" and "text". Text anchor is "start", "middle" or "end".',
     '- Every fill is a 6-digit hex color such as "#1A2B3C".',
-    '- Keep every element fully inside the canvas. Text fontSize is at least 16.',
+    '- Keep every element fully inside the canvas. Text fontSize is at least 16, and text contrasts with the background by at least 4.5:1.',
     "- Include one text element whose content is exactly the shot's onScreenCopy, character for character.",
     `- Use the accent color "${accent}" as the fill of at least one element.`,
   ].join('\n');
@@ -256,6 +258,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   async generateStoryboard(prompt, context = {}) {
     return this.generateStructuredJson([
       'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON.',
+      STORYBOARD_DIRECTOR,
       'Return an object with id, title, audience, platform, narrativeConcept, creativeDirection, shots, hardConstraints, and acceptanceCriteria.',
       'Include at least two purposeful shots. Every shot must include id, purpose, positive durationSeconds, onScreenCopy, mainVisual, composition, cameraBehavior, motionBehavior, transitionIn, transitionOut, and acceptanceCriteria.',
       'Include acceptanceCriteria.technical and acceptanceCriteria.creative arrays. Preserve exact supplied headlines, subheadlines, hard constraints, and brand colors.',
@@ -270,6 +273,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
       'Return a JSON object with a "shotSpecs" array containing one scene specification per storyboard shot, in the same order.',
       'Each scene must include id, title, width, height, fps, durationInSeconds, and elements. Each element must include id and type; include x, y, width, height, fill, content, fontSize, and anchor as appropriate.',
       'Preserve exact on-screen copy, include a full-canvas background and readable text elements, use the requested dimensions and FPS, and use both brand colors. Include supplied subheadline copy in every shot.',
+      SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
       `Production context:\n${JSON.stringify(context)}`,
@@ -464,6 +468,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     return this.generateStructuredJson(
       [
         'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
+        STORYBOARD_DIRECTOR,
         'Include 2 to 4 purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
@@ -511,6 +516,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         'Return a JSON array in the same order and with the same item count as the storyboard shots.',
         'Preserve any supplied subheadline as an additional readable text element in every shot.',
+        SHOT_COMPILER,
         sceneRules(context),
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,
         `Production context:\n${JSON.stringify(context)}`,

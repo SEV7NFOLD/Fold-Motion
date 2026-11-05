@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0",
+  "mandatoryContent": [
+    {
+      "shotId": "shot-01",
+      "copy": "Nocturne"
+    },
+    {
+      "shotId": "shot-02",
+      "copy": "Light on black glass"
+    },
+    {
+      "shotId": "shot-03",
+      "copy": "After dark"
+    }
+  ],
+  "forbiddenContent": [],
+  "visualDirection": "Near-black background with a disciplined gold accent. One centered line per shot, generous negative space, and the built-in glow and rings standing in for light on glass. Copy grows calmer and larger toward the end.",
+  "technicalRequirements": {
+    "width": 1280,
+    "height": 720,
+    "fps": 24,
+    "durationInSeconds": 8.5
+  },
+  "shotCriteria": [
+    {
+      "shotId": "shot-01",
+      "criteria": [
+        "\"Nocturne\" is fully visible and legible from frame 18 to the end of the shot."
+      ]
+    },
+    {
+      "shotId": "shot-02",
+      "criteria": [
+        "The whole line sits inside the safe area on every frame."
+      ]
+    },
+    {
+      "shotId": "shot-03",
+      "criteria": [
+        "\"After dark\" and the gold accent are visible on the last frame."
+      ]
+    }
+  ],
+  "creativeCriteria": [
+    "Every line of copy has at least 4.5:1 contrast with the background.",
+    "The gold accent appears in every shot and nowhere else competes with the copy."
+  ]
+}

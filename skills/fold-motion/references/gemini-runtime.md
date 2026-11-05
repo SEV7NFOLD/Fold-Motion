@@ -1,0 +1,95 @@
+# Gemini: where the production thinking happens
+
+Gemini writes every storyboard and every scene spec. Its instructions are the
+most direct lever on creative quality, so most "make the output better" work
+happens here.
+
+## What Gemini receives
+
+| Call | Instructions | Output contract |
+| --- | --- | --- |
+| Storyboard | `STORYBOARD_DIRECTOR` in `src/ai/prompts/storyboard-director.mjs`, plus the brief and context | `responseSchema` in `GeminiAIProvider.generateStoryboard` |
+| Compile | `SHOT_COMPILER` in `src/ai/prompts/shot-compiler.mjs`, then `sceneRules(context)` in `provider.mjs`, plus the approved storyboard | `responseSchema` in `GeminiAIProvider.compileStoryboard` (element `type` and `anchor` are enums) |
+
+Groq and OpenRouter get the same prompt text through
+`OpenAICompatibleAIProvider`, with a short system prompt that also bounds copy
+length and shot count.
+
+Context always includes `width`, `height`, `fps`, `durationInSeconds`
+(default 8), `primaryColor`, `accentColor`, `headline` and `subheadline`.
+
+## Division of responsibility
+
+- **Prompts** carry craft: story, pacing, copy length, layout, restraint. Edit
+  them to change what Gemini *chooses*.
+- **sceneRules and the schemas** state the hard contract. Keep them identical
+  in meaning to what `buildTimeline` checks.
+- **The repair layer** enforces exactness whatever the model does. Edit it
+  only for deterministic guarantees (format, copy, colors, legibility).
+- **Validators** (`validateStoryboard`, `buildTimeline`) decide acceptance.
+  Don't loosen them to let weak output through; improve the prompt or repair
+  instead.
+
+## Improving storyboards or layouts
+
+1. Find the failure in real output first: the storyboard JSON, the timeline,
+   or rendered frames. Name the pattern (for example "copy over 40
+   characters", "every shot has the same layout", "promises a dolly move").
+2. Change the relevant prompt in `src/ai/prompts/`. Say what to do and why,
+   in plain sentences; models follow reasons better than capital-letter
+   commands.
+3. Keep every instruction inside the engine's capabilities in
+   [engine.md](engine.md). Never ask for anything the renderer can't draw.
+4. Keep the exact-copy rule and the color rules.
+5. Add or update a test with a mocked `fetchImpl` (pattern:
+   `test/repair-and-cascade.test.mjs`) that proves the prompt reaches the
+   request. Prompt *quality* can only be judged on live output, so say so
+   rather than claiming an improvement you haven't observed.
+
+Prompts are sent on every call. On the free tier the token budget is
+generous, but keep each prompt focused: under about 600 words.
+
+## The provider cascade
+
+`src/runtime/creative-api.mjs` tries, in order: each Gemini key, Groq,
+OpenRouter, then the deterministic offline mock. Each failure has a kind that
+decides what happens next:
+
+| Kind | Cause | Next step |
+| --- | --- | --- |
+| `auth` | Key rejected (401, 403, 400 "API key not valid") | Next Gemini key |
+| `timeout`, `network`, `overload` | Slow, unreachable or 5xx | Next Gemini key |
+| `quota` | HTTP 429 | Skip remaining Gemini keys (they share one project quota) unless `GEMINI_ROTATE_ON_QUOTA=true` |
+| `config` | Unknown model or rejected request | Skip remaining Gemini keys; check `GEMINI_MODEL` |
+| `output` | Answer unusable even after repair | Skip remaining Gemini keys |
+
+The mock runs only when every configured provider failed. Its response says
+so (`provider: "mock-provider"`, `warning`, `fallbackReason`), and the studio
+shows the reason. Never make the mock look like AI output.
+
+## Diagnosing "it fell back to mock"
+
+1. Read the telemetry (studio System view, or the `telemetry` array in the
+   response) for the `Gemini key failed` line and its kind.
+2. `quota`: the free tier limits requests per day per model and per project.
+   Adding keys from the same project does nothing. Use
+   `GEMINI_MODEL=gemini-3.5-flash-lite` (far larger free daily quota than
+   Flash), wait for the reset, or enable billing.
+3. `output`: the model answered but repair couldn't save it. Inspect the
+   error text, which names the failed check, then improve the prompt.
+4. `config`: the model ID is wrong or unavailable; check it against Google's
+   model list.
+5. `unconfigured`: no keys are set on the server.
+
+## Settings
+
+| Variable | Default |
+| --- | --- |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` |
+| `GEMINI_THINKING_LEVEL` | unset (model default); sent as `thinkingConfig.thinkingLevel` |
+| `GEMINI_TIMEOUT_MS` | `30000` per key |
+| `GEMINI_ROTATE_ON_QUOTA` | `false` |
+| `GEMINI_API_KEY`, `_2`, `_3`, `GEMINI_API_KEYS` | none |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY` | none |
+
+Keys never appear in prompts, logs, telemetry or `GET /api/engine`.

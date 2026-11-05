@@ -1,3 +1,5 @@
+import { contrastRatio, MIN_TEXT_CONTRAST, readableTextColor } from './color.mjs';
+
 /**
  * Repair layer for AI output.
  *
@@ -53,7 +55,6 @@ const ANCHOR_ALIASES = Object.freeze({
   end: 'end',
   right: 'end',
 });
-const DEFAULT_TEXT_FILL = '#F8FAFC';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -205,6 +206,7 @@ export function repairShotSpec(spec, shot, index, context) {
   const label = shot?.id || `Shot ${index + 1}`;
   const note = (message) => repairs.push(`${label}: ${message}`);
   const { width, height, fps, primaryColor, accentColor } = context;
+  const textFill = readableTextColor(primaryColor);
   const source = isObject(spec) ? spec : {};
   if (!isObject(spec)) note('model returned no scene; built it from the storyboard.');
 
@@ -261,7 +263,7 @@ export function repairShotSpec(spec, shot, index, context) {
 
     const fill = normalizeHexColor(element.fill);
     if (!fill) {
-      element.fill = type === 'text' ? DEFAULT_TEXT_FILL : accentColor;
+      element.fill = type === 'text' ? textFill : accentColor;
       note(`element "${raw.id || elementIndex}" had an unusable color; set to ${element.fill}.`);
     } else {
       if (fill !== element.fill) note(`color "${element.fill}" written as ${fill}.`);
@@ -334,7 +336,23 @@ export function repairShotSpec(spec, shot, index, context) {
       note(`background color ${background.fill} set to the brand primary ${primaryColor}.`);
       background.fill = primaryColor;
     }
+    // The renderer keeps only "*-background" rects fully opaque; any other id fades in and flashes dark.
+    if (!background.id.endsWith('-background')) {
+      const renamed = uniqueId(`shot-${index + 1}-background`, `shot-${index + 1}-background`);
+      note(`background id "${background.id}" renamed to "${renamed}" so it stays opaque while the shot fades in.`);
+      background.id = renamed;
+    }
     elements.unshift(background);
+  }
+
+  // Legibility: every text element must clear creative QA's contrast bar on the brand background.
+  for (const element of elements) {
+    if (element.type !== 'text') continue;
+    const ratio = contrastRatio(element.fill, primaryColor);
+    if (ratio === null || ratio < MIN_TEXT_CONTRAST) {
+      note(`text "${element.id}" had ${ratio ? `${ratio.toFixed(1)}:1` : 'no'} contrast on ${primaryColor}; set to ${textFill}.`);
+      element.fill = textFill;
+    }
   }
 
   // On-screen copy: exact text, owned by the storyboard.
@@ -348,7 +366,7 @@ export function repairShotSpec(spec, shot, index, context) {
       elements.push({
         id: uniqueId(`shot-${index + 1}-copy`, `shot-${index + 1}-copy`),
         type: 'text', content: copy, x: width / 2, y: height / 2,
-        fill: DEFAULT_TEXT_FILL, fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle',
+        fill: textFill, fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle',
       });
       note('approved on-screen copy was missing; added it centered.');
     }

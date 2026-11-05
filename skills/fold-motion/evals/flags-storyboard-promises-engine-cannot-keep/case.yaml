@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: flags-storyboard-promises-engine-cannot-keep
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Recommends not approving yet and explains why with specifics: the dolly and macro camera moves, product photo and footage, logo lockup image,
+  sound cue, whip pans and crossfades are things the engine cannot render; the shot-02 copy is over 40 characters;
+  the durations add up to 15 seconds against an 8-second brief; criteria such as "Feels premium" are not checkable on frames.
+  Suggests concrete corrections, and suggests fixing the storyboard prompt if the pattern recurs.

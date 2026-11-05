@@ -1,0 +1,67 @@
+{
+  "id": "storyboard-airstride",
+  "title": "AirStride Drop",
+  "audience": "Sneaker collectors",
+  "platform": "1280 \u00d7 720, 24 fps",
+  "narrativeConcept": "A hype teaser for the AirStride drop.",
+  "creativeDirection": "Premium, cinematic, bold.",
+  "shots": [
+    {
+      "id": "shot-01",
+      "purpose": "Show the sneaker.",
+      "durationSeconds": 6,
+      "onScreenCopy": "AirStride",
+      "mainVisual": "Product photo of the AirStride sneaker on a rotating turntable",
+      "composition": "Sneaker centered",
+      "cameraBehavior": "Slow 360-degree dolly around the sneaker",
+      "motionBehavior": "Turntable spins",
+      "transitionIn": "Fade from black",
+      "transitionOut": "Whip pan",
+      "soundCue": "Bass drop on the reveal",
+      "acceptanceCriteria": [
+        "Feels premium."
+      ]
+    },
+    {
+      "id": "shot-02",
+      "purpose": "Build hype.",
+      "durationSeconds": 5,
+      "onScreenCopy": "The lightest runner we have ever made, built to fly",
+      "mainVisual": "Close-up footage of the sole flexing",
+      "composition": "Full frame",
+      "cameraBehavior": "Macro push-in",
+      "motionBehavior": "Slow motion",
+      "transitionIn": "Whip pan",
+      "transitionOut": "Crossfade",
+      "acceptanceCriteria": [
+        "Looks cinematic."
+      ]
+    },
+    {
+      "id": "shot-03",
+      "purpose": "Call to action.",
+      "durationSeconds": 4,
+      "onScreenCopy": "Drops Friday",
+      "mainVisual": "Logo lockup",
+      "composition": "Centered",
+      "cameraBehavior": "Static",
+      "motionBehavior": "Logo shimmer",
+      "transitionIn": "Crossfade",
+      "transitionOut": "Cut to black",
+      "acceptanceCriteria": [
+        "Logo is visible."
+      ]
+    }
+  ],
+  "hardConstraints": [
+    "8-second teaser."
+  ],
+  "acceptanceCriteria": {
+    "technical": [
+      "1280 \u00d7 720."
+    ],
+    "creative": [
+      "Feels premium."
+    ]
+  }
+}
