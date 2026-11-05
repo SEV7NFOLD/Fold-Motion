@@ -59,9 +59,27 @@ const FALLBACK_REASONS = {
   provider: 'Every configured AI provider failed.',
 };
 const STARTERS = [
-  'A 10-second launch film for a perfume called Nocturne: black glass, slow light sweeps, one line of copy.',
-  'A fast kinetic-type opener for the SEV7N FOLD showreel that ends on the studio name.',
-  'An 8-second teaser for a skincare serum: warm light, calm pacing, minimal copy.',
+  {
+    label: 'Perfume launch',
+    brief: 'A 10-second launch film for a perfume called Nocturne: black glass, slow light sweeps, one line of copy.',
+    copy: 'Nocturne',
+    primaryColor: '#0B0B10',
+    accentColor: '#C9A86A',
+  },
+  {
+    label: 'Showreel opener',
+    brief: 'A fast kinetic-type opener for the SEV7N FOLD showreel that ends on the studio name.',
+    copy: 'SEV7N FOLD',
+    primaryColor: '#141518',
+    accentColor: '#7C3AED',
+  },
+  {
+    label: 'Product teaser',
+    brief: 'An 8-second teaser for a skincare serum: warm light, calm pacing, minimal copy.',
+    copy: 'Glow, slowly',
+    primaryColor: '#1B1310',
+    accentColor: '#E8B48A',
+  },
 ];
 const APPROVE_WORDS = /^(approve|approved|lgtm|looks good|ship it|go ahead|go|yes|yep|ok|okay)\b[\s.!]*$/i;
 const NEW_WORDS = /^(new|new production|new project|start over)[\s.!]*$/i;
@@ -508,6 +526,32 @@ function submitMessage(rawText) {
   writeStoryboard(record);
 }
 
+// ------------------------------------------------------------------ icons
+
+const ICONS = {
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>',
+  alert: '<path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4M12 17h.01"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+  play: '<path d="m9 7 8 5-8 5z"/>',
+  retry: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>',
+};
+
+function icon(name, className = 'icon') {
+  const svg = svgEl('svg', { class: className, viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' });
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
+
+const MARK_PATH = 'M411 85 L0 86 L66 200 L202 203 L147 296 L105 225 L81 224 L147 340 L239 180 L79 179 L37 108 L372 108 L205 397 L188 368 L323 133 L87 133 L98 153 L280 154 L285 156 L164 367 L168 378 L205 440 Z';
+
+function markSvg() {
+  const svg = svgEl('svg', { viewBox: '0 0 412 512', 'aria-hidden': 'true', focusable: 'false' });
+  svg.append(svgEl('path', { 'fill-rule': 'evenodd', d: MARK_PATH }),
+    svgEl('circle', { cx: 205.4, cy: 490.9, r: 20.6 }), svgEl('circle', { cx: 205.4, cy: 20.2, r: 20.6 }));
+  return svg;
+}
+
 // ------------------------------------------------------------------ frame previews
 
 function wrapText(content, maximumCharacters) {
@@ -530,17 +574,60 @@ function wrapText(content, maximumCharacters) {
   return lines;
 }
 
-/** Draws a scene spec's final layout the same way the renderer places it. */
-function specToSvg(spec, label) {
+let svgCounter = 0;
+
+/**
+ * Draws a scene spec's final frame the way scripts/render-production.mjs does:
+ * background, then the renderer's atmosphere (glow, grid, rings, accent lines),
+ * then the foreground elements and glowing copy.
+ */
+function specToSvg(spec, label, palette = {}) {
   const width = spec.width || DEFAULT_CONTEXT.width;
   const height = spec.height || DEFAULT_CONTEXT.height;
-  const svg = svgEl('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    preserveAspectRatio: 'xMidYMid meet',
-    role: 'img',
-    'aria-label': label,
-  });
-  for (const element of spec.elements || []) {
+  const elements = spec.elements || [];
+  const isBackground = (element) => element.type === 'rect' && element.x === 0 && element.y === 0
+    && element.width === width && element.height === height;
+  const primary = isHex(palette.primary) ? palette.primary : elements.find(isBackground)?.fill || '#0B0F19';
+  const accent = isHex(palette.accent) ? palette.accent : '#00F0FF';
+  const id = `f${(svgCounter += 1)}`;
+  const minSide = Math.min(width, height);
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'xMidYMid slice', role: 'img', 'aria-label': label });
+  const defs = svgEl('defs');
+  const ambient = svgEl('radialGradient', { id: `${id}a`, cx: '74%', cy: '46%', r: '68%' });
+  ambient.append(
+    svgEl('stop', { offset: 0, 'stop-color': accent, 'stop-opacity': 0.22 }),
+    svgEl('stop', { offset: 0.42, 'stop-color': '#FF0055', 'stop-opacity': 0.07 }),
+    svgEl('stop', { offset: 1, 'stop-color': primary, 'stop-opacity': 0 }));
+  const grid = svgEl('pattern', { id: `${id}g`, width: 42, height: 42, patternUnits: 'userSpaceOnUse' });
+  grid.append(svgEl('path', { d: 'M 42 0 L 0 0 0 42', fill: 'none', stroke: accent, 'stroke-width': 0.5, opacity: 0.42 }));
+  const glow = svgEl('filter', { id: `${id}t`, x: '-30%', y: '-50%', width: '160%', height: '200%' });
+  glow.append(svgEl('feGaussianBlur', { stdDeviation: 5, result: 'blur' }),
+    svgEl('feFlood', { 'flood-color': accent, 'flood-opacity': 0.34 }),
+    svgEl('feComposite', { in2: 'blur', operator: 'in' }));
+  const merge = svgEl('feMerge');
+  merge.append(svgEl('feMergeNode'), svgEl('feMergeNode', { in: 'SourceGraphic' }));
+  glow.append(merge);
+  defs.append(ambient, grid, glow);
+  svg.append(defs);
+
+  for (const element of elements.filter(isBackground)) {
+    svg.append(svgEl('rect', { x: 0, y: 0, width, height, fill: isHex(element.fill) ? element.fill : primary }));
+  }
+  if (!elements.some(isBackground)) svg.append(svgEl('rect', { width, height, fill: primary }));
+
+  const cx = width * 0.76;
+  const cy = height * 0.48;
+  svg.append(
+    svgEl('rect', { width, height, fill: `url(#${id}a)`, opacity: 0.7 }),
+    svgEl('rect', { width, height, fill: `url(#${id}g)`, opacity: 0.28 }),
+    svgEl('circle', { cx, cy, r: minSide * 0.26, fill: 'none', stroke: accent, 'stroke-width': 1, opacity: 0.42 }),
+    svgEl('circle', { cx, cy, r: minSide * 0.31, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, 'stroke-dasharray': '3 12', opacity: 0.34, transform: `rotate(11 ${cx} ${cy})` }),
+    svgEl('path', { d: `M ${width * 0.08} ${height * 0.78} H ${width * 0.42}`, fill: 'none', stroke: accent, 'stroke-width': 2, opacity: 0.78 }),
+    svgEl('path', { d: `M ${width * 0.08} ${height * 0.795} H ${width * 0.23}`, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, opacity: 0.72 }));
+
+  for (const element of elements) {
+    if (isBackground(element)) continue;
     const fill = isHex(element.fill) ? element.fill : '#F8FAFC';
     if (element.type === 'rect') {
       svg.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
@@ -558,6 +645,8 @@ function specToSvg(spec, label) {
         'font-family': 'Segoe UI, Arial, sans-serif',
         'font-size': size,
         'font-weight': 700,
+        'letter-spacing': Math.max(0.4, size * 0.025),
+        filter: `url(#${id}t)`,
       });
       lines.forEach((line, index) => {
         const span = svgEl('tspan', { x: element.x, dy: index === 0 ? 0 : size * 1.2 });
@@ -572,64 +661,66 @@ function specToSvg(spec, label) {
 
 /** Storyboard shots have no spec yet: preview them with the deterministic layout. */
 function storyboardSpec(shot, context) {
-  const { width, height, primaryColor, accentColor } = cleanContext(context);
-  return {
-    width,
-    height,
-    elements: [
-      { type: 'rect', x: 0, y: 0, width, height, fill: primaryColor },
-      { type: 'rect', x: width * 0.12, y: height * 0.69, width: width * 0.28, height: Math.max(4, height * 0.006), fill: accentColor },
-      { type: 'text', content: shot.onScreenCopy, x: width / 2, y: height / 2, fill: '#F8FAFC', fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle' },
-    ],
-  };
+  const { width, height, primaryColor, accentColor, subheadline } = cleanContext(context);
+  const elements = [
+    { type: 'rect', x: 0, y: 0, width, height, fill: primaryColor },
+    { type: 'rect', x: width * 0.12, y: height * 0.69, width: width * 0.28, height: Math.max(4, height * 0.006), fill: accentColor },
+    { type: 'text', content: shot.onScreenCopy, x: width / 2, y: height / 2, fill: '#F8FAFC', fontSize: Math.max(32, Math.round(height * 0.067)), anchor: 'middle' },
+  ];
+  if (subheadline && subheadline !== shot.onScreenCopy) {
+    elements.push({ type: 'text', content: subheadline, x: width / 2, y: height * 0.61, fill: '#F8FAFC', fontSize: Math.max(16, Math.round(height * 0.027)), anchor: 'middle' });
+  }
+  return { width, height, elements };
 }
 
-function reel(items) {
+function filmstrip(items, palette) {
   const total = items.reduce((sum, item) => sum + item.duration, 0) || 1;
-  const track = h('div', { class: 'reel-track' });
-  track.style.setProperty('--shots', String(items.length));
-  const strip = h('div', { class: 'strip' });
-  items.forEach((item, index) => {
-    const frame = h('figure', { class: 'frame', 'aria-label': `Shot ${index + 1}, ${seconds(item.duration)}: ${item.copy}` },
-      h('div', { class: 'frame-picture', style: `background:${isHex(item.spec.elements?.[0]?.fill) ? item.spec.elements[0].fill : '#000'}` }, specToSvg(item.spec, item.copy)),
-      h('figcaption', {}, h('span', { class: 'frame-number', text: String(index + 1).padStart(2, '0') }), h('span', { text: seconds(item.duration) })));
-    frame.style.setProperty('--duration', String(item.duration));
-    strip.append(frame);
-  });
-  const ruler = h('div', { class: 'ruler', 'aria-hidden': 'true' });
-  const step = total <= 12 ? 1 : total <= 30 ? 5 : 10;
-  for (let second = 0; second <= Math.floor(total); second += 1) {
-    const left = `${(second / total) * 100}%`;
-    const tick = h('span', { class: 'tick' });
-    tick.style.left = left;
-    ruler.append(tick);
-    if (second % step === 0 && second / total < 0.94) {
-      const label = h('span', { class: 'tick-label', text: `${second}s` });
-      label.style.left = left;
-      if (second === 0) label.style.transform = 'none';
-      ruler.append(label);
-    }
-  }
-  const end = h('span', { class: 'tick-label', text: seconds(total) });
-  end.style.left = '100%';
-  end.style.transform = 'translateX(-100%)';
-  ruler.append(end);
-  track.append(strip, ruler);
-  return h('div', { class: 'reel' }, track);
+  const strip = h('div', { class: 'filmstrip' }, items.map((item, index) => h('figure', { class: 'shot' },
+    h('div', { class: 'shot-frame' }, specToSvg(item.spec, `Shot ${index + 1}: ${item.copy}`, palette)),
+    h('figcaption', {},
+      h('div', { class: 'shot-meta' },
+        h('span', { class: 'shot-number', text: String(index + 1).padStart(2, '0') }),
+        h('span', { class: 'shot-duration', text: seconds(item.duration) })),
+      h('p', { class: 'shot-copy', text: item.copy }),
+      item.purpose ? h('p', { class: 'shot-purpose', text: item.purpose }) : null))));
+  const track = h('div', { class: 'timebar-track', 'aria-hidden': 'true' }, items.map((item) => {
+    const segment = h('span', { class: 'timebar-segment' });
+    segment.style.setProperty('--duration', String(item.duration));
+    return segment;
+  }));
+  return [strip, h('div', { class: 'timebar' }, track, h('span', { class: 'timebar-total', text: `${seconds(total)} total` }))];
 }
 
 // ------------------------------------------------------------------ message views
 
-const openDetails = new Set();
+const openPanels = new Map();
 
-function more(key, summary, ...content) {
-  const details = h('details', { class: 'more' }, h('summary', { text: summary }), ...content);
-  details.open = openDetails.has(key);
-  details.addEventListener('toggle', () => {
-    if (details.open) openDetails.add(key);
-    else openDetails.delete(key);
+/** Pill toggles that open one detail panel at a time. */
+function toggles(key, entries) {
+  const row = h('div', { class: 'toggle-row' });
+  const panel = h('div', { class: 'toggle-panel', hidden: true });
+  const buttons = [];
+  const show = (index) => {
+    const current = openPanels.get(key);
+    const next = current === index ? undefined : index;
+    if (next === undefined) openPanels.delete(key);
+    else openPanels.set(key, next);
+    buttons.forEach((button, buttonIndex) => button.setAttribute('aria-expanded', String(buttonIndex === next)));
+    panel.hidden = next === undefined;
+    if (next !== undefined) panel.replaceChildren(entries[next].render());
+  };
+  entries.forEach((entry, index) => {
+    const button = h('button', { class: 'toggle', type: 'button', 'aria-expanded': 'false', onclick: () => show(index), text: entry.label });
+    buttons.push(button);
+    row.append(button);
   });
-  return details;
+  const container = h('div', { class: 'toggles' }, row, panel);
+  if (openPanels.has(key)) {
+    const index = openPanels.get(key);
+    openPanels.delete(key);
+    show(index);
+  }
+  return container;
 }
 
 function plainList(items) {
@@ -637,23 +728,35 @@ function plainList(items) {
 }
 
 function providerName(provider) {
-  return provider === 'mock-provider' ? 'the offline fallback' : provider;
+  return provider === 'mock-provider' ? 'Offline fallback' : provider;
 }
 
-function providerNotes(data) {
+function meta(data, suffix) {
+  const fallback = data.provider === 'mock-provider';
+  return h('p', { class: 'meta' },
+    h('span', { class: `meta-dot${fallback ? ' is-fallback' : ''}`, 'aria-hidden': 'true' }),
+    `${suffix} ${providerName(data.provider)}`);
+}
+
+function note(kind, ...content) {
+  return h('div', { class: `note${kind === 'fault' ? ' note-fault' : ''}` },
+    icon(kind === 'fault' ? 'alert' : 'info', 'icon note-icon'),
+    h('div', { class: 'note-body' }, ...content));
+}
+
+function providerNotes(data, key) {
   const notes = [];
   if (data.provider === 'mock-provider') {
-    notes.push(h('div', { class: 'note' },
+    notes.push(note('info',
       h('p', {}, h('strong', { text: 'Made by the offline fallback, not AI. ' }),
         FALLBACK_REASONS[data.fallbackReason] || FALLBACK_REASONS.provider, ' ',
-        h('button', { class: 'inline-link', type: 'button', onclick: () => showView('system'), text: 'See what happened' }))));
+        h('button', { class: 'link-button', type: 'button', onclick: () => showView('system'), text: 'See what happened' }))));
   }
   if (data.repairs?.length) {
     const count = data.repairs.length;
-    const key = `repairs-${data.repairs[0]}-${count}`;
-    notes.push(h('div', { class: 'note' },
+    notes.push(note('info',
       h('p', { text: `Fixed ${count} slip${count === 1 ? '' : 's'} in the model’s output so it matches your brief and brand.` }),
-      more(key, 'Show fixes', h('ul', {}, data.repairs.map((repair) => h('li', { text: repair }))))));
+      toggles(`${key}-repairs`, [{ label: 'Show fixes', render: () => h('ul', {}, data.repairs.map((repair) => h('li', { text: repair }))) }])));
   }
   return notes;
 }
@@ -668,11 +771,11 @@ function askForChanges() {
 }
 
 function goButton(label, run) {
-  return h('button', { class: 'button button-go', type: 'button', disabled: Boolean(busy), onclick: run, text: label });
+  return h('button', { class: 'pill pill-go', type: 'button', disabled: Boolean(busy), onclick: run, text: label });
 }
 
 function changesButton() {
-  return h('button', { class: 'button', type: 'button', disabled: Boolean(busy), onclick: askForChanges, text: 'Ask for changes' });
+  return h('button', { class: 'pill', type: 'button', disabled: Boolean(busy), onclick: askForChanges, text: 'Ask for changes' });
 }
 
 /** Gate contents depend on the live project state, so they're redrawn on every render. */
@@ -685,16 +788,16 @@ function fillGate(slot, message, record) {
   if (message.type === 'error') {
     const isLast = record.messages.at(-1) === message;
     if (isLast && !superseded && message.data.retry) {
-      content.push(h('button', { class: 'button', type: 'button', disabled: Boolean(busy), onclick: () => runRetry(record, message.data.retry), text: 'Try again' }));
+      content.push(h('button', { class: 'pill', type: 'button', disabled: Boolean(busy), onclick: () => runRetry(record, message.data.retry) }, icon('retry'), 'Try again'));
     }
   } else if (superseded) {
-    content.push(stamp('Replaced by a revised storyboard.', true));
+    content.push(stamp('Replaced by a revised storyboard', true));
   } else if (message.type === 'storyboard') {
     if (state === 'STORYBOARD_REVIEW') content.push(goButton('Approve storyboard', () => buildShots(record)), changesButton());
-    else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved.'));
+    else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') content.push(goButton('Render and run QA', () => renderFilm(record)), changesButton());
-    else if (stage > PROJECT_STATES.indexOf('RENDERING')) content.push(stamp('Rendered.'));
+    else if (stage > PROJECT_STATES.indexOf('RENDERING')) content.push(stamp('Rendered'));
   } else if (message.type === 'render') {
     if (state === 'QA') {
       const passes = qaPasses(message.data.report);
@@ -703,7 +806,7 @@ function fillGate(slot, message, record) {
         content[0].disabled = true;
         content.push(h('p', { class: 'gate-note', text: 'Every check has to pass before the cut can be approved. Ask for changes to fix the failing checks.' }));
       }
-    } else if (stage > PROJECT_STATES.indexOf('QA')) content.push(stamp('Final cut approved.'));
+    } else if (stage > PROJECT_STATES.indexOf('QA')) content.push(stamp('Final cut approved'));
   } else if (message.type === 'approved') {
     if (state === 'APPROVED') content.push(goButton('Deliver', () => deliver(record)));
   }
@@ -712,64 +815,83 @@ function fillGate(slot, message, record) {
   slot.hidden = content.length === 0;
 }
 
+function systemMessage(...children) {
+  return h('article', { class: 'msg msg-system' },
+    h('div', { class: 'avatar', 'aria-hidden': 'true' }, markSvg()),
+    h('div', { class: 'msg-body' }, h('span', { class: 'sr-only', text: 'FOLD Motion: ' }), ...children));
+}
+
 function storyboardView(message) {
   const { storyboard, acceptance, context } = message.data;
   const shots = storyboard.shots || [];
   const total = shots.reduce((sum, shot) => sum + (Number(shot.durationSeconds) || 0), 0);
-  const key = (part) => `${message.id}-${part}`;
-  const notes = h('div', { class: 'shot-notes' }, shots.map((shot, index) => h('section', { class: 'shot-note' },
-    h('h3', { text: `Shot ${String(index + 1).padStart(2, '0')} / ${seconds(shot.durationSeconds)}` }),
-    h('dl', {}, [
-      ['Purpose', shot.purpose],
-      ['On screen', shot.onScreenCopy],
-      ['Visual', shot.mainVisual],
-      ['Composition', shot.composition],
-      ['Camera', shot.cameraBehavior],
-      ['Motion', shot.motionBehavior],
-      ['In and out', `${shot.transitionIn} Then: ${shot.transitionOut}`],
-      ...(shot.soundCue ? [['Sound', shot.soundCue]] : []),
-      ['Must pass', (shot.acceptanceCriteria || []).join(' ')],
-    ].flatMap(([term, value]) => [h('dt', { text: term }), h('dd', { text: value })])))));
+  const palette = { primary: cleanContext(context).primaryColor, accent: cleanContext(context).accentColor };
   const gate = h('div', { class: 'gate' });
-  const node = h('article', { class: 'msg msg-system' },
-    h('p', { text: `Here’s the storyboard: ${shots.length} shot${shots.length === 1 ? '' : 's'}, ${seconds(total)}.` }),
-    h('p', { class: 'msg-meta', text: `Written by ${providerName(message.data.provider)}` }),
-    ...providerNotes(message.data),
-    h('div', { class: 'card' },
-      h('h2', { class: 'card-title', text: storyboard.title }),
-      h('p', { class: 'card-lede', text: storyboard.narrativeConcept }),
-      reel(shots.map((shot) => ({
+  const node = systemMessage(
+    h('p', { class: 'msg-text', text: `Here’s the storyboard. ${shots.length} shot${shots.length === 1 ? '' : 's'}, ${seconds(total)}. Approve it and I’ll build the shots.` }),
+    meta(message.data, 'Written by'),
+    ...providerNotes(message.data, message.id),
+    h('div', { class: 'block' },
+      h('div', { class: 'block-head' },
+        h('h2', { class: 'block-title', text: storyboard.title }),
+        h('span', { class: 'block-badge', text: `${shots.length} shots` })),
+      h('p', { class: 'block-lede', text: storyboard.narrativeConcept }),
+      ...filmstrip(shots.map((shot) => ({
         duration: Number(shot.durationSeconds) || 1,
         copy: shot.onScreenCopy,
+        purpose: shot.purpose,
         spec: storyboardSpec(shot, context),
-      }))),
-      more(key('shots'), 'Shot notes', notes),
-      more(key('criteria'), 'Direction and acceptance criteria',
-        h('p', { text: storyboard.creativeDirection }),
-        h('p', { class: 'criteria-heading', text: 'Hard constraints' }), plainList(storyboard.hardConstraints),
-        h('p', { class: 'criteria-heading', text: 'Technical checks' }), plainList(storyboard.acceptanceCriteria?.technical),
-        h('p', { class: 'criteria-heading', text: 'Creative checks' }), plainList(storyboard.acceptanceCriteria?.creative),
-        acceptance ? more(key('acceptance-json'), 'Acceptance spec (JSON)', h('pre', { class: 'code', text: JSON.stringify(acceptance, null, 2) })) : null),
+      })), palette),
+      toggles(message.id, [
+        {
+          label: 'Shot notes',
+          render: () => h('div', { class: 'shot-notes' }, shots.map((shot, index) => h('section', { class: 'shot-note' },
+            h('h3', {}, h('span', { text: String(index + 1).padStart(2, '0') }), ` / ${seconds(shot.durationSeconds)}`),
+            h('dl', {}, [
+              ['Purpose', shot.purpose],
+              ['On screen', shot.onScreenCopy],
+              ['Visual', shot.mainVisual],
+              ['Composition', shot.composition],
+              ['Camera', shot.cameraBehavior],
+              ['Motion', shot.motionBehavior],
+              ['Transitions', `${shot.transitionIn} Then: ${shot.transitionOut}`],
+              ...(shot.soundCue ? [['Sound', shot.soundCue]] : []),
+              ['Must pass', (shot.acceptanceCriteria || []).join(' ')],
+            ].flatMap(([term, value]) => [h('dt', { text: term }), h('dd', { text: value })]))))),
+        },
+        {
+          label: 'Direction and criteria',
+          render: () => h('div', {},
+            h('p', { text: storyboard.creativeDirection }),
+            h('p', { class: 'criteria-heading', text: 'Hard constraints' }), plainList(storyboard.hardConstraints),
+            h('p', { class: 'criteria-heading', text: 'Technical checks' }), plainList(storyboard.acceptanceCriteria?.technical),
+            h('p', { class: 'criteria-heading', text: 'Creative checks' }), plainList(storyboard.acceptanceCriteria?.creative)),
+        },
+        ...(acceptance ? [{ label: 'Acceptance spec', render: () => h('pre', { class: 'code', text: JSON.stringify(acceptance, null, 2) }) }] : []),
+      ]),
       gate));
   return { node, gate };
 }
 
 function timelineView(message) {
   const { timeline } = message.data;
+  const palette = { primary: timeline.palette?.primary, accent: timeline.palette?.accent };
   const gate = h('div', { class: 'gate' });
-  const node = h('article', { class: 'msg msg-system' },
-    h('p', { text: `Shots built: ${timeline.shots.length} shots, ${timeline.totalFrames} frames at ${timeline.fps} fps. These are the layouts the renderer will draw.` }),
-    h('p', { class: 'msg-meta', text: `Built by ${providerName(message.data.provider)}` }),
-    ...providerNotes(message.data),
-    h('div', { class: 'card' },
-      h('h2', { class: 'card-title', text: timeline.title }),
-      h('p', { class: 'card-lede', text: `${timeline.width} × ${timeline.height}, ${seconds(timeline.durationInSeconds)}` }),
-      reel(timeline.shots.map((shot) => ({
+  const node = systemMessage(
+    h('p', { class: 'msg-text', text: `Shots built: ${timeline.totalFrames} frames at ${timeline.fps} fps. These are the frames the renderer will draw. Render when you’re ready.` }),
+    meta(message.data, 'Built by'),
+    ...providerNotes(message.data, message.id),
+    h('div', { class: 'block' },
+      h('div', { class: 'block-head' },
+        h('h2', { class: 'block-title', text: timeline.title }),
+        h('span', { class: 'block-badge', text: `${timeline.width} × ${timeline.height}` })),
+      ...filmstrip(timeline.shots.map((shot) => ({
         duration: shot.durationSeconds,
         copy: shot.spec.elements.find((element) => element.type === 'text')?.content || shot.shotId,
+        purpose: shot.purpose,
         spec: shot.spec,
-      }))),
-      more(`${message.id}-json`, 'Timeline (JSON)', h('pre', { class: 'code', text: JSON.stringify(timeline, null, 2) })),
+      })), palette),
+      toggles(message.id, [{ label: 'Timeline JSON', render: () => h('pre', { class: 'code', text: JSON.stringify(timeline, null, 2) }) }]),
       gate));
   return { node, gate };
 }
@@ -783,9 +905,9 @@ function qaChecks(report) {
     ['Frame rate', production.fps, (c) => `${number(c.actual, 0)} fps${c.pass ? '' : `, expected ${c.expected}`}`],
     ['Frames', production.frameIntegrity, (c) => `${c.encodedVideoFrames} of ${c.expectedFrames} encoded`],
     ['Duration', production.duration, (c) => `${number(c.actual)}s${c.pass ? '' : `, expected ${number(c.expected)}s`}`],
-    ['Contrast', creative.contrast, (c) => `${number(c.minimumRatio)}:1, needs ${c.requiredRatio}:1`],
+    ['Contrast', creative.contrast, (c) => `${number(c.minimumRatio, 1)}:1, needs ${c.requiredRatio}:1`],
     ['Legibility', creative.legibility, (c) => `Smallest text ${c.minimumFontSize}px`],
-    ['Brand colors', creative.brandFidelity, (c) => `${String(c.primaryColor).toUpperCase()} and ${String(c.accentColor).toUpperCase()}`],
+    ['Brand colors', creative.brandFidelity, (c) => `${String(c.primaryColor).toUpperCase()}, ${String(c.accentColor).toUpperCase()}`],
   ].filter(([, check]) => check);
   return checks.map(([name, check, describe]) => {
     let detail = '';
@@ -804,15 +926,18 @@ function renderView(message) {
   const failed = checks.filter((check) => !check.pass).length;
   const video = report?.artifacts?.video;
   const gate = h('div', { class: 'gate' });
-  const node = h('article', { class: 'msg msg-system' },
-    h('p', { text: failed === 0
-      ? `Rendered and checked. All ${checks.length} checks passed. Watch it, then approve the cut.`
-      : `Rendered. ${failed} of ${checks.length} checks failed.` }),
-    h('div', { class: 'card' },
+  const node = systemMessage(
+    h('p', { class: 'msg-text', text: failed === 0
+      ? 'Your cut is ready. Watch it, then approve the final cut.'
+      : `Your cut rendered, but ${failed} check${failed === 1 ? '' : 's'} failed. Ask for changes and I’ll fix them.` }),
+    h('div', { class: 'block' },
       safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true }) : null,
+      h('p', { class: `qa-summary${failed ? ' is-fail' : ''}` },
+        h('span', { class: 'qa-summary-dot', 'aria-hidden': 'true', text: failed ? String(failed) : '✓' }),
+        failed ? `${failed} of ${checks.length} QA checks failed` : `All ${checks.length} QA checks passed`),
       h('ul', { class: 'checks' }, checks.map((check) => h('li', { class: `check${check.pass ? '' : ' is-fail'}` },
         h('strong', { text: check.name }), h('span', { text: check.detail })))),
-      qaError ? h('div', { class: 'note note-fault' }, h('p', { text: `The QA command reported: ${qaError}` })) : null,
+      qaError ? note('fault', h('p', { text: `The QA command reported: ${qaError}` })) : null,
       gate));
   return { node, gate };
 }
@@ -827,7 +952,7 @@ function exportLinks(artifacts) {
     ['QA report', artifacts?.qa],
   ].filter(([, url]) => safeOutputUrl(url));
   return h('div', { class: 'exports' },
-    film ? h('a', { class: 'button', href: film, download: '', text: 'Download film' }) : null,
+    film ? h('a', { class: 'pill pill-go', href: film, download: '' }, icon('download'), 'Download film') : null,
     sources.length ? h('p', { class: 'sources' },
       sources.flatMap(([label, url], index) => [
         index ? h('span', { class: 'sources-slash', 'aria-hidden': 'true', text: ' / ' }) : null,
@@ -838,35 +963,36 @@ function exportLinks(artifacts) {
 function messageView(message, record) {
   const { type, role, data } = message;
   if (role === 'director') {
-    return { node: h('article', { class: 'msg msg-director' }, h('span', { class: 'sr-only', text: 'You: ' }), data.text) };
+    return { node: h('article', { class: 'msg msg-director' }, h('div', { class: 'bubble' }, h('span', { class: 'sr-only', text: 'You: ' }), data.text)) };
   }
   try {
     if (type === 'storyboard') return storyboardView(message);
     if (type === 'timeline') return timelineView(message);
     if (type === 'render') return renderView(message);
   } catch (error) {
-    return { node: h('article', { class: 'msg msg-system' }, h('div', { class: 'note note-fault' }, h('p', { text: `This card couldn’t be shown: ${error.message}` }))) };
+    return { node: systemMessage(note('fault', h('p', { text: `This card couldn’t be shown: ${error.message}` }))) };
   }
   if (type === 'approved') {
     const gate = h('div', { class: 'gate' });
-    return { node: h('article', { class: 'msg msg-system' }, h('p', { text: 'Final cut approved.' }), gate), gate };
+    return { node: systemMessage(h('p', { class: 'msg-text', text: 'Final cut approved. Deliver it to add the film and its source files to your Library.' }), gate), gate };
   }
   if (type === 'delivered') {
     return {
-      node: h('article', { class: 'msg msg-system' },
-        h('p', { text: `Delivered. ${recordTitle(record)} is in your Library with its source files.` }),
+      node: systemMessage(
+        h('p', { class: 'msg-text', text: `Delivered. ${recordTitle(record)} is in your Library.` }),
         exportLinks(data.artifacts)),
     };
   }
   if (type === 'error') {
     const gate = h('div', { class: 'gate-inline' });
-    return { node: h('article', { class: 'msg msg-system' }, h('div', { class: 'note note-fault' }, h('p', {}, h('strong', { text: data.text })), gate)), gate };
+    return { node: systemMessage(note('fault', h('p', {}, h('strong', { text: data.text })), gate)), gate };
   }
-  return { node: h('article', { class: 'msg msg-system' }, h('p', { text: data.text })) };
+  return { node: systemMessage(h('p', { class: 'msg-text', text: data.text })) };
 }
 
 // ------------------------------------------------------------------ studio rendering
 
+const studioView = $('view-studio');
 const thread = $('thread');
 const threadScroll = $('thread-scroll');
 const composer = $('composer');
@@ -878,30 +1004,45 @@ const nodeCache = new Map();
 let workingNode = null;
 let workingTimer = null;
 
-function welcomeView() {
-  return h('div', { class: 'welcome', 'data-welcome': '' },
-    h('span', { class: 'rule-mark', 'aria-hidden': 'true' }),
-    h('p', { class: 'welcome-lead', text: 'Brief me. I’ll write the storyboard for your approval, build and render every shot, and check the cut before you sign it off.' }),
-    h('p', { class: 'starters-label', text: 'Start from a brief' }),
-    h('ul', { class: 'starters' }, STARTERS.map((starter) => h('li', {},
-      h('button', {
-        class: 'starter',
-        type: 'button',
-        text: starter,
-        onclick: () => {
-          composerInput.value = starter;
-          autosize();
-          syncComposer();
-          composerInput.focus();
-        },
-      })))));
+function renderStarters() {
+  $('starters').replaceChildren(...STARTERS.map((starter) => h('button', {
+    class: 'starter',
+    type: 'button',
+    onclick: () => {
+      const record = activeRecord();
+      record.context = cleanContext({ ...record.context, primaryColor: starter.primaryColor, accentColor: starter.accentColor });
+      fillDetails(record);
+      persist();
+      composerInput.value = starter.brief;
+      autosize();
+      syncComposer();
+      composerInput.focus();
+    },
+  },
+  h('span', { class: 'starter-thumb' }, specToSvg(storyboardSpec({ onScreenCopy: starter.copy }, starter), starter.copy, { primary: starter.primaryColor, accent: starter.accentColor })),
+  h('span', { class: 'starter-copy' }, h('span', { class: 'starter-label', text: starter.label }), h('span', { class: 'starter-text', text: starter.brief })))));
 }
+
+const WORKING_SKELETON = {
+  'Writing the storyboard': 'strip',
+  'Building the shots': 'strip',
+  'Rendering and checking': 'wide',
+};
 
 function updateWorking() {
   if (!workingNode || !busy) return;
   const elapsed = Math.round((Date.now() - busy.startedAt) / 1000);
-  workingNode.querySelector('.working-time').textContent = `${elapsed}s`;
-  workingNode.querySelector('.working-hint').hidden = elapsed < 25;
+  workingNode.querySelector('.working-time').textContent = elapsed >= 25 ? `${elapsed}s, AI answers can take a minute` : `${elapsed}s`;
+}
+
+function buildWorkingNode() {
+  const kind = WORKING_SKELETON[busy.label];
+  const skeleton = kind === 'strip'
+    ? h('div', { class: 'skeleton-strip', 'aria-hidden': 'true' }, h('span', { class: 'skeleton' }), h('span', { class: 'skeleton' }), h('span', { class: 'skeleton' }))
+    : kind === 'wide' ? h('div', { class: 'skeleton-strip', 'aria-hidden': 'true' }, h('span', { class: 'skeleton skeleton-wide' })) : null;
+  return h('div', { role: 'status' }, systemMessage(
+    h('p', { class: 'working-text' }, h('span', { class: 'shimmer-text', text: `${busy.label}…` }), h('span', { class: 'working-time', text: '0s' })),
+    skeleton));
 }
 
 function renderThread(record, { stick = false } = {}) {
@@ -911,11 +1052,6 @@ function renderThread(record, { stick = false } = {}) {
     thread.dataset.recordId = record.id;
     stick = true;
   }
-
-  const welcome = thread.querySelector('[data-welcome]');
-  if (record.messages.length === 0) {
-    if (!welcome) thread.replaceChildren(welcomeView());
-  } else if (welcome) welcome.remove();
 
   for (const message of record.messages) {
     const key = `${record.id}:${message.id}`;
@@ -929,14 +1065,13 @@ function renderThread(record, { stick = false } = {}) {
   }
 
   if (busy && busy.recordId === record.id) {
-    if (!workingNode) {
-      workingNode = h('div', { class: 'msg msg-system working', role: 'status' },
-        h('p', {}, `${busy.label}… `, h('span', { class: 'working-time', text: '0s' })),
-        h('p', { class: 'msg-meta working-hint', hidden: true, text: 'Still working. AI answers can take up to a minute.' }),
-        h('div', { class: 'working-bar', 'aria-hidden': 'true' }));
+    if (!workingNode || workingNode.dataset.label !== busy.label) {
+      workingNode?.remove();
+      workingNode = buildWorkingNode();
+      workingNode.dataset.label = busy.label;
+      clearInterval(workingTimer);
       workingTimer = setInterval(updateWorking, 1000);
     }
-    workingNode.querySelector('p').firstChild.textContent = `${busy.label}… `;
     thread.append(workingNode);
     updateWorking();
   } else if (workingNode) {
@@ -949,11 +1084,12 @@ function renderThread(record, { stick = false } = {}) {
 }
 
 function renderHead(record) {
+  const empty = record.messages.length === 0;
+  studioView.classList.toggle('is-empty', empty);
   $('project-title').textContent = recordTitle(record);
-  document.title = record.messages.length ? `${recordTitle(record)} — FOLD Motion` : 'FOLD Motion — Studio';
+  document.title = empty ? 'FOLD Motion — Studio' : `${recordTitle(record)} — FOLD Motion`;
   const state = record.project.state;
   const current = STAGE_OF_STATE[state];
-  $('stages').hidden = record.messages.length === 0;
   for (const item of $('stages').children) {
     const index = Number(item.dataset.stage);
     const done = index < current || (state === 'DELIVERED' && index === current);
@@ -977,6 +1113,8 @@ function syncComposer() {
   const context = record.context;
   $('swatch-primary').style.background = context.primaryColor;
   $('swatch-accent').style.background = context.accentColor;
+  $('primary-hex').textContent = context.primaryColor;
+  $('accent-hex').textContent = context.accentColor;
   $('details-note').textContent = record.briefs.length && state !== 'BRIEF'
     ? 'Changes here apply to the next storyboard you ask for.'
     : 'Exact copy and brand colors. The AI can’t change these.';
@@ -987,6 +1125,7 @@ function fillDetails(record) {
   $('subheadline-input').value = record.context.subheadline;
   $('primary-color-input').value = record.context.primaryColor.toLowerCase();
   $('accent-color-input').value = record.context.accentColor.toLowerCase();
+  syncComposer();
 }
 
 function autosize() {
@@ -1007,11 +1146,11 @@ const gateObserver = new IntersectionObserver((entries) => {
 }, { root: threadScroll, threshold: 0.5 });
 
 const DOCK_STATUS = {
-  STORYBOARD_REVIEW: 'Storyboard / waiting on you',
-  BUILDING: 'Shot build stopped / try again',
-  RENDERING: 'Shots built / ready to render',
-  QA: 'Cut ready / waiting on your review',
-  APPROVED: 'Approved / ready to deliver',
+  STORYBOARD_REVIEW: 'Storyboard is waiting for your approval',
+  BUILDING: 'The shot build stopped',
+  RENDERING: 'Shots are built and ready to render',
+  QA: 'Your cut is ready to review',
+  APPROVED: 'Approved and ready to deliver',
 };
 
 /** The gate area of the newest card in the current version, if it holds a live action. */
@@ -1041,7 +1180,7 @@ function renderDock(record) {
   const show = currentView === 'studio' && !busy && record.messages.length > 0 && status && !liveGateVisible;
   dock.hidden = !show;
   if (!show) return;
-  $('dock-status').textContent = failingQa ? 'QA failed / ask for changes' : status;
+  $('dock-status').textContent = failingQa ? 'QA found problems to fix' : status;
   const gate = pendingGate(record);
   dockGo.hidden = !gate;
   if (gate) dockGo.textContent = gate.label;
@@ -1056,19 +1195,28 @@ dockShow.addEventListener('click', () => {
 
 // ------------------------------------------------------------------ other views
 
+function posterFor(record) {
+  const timelineShot = record.project.timeline?.shots?.[0];
+  if (timelineShot) return specToSvg(timelineShot.spec, recordTitle(record), { primary: record.project.timeline.palette?.primary, accent: record.project.timeline.palette?.accent });
+  const shot = record.project.storyboard?.shots?.[0];
+  const context = cleanContext(record.project.context || record.context);
+  return specToSvg(storyboardSpec({ onScreenCopy: shot?.onScreenCopy || recordTitle(record) }, context), recordTitle(record), { primary: context.primaryColor, accent: context.accentColor });
+}
+
 function renderProjects() {
   const list = $('project-list');
   const records = listedRecords();
   if (records.length === 0) {
     list.replaceChildren(h('li', { class: 'empty' },
-      h('p', { text: 'Productions you start in Studio show up here, with the ones waiting on you marked.' }),
-      h('button', { class: 'button button-go', type: 'button', onclick: () => startNewProduction(), text: 'Start a production' })));
+      h('p', { text: 'Every production you start in Studio lands here, with the ones waiting on you marked.' }),
+      h('button', { class: 'pill pill-go', type: 'button', onclick: () => startNewProduction(), text: 'Start a production' })));
     return;
   }
   list.replaceChildren(...records.map((record) => {
     const state = record.project.state;
     const waiting = WAITING_STATES.has(state);
-    return h('li', { class: `project-row${record.id === store.activeId ? ' is-active' : ''}` },
+    const done = state === 'DELIVERED';
+    return h('li', { class: 'project-card' },
       h('button', {
         class: 'project-open',
         type: 'button',
@@ -1079,10 +1227,14 @@ function renderProjects() {
           showView('studio');
         },
       },
+      h('span', { class: 'poster' }, posterFor(record)),
       h('span', { class: 'project-name', text: recordTitle(record) }),
-      h('span', { class: `project-status${waiting ? ' is-waiting' : ''}`, text: `${STATUS_TEXT[state]}, updated ${relativeTime(record.updatedAt)}` })),
+      h('span', { class: 'project-status' },
+        h('span', { class: `status-pill${waiting ? ' is-waiting' : done ? ' is-done' : ''}`, text: waiting ? 'Needs you' : done ? 'Delivered' : 'In progress' }),
+        relativeTime(record.updatedAt),
+        record.id === store.activeId ? h('span', { class: 'current-tag', text: 'Current' }) : null)),
       h('button', {
-        class: 'button button-quiet',
+        class: 'card-remove',
         type: 'button',
         'aria-label': `Remove ${recordTitle(record)}`,
         disabled: Boolean(busy && busy.recordId === record.id),
@@ -1104,7 +1256,7 @@ function renderLibrary() {
   if (films.length === 0) {
     library.replaceChildren(h('div', { class: 'empty' },
       h('p', { text: 'Delivered films land here with their source files. Approve and deliver a cut in Studio to add the first one.' }),
-      h('a', { class: 'button', href: './scene-01.html', text: 'Open the sample scene' })));
+      h('button', { class: 'pill', type: 'button', onclick: () => showView('studio'), text: 'Go to Studio' })));
     return;
   }
   library.replaceChildren(...films.map((record) => {
@@ -1112,7 +1264,9 @@ function renderLibrary() {
     const delivered = record.project.history?.find((entry) => entry.state === 'DELIVERED')?.at || record.updatedAt;
     const duration = record.project.timeline?.durationInSeconds;
     return h('article', { class: 'film' },
-      safeOutputUrl(artifacts?.video) ? h('video', { class: 'player', src: artifacts.video, controls: true, preload: 'metadata', playsinline: true }) : null,
+      safeOutputUrl(artifacts?.video)
+        ? h('video', { class: 'player', src: artifacts.video, controls: true, preload: 'metadata', playsinline: true })
+        : h('span', { class: 'poster' }, posterFor(record)),
       h('h2', { text: recordTitle(record) }),
       h('p', { text: `${Number.isFinite(duration) ? `${seconds(duration)}, ` : ''}delivered ${relativeTime(delivered)}` }),
       exportLinks(artifacts));
@@ -1314,6 +1468,7 @@ window.addEventListener('beforeunload', (event) => {
 
 // ------------------------------------------------------------------ start
 
+renderStarters();
 fillDetails(activeRecord());
 showView(location.hash.slice(1));
 autosize();

@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#0E0E11" media="(prefers-color-scheme: dark)">
-    <meta name="theme-color" content="#F0EDE8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0E0E11">
+    <meta name="color-scheme" content="dark">
     <meta name="description" content="FOLD Motion by SEV7N FOLD: direct a motion production from brief to delivery in one conversation.">
     <link rel="icon" href="./brand/favicon.svg" type="image/svg+xml">
     <title>FOLD Motion — Studio</title>
@@ -15,121 +15,129 @@
     <script type="module" src="./studio.js"></script>
   </head>
   <body>
-    <header class="topbar">
-      <a class="wordmark" href="./" aria-label="FOLD Motion by SEV7N FOLD">
-        <svg class="mark" viewBox="0 0 412 512" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M411 85 L0 86 L66 200 L202 203 L147 296 L105 225 L81 224 L147 340 L239 180 L79 179 L37 108 L372 108 L205 397 L188 368 L323 133 L87 133 L98 153 L280 154 L285 156 L164 367 L168 378 L205 440 Z"/><circle cx="205.4" cy="490.9" r="20.6"/><circle cx="205.4" cy="20.2" r="20.6"/></svg>
-        <span class="wordmark-name" aria-hidden="true">FOLD MOTION</span>
-        <span class="wordmark-owner" aria-hidden="true">SEV7N FOLD</span>
-      </a>
-      <nav class="tabs" aria-label="Sections">
-        <button class="tab" type="button" data-view="studio" aria-current="page">Studio</button>
-        <button class="tab" type="button" data-view="projects">Projects<span class="tab-count" id="pending-count" hidden></span></button>
-        <button class="tab" type="button" data-view="library">Library</button>
-        <button class="tab" type="button" data-view="system">System</button>
+    <div class="app">
+      <nav class="rail" aria-label="Sections">
+        <a class="rail-mark" href="./" aria-label="FOLD Motion by SEV7N FOLD">
+          <svg viewBox="0 0 412 512" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M411 85 L0 86 L66 200 L202 203 L147 296 L105 225 L81 224 L147 340 L239 180 L79 179 L37 108 L372 108 L205 397 L188 368 L323 133 L87 133 L98 153 L280 154 L285 156 L164 367 L168 378 L205 440 Z"/><circle cx="205.4" cy="490.9" r="20.6"/><circle cx="205.4" cy="20.2" r="20.6"/></svg>
+        </a>
+        <div class="rail-items">
+          <button class="tab" type="button" data-view="studio" aria-current="page"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z"/><path d="M8 10h8M8 13h5"/></svg><span class="tab-label">Studio</span></button>
+          <button class="tab" type="button" data-view="projects"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span class="tab-label">Projects</span><span class="tab-count" id="pending-count" hidden></span></button>
+          <button class="tab" type="button" data-view="library"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></svg><span class="tab-label">Library</span></button>
+          <button class="tab" type="button" data-view="system"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h9M18 7h1M5 17h3M12 17h7"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/><path d="M5 12h1M10 12h9"/><circle cx="8" cy="12" r="2"/></svg><span class="tab-label">System</span></button>
+        </div>
+        <span class="rail-owner" aria-hidden="true">SEV7N FOLD</span>
       </nav>
-      <button class="engine" id="engine-chip" type="button" data-view="system">
-        <span class="engine-dot" aria-hidden="true"></span><span id="engine-label">Checking engine</span>
-      </button>
-    </header>
 
-    <main class="views">
-      <!-- Studio: one conversation per production -->
-      <section class="view view-studio" id="view-studio" data-view-panel="studio" aria-labelledby="project-title">
-        <div class="thread-scroll" id="thread-scroll">
-          <div class="column">
-            <header class="project-head">
-              <h1 class="project-title" id="project-title">New production</h1>
-              <ol class="stages" id="stages" aria-label="Production stages">
-                <li data-stage="0"><span class="stage-number" aria-hidden="true">01</span>Brief</li>
-                <li data-stage="1"><span class="stage-number" aria-hidden="true">02</span>Storyboard</li>
-                <li data-stage="2"><span class="stage-number" aria-hidden="true">03</span>Build</li>
-                <li data-stage="3"><span class="stage-number" aria-hidden="true">04</span>Render</li>
-                <li data-stage="4"><span class="stage-number" aria-hidden="true">05</span>Review</li>
-                <li data-stage="5"><span class="stage-number" aria-hidden="true">06</span>Deliver</li>
-              </ol>
-            </header>
-            <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Production conversation"></div>
-          </div>
-        </div>
-
-        <form class="composer" id="composer" autocomplete="off">
-          <div class="column">
-            <div class="dock" id="dock" hidden>
-              <span class="dock-status" id="dock-status"></span>
-              <div class="dock-actions">
-                <button class="dock-show" id="dock-show" type="button">Show</button>
-                <button class="button button-go" id="dock-go" type="button"></button>
-              </div>
-            </div>
-            <div class="composer-box">
-              <label class="sr-only" for="composer-input">Message</label>
-              <textarea id="composer-input" rows="1" placeholder="Describe the film you want to make"></textarea>
-              <div class="brief-details" id="brief-details" hidden>
-                <label>Headline<input id="headline-input" type="text" maxlength="54" placeholder="Written from your brief"></label>
-                <label>Subheadline<input id="subheadline-input" type="text" maxlength="100" placeholder="Optional"></label>
-                <label class="color-field">Primary<input id="primary-color-input" type="color" value="#0b0f19"></label>
-                <label class="color-field">Accent<input id="accent-color-input" type="color" value="#00f0ff"></label>
-                <p class="details-note" id="details-note">Exact copy and brand colors. The AI can't change these.</p>
-              </div>
-              <div class="composer-row">
-                <button class="details-toggle" id="details-toggle" type="button" aria-expanded="false" aria-controls="brief-details">
-                  <span class="swatch" id="swatch-primary" aria-hidden="true"></span><span class="swatch" id="swatch-accent" aria-hidden="true"></span>
-                  <span id="details-label">Copy and colors</span>
-                </button>
-                <button class="send" id="send" type="submit">Send</button>
-              </div>
-            </div>
-            <p class="composer-hint" id="composer-hint">Enter sends. Shift and Enter adds a line.</p>
-          </div>
-        </form>
-      </section>
-
-      <!-- Projects -->
-      <section class="view view-page" id="view-projects" data-view-panel="projects" aria-labelledby="projects-heading" hidden>
-        <div class="column">
-          <header class="page-head">
-            <h1 id="projects-heading">Projects</h1>
-            <button class="button" id="new-production" type="button">New production</button>
+      <main class="views">
+        <!-- Studio: one conversation per production -->
+        <section class="view view-studio is-empty" id="view-studio" data-view-panel="studio" aria-labelledby="project-title">
+          <header class="studio-head" id="studio-head">
+            <h1 class="project-title" id="project-title">New production</h1>
+            <ol class="stepper" id="stages" aria-label="Production stages">
+              <li data-stage="0"><span class="step-dot">1</span><span class="step-label">Brief</span></li>
+              <li data-stage="1"><span class="step-dot">2</span><span class="step-label">Storyboard</span></li>
+              <li data-stage="2"><span class="step-dot">3</span><span class="step-label">Build</span></li>
+              <li data-stage="3"><span class="step-dot">4</span><span class="step-label">Render</span></li>
+              <li data-stage="4"><span class="step-dot">5</span><span class="step-label">Review</span></li>
+              <li data-stage="5"><span class="step-dot">6</span><span class="step-label">Deliver</span></li>
+            </ol>
           </header>
-          <ul class="project-list" id="project-list"></ul>
-        </div>
-      </section>
 
-      <!-- Library -->
-      <section class="view view-page" id="view-library" data-view-panel="library" aria-labelledby="library-heading" hidden>
-        <div class="column column-wide">
-          <header class="page-head"><h1 id="library-heading">Library</h1></header>
-          <div class="library" id="library"></div>
-        </div>
-      </section>
+          <div class="thread-scroll" id="thread-scroll">
+            <div class="column">
+              <div class="hero" id="hero">
+                <svg class="hero-mark" viewBox="0 0 412 512" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M411 85 L0 86 L66 200 L202 203 L147 296 L105 225 L81 224 L147 340 L239 180 L79 179 L37 108 L372 108 L205 397 L188 368 L323 133 L87 133 L98 153 L280 154 L285 156 L164 367 L168 378 L205 440 Z"/><circle cx="205.4" cy="490.9" r="20.6"/><circle cx="205.4" cy="20.2" r="20.6"/></svg>
+                <p class="hero-kicker">FOLD Motion <span>by SEV7N FOLD</span></p>
+                <h2 class="hero-title">What are we making next?</h2>
+                <p class="hero-lede">Describe the film. You approve the storyboard, watch the cut, and sign it off. FOLD Motion does the rest.</p>
+              </div>
+              <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Production conversation"></div>
+            </div>
+          </div>
 
-      <!-- System -->
-      <section class="view view-page" id="view-system" data-view-panel="system" aria-labelledby="system-heading" hidden>
-        <div class="column">
-          <header class="page-head"><h1 id="system-heading">System</h1></header>
-          <section class="sys-block" aria-labelledby="engine-heading">
-            <h2 id="engine-heading">AI engine</h2>
-            <dl class="sys-list" id="engine-details"></dl>
-          </section>
-          <section class="sys-block" aria-labelledby="answers-heading">
-            <h2 id="answers-heading">Current production</h2>
-            <dl class="sys-list" id="answer-details"></dl>
-          </section>
-          <section class="sys-block" aria-labelledby="log-heading">
-            <div class="sys-head"><h2 id="log-heading">Activity</h2><button class="button button-quiet" id="clear-log" type="button">Clear activity</button></div>
-            <ol class="log" id="activity-log"></ol>
-          </section>
-          <section class="sys-block" aria-labelledby="data-heading">
-            <h2 id="data-heading">Studio data</h2>
-            <p class="sys-note">Projects and conversations are saved in this browser only.</p>
-            <button class="button button-danger" id="clear-data" type="button">Delete all studio data</button>
-          </section>
-          <footer class="signoff">
-            <span>SEV7N FOLD <span class="signoff-accent">/ Make more.</span></span>
-            <span>FOLD Motion</span>
-          </footer>
-        </div>
-      </section>
-    </main>
+          <form class="composer" id="composer" autocomplete="off">
+            <div class="column">
+              <div class="dock" id="dock" hidden>
+                <span class="dock-status" id="dock-status"></span>
+                <div class="dock-actions">
+                  <button class="dock-show" id="dock-show" type="button">Show</button>
+                  <button class="pill pill-go" id="dock-go" type="button"></button>
+                </div>
+              </div>
+              <div class="composer-box">
+                <div class="brief-details" id="brief-details" hidden>
+                  <label>Headline<input id="headline-input" type="text" maxlength="54" placeholder="Written from your brief"></label>
+                  <label>Subheadline<input id="subheadline-input" type="text" maxlength="100" placeholder="Optional"></label>
+                  <label class="color-field">Primary<span class="color-input"><input id="primary-color-input" type="color" value="#0b0f19"><span id="primary-hex">#0B0F19</span></span></label>
+                  <label class="color-field">Accent<span class="color-input"><input id="accent-color-input" type="color" value="#00f0ff"><span id="accent-hex">#00F0FF</span></span></label>
+                  <p class="details-note" id="details-note">Exact copy and brand colors. The AI can’t change these.</p>
+                </div>
+                <label class="sr-only" for="composer-input">Message</label>
+                <textarea id="composer-input" rows="1" placeholder="Describe the film you want to make"></textarea>
+                <div class="composer-row">
+                  <div class="tools">
+                    <button class="tool" id="details-toggle" type="button" aria-expanded="false" aria-controls="brief-details">
+                      <span class="swatches" aria-hidden="true"><span class="swatch" id="swatch-primary"></span><span class="swatch" id="swatch-accent"></span></span>
+                      <span id="details-label">Copy and colors</span>
+                    </button>
+                    <span class="tool tool-static">16:9, 24 fps</span>
+                    <button class="tool engine" id="engine-chip" type="button" data-view="system">
+                      <span class="engine-dot" aria-hidden="true"></span><span id="engine-label">Checking engine</span>
+                    </button>
+                  </div>
+                  <button class="send" id="send" type="submit" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></button>
+                </div>
+              </div>
+              <div class="starters" id="starters" aria-label="Start from an example"></div>
+            </div>
+          </form>
+        </section>
+
+        <!-- Projects -->
+        <section class="view view-page" id="view-projects" data-view-panel="projects" aria-labelledby="projects-heading" hidden>
+          <div class="column column-wide">
+            <header class="page-head">
+              <h1 id="projects-heading">Projects</h1>
+              <button class="pill pill-go" id="new-production" type="button">New production</button>
+            </header>
+            <ul class="project-grid" id="project-list"></ul>
+          </div>
+        </section>
+
+        <!-- Library -->
+        <section class="view view-page" id="view-library" data-view-panel="library" aria-labelledby="library-heading" hidden>
+          <div class="column column-wide">
+            <header class="page-head"><h1 id="library-heading">Library</h1></header>
+            <div class="library" id="library"></div>
+          </div>
+        </section>
+
+        <!-- System -->
+        <section class="view view-page" id="view-system" data-view-panel="system" aria-labelledby="system-heading" hidden>
+          <div class="column">
+            <header class="page-head"><h1 id="system-heading">System</h1></header>
+            <section class="panel" aria-labelledby="engine-heading">
+              <h2 id="engine-heading">AI engine</h2>
+              <dl class="rows" id="engine-details"></dl>
+            </section>
+            <section class="panel" aria-labelledby="answers-heading">
+              <h2 id="answers-heading">Current production</h2>
+              <dl class="rows" id="answer-details"></dl>
+            </section>
+            <section class="panel" aria-labelledby="log-heading">
+              <div class="panel-head"><h2 id="log-heading">Activity</h2><button class="pill pill-quiet" id="clear-log" type="button">Clear</button></div>
+              <ol class="log" id="activity-log"></ol>
+            </section>
+            <section class="panel" aria-labelledby="data-heading">
+              <h2 id="data-heading">Studio data</h2>
+              <p class="panel-note">Projects and conversations are saved in this browser only.</p>
+              <button class="pill pill-danger" id="clear-data" type="button">Delete all studio data</button>
+            </section>
+            <footer class="signoff"><span>SEV7N FOLD <b>/ Make more.</b></span><span>FOLD Motion</span></footer>
+          </div>
+        </section>
+      </main>
+    </div>
   </body>
 </html>
