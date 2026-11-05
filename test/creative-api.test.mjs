@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { generateProductionAction } from '../src/runtime/creative-api.mjs';
 
+process.env.GEMINI_RETRY_DELAY_MS = '0';
+
 const storyboard = {
   id: 'failover-storyboard',
   title: 'Failover test',
@@ -26,17 +28,19 @@ const storyboard = {
   acceptanceCriteria: { technical: ['Use the configured format.'], creative: ['Keep copy readable.'] },
 };
 
-function createResponse(payload, status = 200) {
+function createResponse(payload, status = 200, message = 'Temporarily unavailable.') {
   return {
     ok: status >= 200 && status < 300,
     status,
     async json() {
       return status === 200
         ? { candidates: [{ content: { parts: [{ text: typeof payload === 'string' ? payload : JSON.stringify(payload) }] } }] }
-        : { error: { message: 'Temporarily unavailable.' } };
+        : { error: { message } };
     },
   };
 }
+
+const rejectedKey = () => createResponse({}, 400, 'API key not valid. Please pass a valid API key.');
 
 function createOpenAIResponse(payload, status = 200) {
   return {
@@ -62,7 +66,7 @@ test('Gemini generation retries keys sequentially and succeeds with the next key
       const key = options.headers['x-goog-api-key'];
       attemptedKeys.push(key);
       return key === 'first-secret'
-        ? createResponse({}, 503)
+        ? rejectedKey()
         : createResponse(`User Safety: safe\n\`\`\`json\n${JSON.stringify(storyboard)}\n\`\`\``);
     },
     logger: {
@@ -98,7 +102,7 @@ test('deterministic mock is used only after every configured Gemini key fails', 
     apiKeys: ['first-secret', 'second-secret'],
     fetchImpl: async (_url, options) => {
       attemptedKeys.push(options.headers['x-goog-api-key']);
-      return createResponse({}, 503);
+      return rejectedKey();
     },
     logger: {
       info(message) { logs.push(message); },
@@ -136,7 +140,7 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
     },
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
-      if (url.includes('generativelanguage.googleapis.com')) return createResponse({}, 503);
+      if (url.includes('generativelanguage.googleapis.com')) return rejectedKey();
       if (url.includes('api.groq.com')) return createOpenAIResponse({}, 503);
       return createOpenAIResponse(`Here is the storyboard:\n\`\`\`json\n${JSON.stringify(storyboard)}\n\`\`\``);
     },
@@ -186,7 +190,10 @@ test('generation uses deterministic mock only after Gemini, Groq, and OpenRouter
     logger: { info() {}, warn() {} },
   });
 
-  assert.equal(attemptedUrls.length, 3);
+  const geminiCalls = attemptedUrls.filter((url) => url.includes('generativelanguage.googleapis.com'));
+  assert.equal(geminiCalls.length, 4, 'two tries on the primary model and two on the backup model');
+  assert.ok(geminiCalls.some((url) => url.includes('gemini-3.6-flash')));
+  assert.equal(attemptedUrls.length, 6);
   assert.equal(result.provider, 'mock-provider');
   assert.match(result.warning, /All 3 configured AI provider credentials failed/);
   assert.deepEqual(result.telemetry.slice(-2).map(({ stage }) => stage), [

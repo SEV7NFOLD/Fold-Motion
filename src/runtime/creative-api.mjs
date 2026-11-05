@@ -7,6 +7,9 @@ import {
 } from '../ai/provider.mjs';
 import { compileCreativePlan, createCreativePlan } from '../production/production.mjs';
 
+const DEFAULT_BACKUP_MODELS = 'gemini-3.6-flash';
+const sleep = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
+
 const FALLBACK_PROVIDERS = Object.freeze([
   {
     name: 'Groq',
@@ -36,7 +39,7 @@ const FAILURE_EXPLANATIONS = Object.freeze({
   config: 'model unavailable or request rejected',
   timeout: 'request timed out',
   network: 'provider unreachable',
-  overload: 'provider overloaded',
+  overload: 'servers overloaded (HTTP 503)',
   output: 'answer could not be used',
   provider: 'provider error',
 });
@@ -49,8 +52,17 @@ function readGeminiSettings(environment) {
     ? environment.GEMINI_THINKING_LEVEL.trim()
     : undefined;
   const timeout = Number(environment.GEMINI_TIMEOUT_MS);
+  // Overload (503) and quota (429) are per model, so a different Gemini model often answers
+  // when the primary can't. Set GEMINI_BACKUP_MODELS="" to disable.
+  const backupModels = (typeof environment.GEMINI_BACKUP_MODELS === 'string' ? environment.GEMINI_BACKUP_MODELS : DEFAULT_BACKUP_MODELS)
+    .split(',').map((name) => name.trim()).filter((name) => name && name !== model);
+  const retries = Number(environment.GEMINI_OVERLOAD_RETRIES);
+  const retryDelay = Number(environment.GEMINI_RETRY_DELAY_MS);
   return {
     model,
+    backupModels: [...new Set(backupModels)],
+    overloadRetries: Number.isInteger(retries) && retries >= 0 ? Math.min(retries, 3) : 1,
+    retryDelayMs: Number.isFinite(retryDelay) && retryDelay >= 0 ? retryDelay : 1500,
     thinkingLevel,
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 30_000,
     // Keys created in the same Google Cloud project share one quota, so a 429 on one
@@ -69,6 +81,8 @@ export function getEngineConfig(environment = process.env) {
       keys,
       model: gemini.model,
       name: geminiDisplayName(gemini.model),
+      backupModels: gemini.backupModels.map((model) => ({ model, name: geminiDisplayName(model) })),
+      overloadRetries: gemini.overloadRetries,
       thinkingLevel: gemini.thinkingLevel ?? null,
       timeoutMs: gemini.timeoutMs,
       rotateOnQuota: gemini.rotateOnQuota,
@@ -121,65 +135,102 @@ export async function generateProductionAction({
     return { action, ...result, telemetry };
   };
 
+  // Keys only differ in whose account they belong to. Model-level failures (overload,
+  // quota, unknown model) are handled by retrying and switching models, not keys.
+  const models = [gemini.model, ...gemini.backupModels];
+  const remainingKeysNote = (count) => `${count} remaining key${count === 1 ? '' : 's'}`;
   let geminiAttempts = 0;
-  for (let index = 0; index < keyPool.length; index += 1) {
+  let stopGemini = false;
+  for (let index = 0; index < keyPool.length && !stopGemini; index += 1) {
     const keyNumber = index + 1;
     const totalKeys = keyPool.length;
     geminiAttempts += 1;
-    const attemptMessage = `Attempting Gemini request with API key #${keyNumber} of ${totalKeys}.`;
-    telemetry.push({ stage: 'Gemini key attempt', message: attemptMessage });
-    logger.info?.(`[api/generate] ${attemptMessage}`, { action, keyNumber, totalKeys, model: gemini.model });
+    let lastKind = null;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), gemini.timeoutMs);
-    try {
-      const provider = new GeminiAIProvider({
-        apiKey: keyPool[index],
-        model: gemini.model,
-        thinkingLevel: gemini.thinkingLevel,
-        fetchImpl: (url, options) => fetchImpl(url, {
-          ...options,
-          signal: controller.signal,
-        }),
-      });
-      return succeed(await run(provider));
-    } catch (error) {
-      const kind = error?.kind || 'provider';
-      const safeMessage = redact(error?.message, keyPool);
-      lastSafeError = safeMessage;
-      failures.push({ provider: 'Gemini', kind });
-      const failureMessage = `Gemini API key #${keyNumber} failed: ${safeMessage}`;
-      telemetry.push({ stage: 'Gemini key failed', message: failureMessage, kind });
-      logger.warn('[api/generate] Gemini key attempt failed.', {
-        action,
-        keyNumber,
-        totalKeys,
-        kind,
-        error: safeMessage,
-      });
+    for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
+      const model = models[modelIndex];
+      const modelName = geminiDisplayName(model);
+      for (let attempt = 0; attempt <= gemini.overloadRetries; attempt += 1) {
+        const attemptMessage = modelIndex === 0 && attempt === 0
+          ? `Attempting Gemini request with API key #${keyNumber} of ${totalKeys}.`
+          : `Attempting ${modelName} with API key #${keyNumber} of ${totalKeys}${attempt ? ` (retry ${attempt})` : ''}.`;
+        telemetry.push({ stage: 'Gemini key attempt', message: attemptMessage });
+        logger.info?.(`[api/generate] ${attemptMessage}`, { action, keyNumber, totalKeys, model });
 
-      const remaining = keyPool.length - keyNumber;
-      const stopReason = remaining === 0 ? null
-        : kind === 'quota' && !gemini.rotateOnQuota
-          ? `Gemini quota reached. Skipping ${remaining} remaining key${remaining === 1 ? '' : 's'}: keys in one Google project share a single quota (set GEMINI_ROTATE_ON_QUOTA=true if they come from separate projects).`
-          : kind === 'output'
-            ? `Gemini answered, but the output could not be used. Skipping ${remaining} remaining key${remaining === 1 ? '' : 's'}: another key returns the same kind of answer.`
-            : kind === 'config'
-              ? `Gemini rejected the model or request. Skipping ${remaining} remaining key${remaining === 1 ? '' : 's'}: the same request fails on every key. Check GEMINI_MODEL.`
-              : null;
-      if (stopReason) {
-        telemetry.push({ stage: 'Gemini keys skipped', message: stopReason, kind });
-        logger.warn(`[api/generate] ${stopReason}`, { action, kind });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), gemini.timeoutMs);
+        try {
+          const provider = new GeminiAIProvider({
+            apiKey: keyPool[index],
+            model,
+            thinkingLevel: gemini.thinkingLevel,
+            fetchImpl: (url, options) => fetchImpl(url, {
+              ...options,
+              signal: controller.signal,
+            }),
+          });
+          return succeed(await run(provider));
+        } catch (error) {
+          const kind = error?.kind || 'provider';
+          const safeMessage = redact(error?.message, keyPool);
+          lastSafeError = safeMessage;
+          lastKind = kind;
+          failures.push({ provider: 'Gemini', kind });
+          telemetry.push({ stage: 'Gemini key failed', message: `Gemini API key #${keyNumber} failed: ${safeMessage}`, kind });
+          logger.warn('[api/generate] Gemini key attempt failed.', { action, keyNumber, totalKeys, model, kind, error: safeMessage });
+          if ((kind === 'overload' || kind === 'network') && attempt < gemini.overloadRetries) {
+            const delay = gemini.retryDelayMs * (attempt + 1);
+            telemetry.push({ stage: 'Gemini retry', message: `${modelName} is busy or unreachable. Retrying in ${(delay / 1000).toFixed(1)}s.`, kind });
+            await sleep(delay);
+            continue;
+          }
+          break;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
+      if (lastKind === 'auth' || lastKind === 'provider') break;
+      if (lastKind === 'output' || lastKind === 'timeout') {
+        stopGemini = true;
+        const reason = lastKind === 'output'
+          ? 'Gemini answered, but the output could not be used'
+          : `Gemini took longer than ${Math.round(gemini.timeoutMs / 1000)}s`;
+        const remaining = keyPool.length - keyNumber;
+        telemetry.push({
+          stage: 'Gemini keys skipped',
+          message: `${reason}. Moving on${remaining ? ` and skipping ${remainingKeysNote(remaining)}` : ''}.`,
+          kind: lastKind,
+        });
         break;
       }
-      if (remaining > 0) {
-        const rotationMessage = `Rotating to Gemini API key #${keyNumber + 1} of ${totalKeys}.`;
-        telemetry.push({ stage: 'Rotating Gemini key', message: rotationMessage });
-        logger.info?.(`[api/generate] ${rotationMessage}`, { action, keyNumber: keyNumber + 1, totalKeys });
+      if (modelIndex < models.length - 1) {
+        const nextName = geminiDisplayName(models[modelIndex + 1]);
+        const because = lastKind === 'quota' ? `${modelName} is out of quota and quotas are counted per model`
+          : lastKind === 'config' ? `${modelName} is unavailable`
+            : `${modelName} is overloaded`;
+        telemetry.push({ stage: 'Gemini backup model', message: `Switching to ${nextName}: ${because}.`, kind: lastKind });
+        logger.info?.(`[api/generate] Switching to backup model ${models[modelIndex + 1]}.`, { action, kind: lastKind });
       }
-    } finally {
-      clearTimeout(timeout);
     }
+
+    const remaining = keyPool.length - keyNumber;
+    if (stopGemini || remaining === 0) continue;
+    const rotate = lastKind === 'auth' || lastKind === 'provider' || (lastKind === 'quota' && gemini.rotateOnQuota);
+    if (rotate) {
+      const rotationMessage = `Rotating to Gemini API key #${keyNumber + 1} of ${totalKeys}.`;
+      telemetry.push({ stage: 'Rotating Gemini key', message: rotationMessage });
+      logger.info?.(`[api/generate] ${rotationMessage}`, { action, keyNumber: keyNumber + 1, totalKeys });
+      continue;
+    }
+    stopGemini = true;
+    const skipMessage = lastKind === 'quota'
+      ? `Gemini quota reached. Skipping ${remainingKeysNote(remaining)}: keys in one Google project share a single quota (set GEMINI_ROTATE_ON_QUOTA=true if they come from separate projects).`
+      : lastKind === 'config'
+        ? `Gemini rejected the model or request. Skipping ${remainingKeysNote(remaining)}: the same request fails on every key. Check GEMINI_MODEL.`
+        : `Gemini's servers are overloaded for every configured model. Skipping ${remainingKeysNote(remaining)}: other keys reach the same servers.`;
+    telemetry.push({ stage: 'Gemini keys skipped', message: skipMessage, kind: lastKind });
+    logger.warn(`[api/generate] ${skipMessage}`, { action, kind: lastKind });
   }
 
   const fallbackProviders = FALLBACK_PROVIDERS.filter(({ environmentKey }) => (

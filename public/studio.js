@@ -53,9 +53,9 @@ const FALLBACK_REASONS = {
   output: 'The model answered, but the answer couldn’t be used even after repair.',
   auth: 'The server’s API key was rejected.',
   config: 'The configured model isn’t available. Check GEMINI_MODEL on the server.',
-  timeout: 'The AI took too long to answer.',
+  timeout: 'The AI took too long to answer. Try it again.',
   network: 'The AI provider couldn’t be reached.',
-  overload: 'The AI provider is overloaded right now.',
+  overload: 'Google’s servers were overloaded (HTTP 503), even after a retry and a backup model. That’s on Google’s side, not your key. Try the AI again in a minute.',
   provider: 'Every configured AI provider failed.',
 };
 const STARTERS = [
@@ -384,6 +384,16 @@ function writeStoryboard(record) {
       ...providerResult(result),
     });
   });
+}
+
+/** Re-runs the storyboard with the same brief after an offline fallback. */
+function retryStoryboardWithAI(record) {
+  if (busy) return;
+  record.version += 1;
+  record.project = freshProject(`${record.id}-v${record.version}`, composeBrief(record.briefs), record.context);
+  say(record, 'Trying the AI again with the same brief.');
+  persist();
+  writeStoryboard(record);
 }
 
 function buildShots(record) {
@@ -804,9 +814,15 @@ function fillGate(slot, message, record) {
       content.push(h('button', { class: 'pill', type: 'button', disabled: Boolean(busy), onclick: () => runRetry(record, message.data.retry) }, icon('retry'), 'Try again'));
     }
   } else if (superseded) {
-    content.push(stamp('Replaced by a revised storyboard', true));
+    content.push(stamp('Replaced by a newer version', true));
   } else if (message.type === 'storyboard') {
-    if (state === 'STORYBOARD_REVIEW') content.push(goButton('Approve storyboard', () => buildShots(record)), changesButton());
+    if (state === 'STORYBOARD_REVIEW') {
+      content.push(goButton('Approve storyboard', () => buildShots(record)));
+      if (message.data.provider === 'mock-provider') {
+        content.push(h('button', { class: 'pill', type: 'button', disabled: Boolean(busy), onclick: () => retryStoryboardWithAI(record) }, icon('retry'), 'Try AI again'));
+      }
+      content.push(changesButton());
+    }
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') content.push(goButton('Render and run QA', () => renderFilm(record)), changesButton());
@@ -1334,6 +1350,8 @@ function renderSystem() {
     const { gemini, fallbacks } = engine;
     definitionList($('engine-details'), [
       ['Gemini model', `${gemini.name} (${gemini.model})`],
+      ['Backup models', gemini.backupModels?.length ? gemini.backupModels.map((backup) => backup.name).join(', ') : 'None'],
+      ['When Google is busy', gemini.overloadRetries ? `Retries ${gemini.overloadRetries === 1 ? 'once' : `${gemini.overloadRetries} times`}, then tries the backup model` : 'Tries the backup model'],
       ['Gemini keys', gemini.keys ? `${gemini.keys} set` : 'None set', !gemini.keys],
       ['Thinking level', gemini.thinkingLevel || 'Model default'],
       ['Timeout', `${Math.round(gemini.timeoutMs / 1000)}s per key`],

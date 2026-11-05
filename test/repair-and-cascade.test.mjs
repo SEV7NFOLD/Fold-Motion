@@ -11,6 +11,7 @@ const context = {
 };
 const { storyboard } = await createCreativePlan('Cinematic perfume launch film', context, null);
 const quiet = { info() {}, warn() {} };
+process.env.GEMINI_RETRY_DELAY_MS = '0';
 
 function geminiResponse(payload, status = 200, errorMessage = 'Error.') {
   return {
@@ -72,16 +73,18 @@ for (const [name, mutate] of Object.entries(typicalDeviations)) {
   });
 }
 
-test('a quota error on the first key does not burn the remaining keys', async () => {
-  const hosts = [];
+test('a quota error tries the backup model, then stops without burning the remaining keys', async () => {
+  const urls = [];
   const result = await generateProductionAction({
     action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['a', 'b', 'c'], logger: quiet, environment: {},
-    fetchImpl: async (url) => {
-      hosts.push(new URL(url).host);
+    fetchImpl: async (url, options) => {
+      urls.push(`${options.headers['x-goog-api-key']} ${url}`);
       return geminiResponse({}, 429, 'Resource has been exhausted (e.g. check quota).');
     },
   });
-  assert.equal(hosts.length, 1);
+  assert.equal(urls.length, 2, 'primary model, then the backup model, on the first key only');
+  assert.match(urls[1], /^a .*gemini-3\.6-flash/);
+  assert.ok(result.telemetry.some(({ stage }) => stage === 'Gemini backup model'));
   assert.equal(result.provider, 'mock-provider');
   assert.equal(result.fallbackReason, 'quota');
   assert.match(result.warning, /Gemini stopped after 1 of 3 keys \(Gemini: quota reached/);
@@ -101,7 +104,7 @@ test('GEMINI_ROTATE_ON_QUOTA=true rotates keys from separate projects on 429', a
       return geminiResponse(plan.storyboard);
     },
   });
-  assert.deepEqual(keys, ['a', 'b']);
+  assert.deepEqual(keys, ['a', 'a', 'b'], 'both models on key a, then key b');
   assert.equal(result.provider, 'Gemini 3.5 Flash-Lite');
 });
 
@@ -120,7 +123,7 @@ test('unusable output skips the remaining Gemini keys and moves to the next prov
   });
   assert.deepEqual(hosts, ['generativelanguage.googleapis.com', 'api.groq.com']);
   assert.equal(result.provider, 'mock-provider');
-  assert.match(result.warning, /Gemini: answer could not be used; Groq: provider overloaded/);
+  assert.match(result.warning, /Gemini: answer could not be used; Groq: servers overloaded \(HTTP 503\)/);
 });
 
 test('an invalid API key still rotates to the next key', async () => {
@@ -290,4 +293,53 @@ test('light brand backgrounds pass contrast QA, including with low-contrast mode
   assert.equal(ai.provider, 'Gemini 3.5 Flash-Lite');
   assert.equal(evaluateCreativeQA(ai.timeline, light).contrast.pass, true);
   assert.ok(ai.repairs.some((message) => message.includes('contrast')));
+});
+
+test('a brief 503 spike is retried on the same model and stays AI', async () => {
+  const plan = await createCreativePlan('A title', {}, null);
+  let calls = 0;
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => (++calls === 1 ? geminiResponse({}, 503, 'This model is currently experiencing high demand.') : geminiResponse(plan.storyboard)),
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.provider, 'Gemini 3.5 Flash-Lite');
+  assert.ok(result.telemetry.some(({ stage }) => stage === 'Gemini retry'));
+});
+
+test('an overloaded primary model falls over to the backup model and stays AI', async () => {
+  const plan = await createCreativePlan('A title', {}, null);
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['k1', 'k2'], logger: quiet, environment: {},
+    fetchImpl: async (url) => (url.includes('gemini-3.6-flash') ? geminiResponse(plan.storyboard) : geminiResponse({}, 503, 'High demand.')),
+  });
+  assert.equal(result.provider, 'Gemini 3.6 Flash');
+  assert.ok(!result.telemetry.some(({ stage }) => stage === 'Rotating Gemini key'), 'overload never rotates keys');
+});
+
+test('when every model is overloaded, other keys are skipped and the fallback says why', async () => {
+  const keys = new Set();
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['k1', 'k2', 'k3'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => {
+      keys.add(options.headers['x-goog-api-key']);
+      return geminiResponse({}, 503, 'High demand.');
+    },
+  });
+  assert.deepEqual([...keys], ['k1']);
+  assert.equal(result.provider, 'mock-provider');
+  assert.equal(result.fallbackReason, 'overload');
+  assert.match(result.warning, /servers overloaded \(HTTP 503\)/);
+});
+
+test('backup models and retries are configurable', async () => {
+  const urls = [];
+  await generateProductionAction({
+    action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['k'], logger: quiet,
+    environment: { GEMINI_BACKUP_MODELS: '', GEMINI_OVERLOAD_RETRIES: '0' },
+    fetchImpl: async (url) => { urls.push(url); return geminiResponse({}, 503, 'High demand.'); },
+  });
+  assert.equal(urls.length, 1);
+  const engine = getEngineConfig({ GEMINI_API_KEY: 'x', GEMINI_BACKUP_MODELS: 'gemini-3.8-flash, gemini-3.6-flash' });
+  assert.deepEqual(engine.gemini.backupModels.map(({ model }) => model), ['gemini-3.8-flash', 'gemini-3.6-flash']);
 });

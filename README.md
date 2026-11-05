@@ -91,18 +91,23 @@ Render deployment for cloud rendering, QA, and delivery exports.
 | --- | --- | --- |
 | `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEYS` | none | Gemini keys, tried in order. |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model ID. Flash-Lite has a much larger free-tier daily quota than Flash. Set `gemini-3.8-flash` on a paid tier. |
+| `GEMINI_BACKUP_MODELS` | `gemini-3.6-flash` | Comma-separated Gemini models tried when the primary is overloaded or out of quota (both are per model). Set it empty to disable. |
+| `GEMINI_OVERLOAD_RETRIES` | `1` | Retries per model after a 503 or network error, before the backup model. |
+| `GEMINI_RETRY_DELAY_MS` | `1500` | Pause before a retry, multiplied by the retry number. |
 | `GEMINI_THINKING_LEVEL` | unset | Optional `thinkingConfig.thinkingLevel` (for example `low`). Leave unset to use the model's default. |
 | `GEMINI_TIMEOUT_MS` | `30000` | Per-key request timeout. |
 | `GEMINI_ROTATE_ON_QUOTA` | `false` | Keys in one Google Cloud project share a quota, so a 429 stops key rotation. Set `true` only if your keys come from separate projects. |
 | `GROQ_API_KEY` | none | Fallback after Gemini (`llama-3.3-70b-versatile`, then `llama-3.1-8b-instant`). |
 | `OPENROUTER_API_KEY` | none | Fallback after Groq (`openrouter/free`). |
 
-**How the cascade decides.** Each failure is classified. A bad key, a timeout or
-a provider outage rotates to the next Gemini key. A quota error (429), an unknown
-model, or an answer that can't be used skips the remaining Gemini keys, because
-every key would fail the same way, and moves straight to Groq, then OpenRouter.
-The deterministic mock runs only when every configured provider has failed, and
-the response's `warning` and `fallbackReason` say why.
+**How the cascade decides.** Each failure is classified. A 503 or network
+error retries the same model once, then tries the backup model; a quota error
+or unknown model goes straight to the backup model, since overload and quota
+are per model. Only a rejected key rotates to the next key, because every key
+reaches the same servers. A timeout or an unusable answer moves on to Groq,
+then OpenRouter. The deterministic mock runs only when every configured
+provider has failed, and the response's `warning` and `fallbackReason` say
+why.
 
 **Model output is repaired, not rejected.** Before validation, `src/production/repair.mjs`
 enforces what must be exact: format, timing, the full-canvas background in the

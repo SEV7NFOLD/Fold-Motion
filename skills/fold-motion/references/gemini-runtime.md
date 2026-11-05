@@ -51,41 +51,52 @@ generous, but keep each prompt focused: under about 600 words.
 
 ## The provider cascade
 
-`src/runtime/creative-api.mjs` tries, in order: each Gemini key, Groq,
-OpenRouter, then the deterministic offline mock. Each failure has a kind that
-decides what happens next:
+`src/runtime/creative-api.mjs` tries Gemini first: the primary model
+(`GEMINI_MODEL`), then each backup model (`GEMINI_BACKUP_MODELS`, default
+`gemini-3.6-flash`), on each key. Then Groq, then OpenRouter, then the
+deterministic offline mock. Overload and quota are per model, so the cascade
+switches models for those; keys only differ in whose account they belong to,
+so it rotates keys only when a key is rejected.
 
 | Kind | Cause | Next step |
 | --- | --- | --- |
+| `overload`, `network` | 503 "high demand", 5xx, unreachable | Retry the same model once after 1.5 s, then the backup model. Never another key. |
+| `quota` | HTTP 429 | The backup model (quotas are per model). Other keys only if `GEMINI_ROTATE_ON_QUOTA=true`. |
+| `config` | Unknown model or rejected request | The backup model; check `GEMINI_MODEL` |
 | `auth` | Key rejected (401, 403, 400 "API key not valid") | Next Gemini key |
-| `timeout`, `network`, `overload` | Slow, unreachable or 5xx | Next Gemini key |
-| `quota` | HTTP 429 | Skip remaining Gemini keys (they share one project quota) unless `GEMINI_ROTATE_ON_QUOTA=true` |
-| `config` | Unknown model or rejected request | Skip remaining Gemini keys; check `GEMINI_MODEL` |
-| `output` | Answer unusable even after repair | Skip remaining Gemini keys |
+| `timeout` | No answer within `GEMINI_TIMEOUT_MS` | Stop Gemini (the time is already spent); next provider |
+| `output` | Answer unusable even after repair | Stop Gemini; next provider |
 
 The mock runs only when every configured provider failed. Its response says
-so (`provider: "mock-provider"`, `warning`, `fallbackReason`), and the studio
-shows the reason. Never make the mock look like AI output.
+so (`provider: "mock-provider"`, `warning`, `fallbackReason`), the studio
+explains the reason, and storyboards get a "Try AI again" button. Never make
+the mock look like AI output.
 
 ## Diagnosing "it fell back to mock"
 
 1. Read the telemetry (studio System view, or the `telemetry` array in the
    response) for the `Gemini key failed` line and its kind.
-2. `quota`: the free tier limits requests per day per model and per project.
+2. `overload`: Google's servers for those models were busy (HTTP 503). A new
+   key cannot help. Wait a minute and use "Try AI again", or add a backup
+   model with spare capacity to `GEMINI_BACKUP_MODELS`.
+3. `quota`: the free tier limits requests per day per model and per project.
    Adding keys from the same project does nothing. Use
    `GEMINI_MODEL=gemini-3.5-flash-lite` (far larger free daily quota than
    Flash), wait for the reset, or enable billing.
-3. `output`: the model answered but repair couldn't save it. Inspect the
+4. `output`: the model answered but repair couldn't save it. Inspect the
    error text, which names the failed check, then improve the prompt.
-4. `config`: the model ID is wrong or unavailable; check it against Google's
+5. `config`: the model ID is wrong or unavailable; check it against Google's
    model list.
-5. `unconfigured`: no keys are set on the server.
+6. `unconfigured`: no keys are set on the server.
 
 ## Settings
 
 | Variable | Default |
 | --- | --- |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` |
+| `GEMINI_BACKUP_MODELS` | `gemini-3.6-flash` (comma-separated; empty disables) |
+| `GEMINI_OVERLOAD_RETRIES` | `1` retry per model on 503 or network errors (max 3) |
+| `GEMINI_RETRY_DELAY_MS` | `1500`, multiplied by the retry number |
 | `GEMINI_THINKING_LEVEL` | unset (model default); sent as `thinkingConfig.thinkingLevel` |
 | `GEMINI_TIMEOUT_MS` | `30000` per key |
 | `GEMINI_ROTATE_ON_QUOTA` | `false` |

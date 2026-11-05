@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import generate from '../api/generate.js';
 
+process.env.GEMINI_RETRY_DELAY_MS = '0';
+
 function createResponse() {
   return {
     headers: {},
@@ -187,9 +189,9 @@ test('Vercel generation function rotates to the next configured Gemini key', asy
     if (key === 'first-test-key') {
       return {
         ok: false,
-        status: 503,
+        status: 400,
         async json() {
-          return { error: { message: 'Temporarily unavailable.' } };
+          return { error: { message: 'API key not valid. Please pass a valid API key.' } };
         },
       };
     }
