@@ -56,6 +56,10 @@ function readGeminiSettings(environment) {
   // when the primary can't. Set GEMINI_BACKUP_MODELS="" to disable.
   const backupModels = (typeof environment.GEMINI_BACKUP_MODELS === 'string' ? environment.GEMINI_BACKUP_MODELS : DEFAULT_BACKUP_MODELS)
     .split(',').map((name) => name.trim()).filter((name) => name && name !== model);
+  // Backup models are full "thinking" models; low thinking keeps big structured answers fast.
+  const backupThinkingLevel = typeof environment.GEMINI_BACKUP_THINKING_LEVEL === 'string'
+    ? environment.GEMINI_BACKUP_THINKING_LEVEL.trim() || undefined
+    : 'low';
   const retries = Number(environment.GEMINI_OVERLOAD_RETRIES);
   const retryDelay = Number(environment.GEMINI_RETRY_DELAY_MS);
   return {
@@ -64,7 +68,8 @@ function readGeminiSettings(environment) {
     overloadRetries: Number.isInteger(retries) && retries >= 0 ? Math.min(retries, 3) : 1,
     retryDelayMs: Number.isFinite(retryDelay) && retryDelay >= 0 ? retryDelay : 1500,
     thinkingLevel,
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 30_000,
+    backupThinkingLevel,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 45_000,
     // Keys created in the same Google Cloud project share one quota, so a 429 on one
     // key means a 429 on all of them. Only rotate on 429 when keys come from separate projects.
     rotateOnQuota: environment.GEMINI_ROTATE_ON_QUOTA === 'true',
@@ -82,6 +87,7 @@ export function getEngineConfig(environment = process.env) {
       model: gemini.model,
       name: geminiDisplayName(gemini.model),
       backupModels: gemini.backupModels.map((model) => ({ model, name: geminiDisplayName(model) })),
+      backupThinkingLevel: gemini.backupThinkingLevel ?? null,
       overloadRetries: gemini.overloadRetries,
       thinkingLevel: gemini.thinkingLevel ?? null,
       timeoutMs: gemini.timeoutMs,
@@ -163,7 +169,7 @@ export async function generateProductionAction({
           const provider = new GeminiAIProvider({
             apiKey: keyPool[index],
             model,
-            thinkingLevel: gemini.thinkingLevel,
+            thinkingLevel: gemini.thinkingLevel ?? (modelIndex > 0 ? gemini.backupThinkingLevel : undefined),
             fetchImpl: (url, options) => fetchImpl(url, {
               ...options,
               signal: controller.signal,

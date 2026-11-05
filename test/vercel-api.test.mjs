@@ -283,7 +283,7 @@ test('Vercel generation function uses mock after a Gemini timeout exhausts the k
       body: { prompt: 'A cinematic title' },
     }, response);
     await new Promise((resolve) => setImmediate(resolve));
-    testContext.mock.timers.tick(30_000);
+    testContext.mock.timers.tick(45_000);
     await pending;
 
     assert.equal(response.statusCode, 200);

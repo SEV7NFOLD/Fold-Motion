@@ -80,7 +80,7 @@ them; check with `ffmpeg -version` before promising a render elsewhere.
 | `POST /api/generate` `{ action: "compile", storyboard, context }` | Timeline of validated shot specs |
 | `POST /api/render` `{ timeline, storyboard, acceptance, context }` | Render, production QA, report (Render deployment only) |
 | `POST /api/state` `{ project, nextState, evidence }` | One state transition |
-| `GET /api/engine` | Configured providers, never keys |
+| `GET /api/engine` | Configured providers (never keys) and `render: { available, reason }` |
 | `GET /health` | Liveness |
 
 Generate responses always include `provider`, `telemetry`, and when present
@@ -103,5 +103,8 @@ Generate responses always include `provider`, `telemetry`, and when present
 ## Deployments
 
 Render (Docker, FFmpeg) runs everything. Vercel serves the studio and the
-generate, state and engine APIs, but cannot render. Render's free plan has
+generate, state and engine APIs, but cannot render: `api/engine.js` reports
+`render.available: false` and the studio disables the Render button with the
+reason. A local or Docker server checks for FFmpeg and FFprobe once and
+reports the result the same way. Render's free plan has
 ephemeral storage: files under `/app/output` vanish on restart.

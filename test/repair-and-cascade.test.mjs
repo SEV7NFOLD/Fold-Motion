@@ -343,3 +343,47 @@ test('backup models and retries are configurable', async () => {
   const engine = getEngineConfig({ GEMINI_API_KEY: 'x', GEMINI_BACKUP_MODELS: 'gemini-3.8-flash, gemini-3.6-flash' });
   assert.deepEqual(engine.gemini.backupModels.map(({ model }) => model), ['gemini-3.8-flash', 'gemini-3.6-flash']);
 });
+
+test('backup models run with low thinking; the primary keeps its default', async () => {
+  const plan = await createCreativePlan('A title', {}, null);
+  const bodies = [];
+  await generateProductionAction({
+    action: 'storyboard', prompt: 'A title', context: {}, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (url, options) => {
+      bodies.push({ url, config: JSON.parse(options.body).generationConfig });
+      return url.includes('gemini-3.6-flash') ? geminiResponse(plan.storyboard) : geminiResponse({}, 503, 'High demand.');
+    },
+  });
+  assert.equal(bodies[0].config.thinkingConfig, undefined);
+  assert.deepEqual(bodies.at(-1).config.thinkingConfig, { thinkingLevel: 'low' });
+});
+
+test('a model that rejects the thinking setting is asked again without it', async () => {
+  const { GeminiAIProvider } = await import('../src/ai/provider.mjs');
+  const plan = await createCreativePlan('A title', {}, null);
+  const sent = [];
+  const provider = new GeminiAIProvider({
+    apiKey: 'k', model: 'gemini-3.6-flash', thinkingLevel: 'low',
+    fetchImpl: async (_url, options) => {
+      const config = JSON.parse(options.body).generationConfig;
+      sent.push(config.thinkingConfig);
+      return config.thinkingConfig
+        ? geminiResponse({}, 400, 'Thinking level is not supported for this model.')
+        : geminiResponse(plan.storyboard);
+    },
+  });
+  const storyboard = await provider.generateStoryboard('A title', {});
+  assert.equal(storyboard.id, plan.storyboard.id);
+  assert.deepEqual(sent, [{ thinkingLevel: 'low' }, undefined]);
+});
+
+test('the render check reports missing FFmpeg instead of failing later', async () => {
+  const { checkRenderAvailability } = await import('../src/runtime/static-server.mjs');
+  // The real check is cached per process; exercise the logic with a fresh module-free runner.
+  const missing = async () => { throw new Error('spawn ffmpeg ENOENT'); };
+  const fresh = await import(`../src/runtime/static-server.mjs?missing=${Date.now()}`);
+  const result = await fresh.checkRenderAvailability(missing);
+  assert.equal(result.available, false);
+  assert.match(result.reason, /FFmpeg and FFprobe are not installed/);
+  assert.equal(typeof checkRenderAvailability, 'function');
+});

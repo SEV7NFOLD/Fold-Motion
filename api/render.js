@@ -1,3 +1,5 @@
+import { VERCEL_RENDER_REASON } from './engine.js';
+
 export default function render(request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -9,6 +11,6 @@ export default function render(request, response) {
   }
   return response.status(501).json({
     success: false,
-    error: 'Rendering requires the local FOLD Motion renderer with FFmpeg and FFprobe installed. Start the local Studio server to render.',
+    error: VERCEL_RENDER_REASON,
   });
 }

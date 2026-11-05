@@ -454,7 +454,7 @@ function pendingGate(record) {
   switch (record.project.state) {
     case 'STORYBOARD_REVIEW': return { label: 'Approve storyboard', run: () => buildShots(record) };
     case 'BUILDING': return { label: 'Build the shots again', run: () => buildShots(record) };
-    case 'RENDERING': return { label: 'Render and run QA', run: () => renderFilm(record) };
+    case 'RENDERING': return renderBlockedReason() ? null : { label: 'Render and run QA', run: () => renderFilm(record) };
     case 'QA': return qaPasses(record.project.renderReport) ? { label: 'Approve final cut', run: () => approveCut(record) } : null;
     case 'APPROVED': return { label: 'Deliver', run: () => deliver(record) };
     default: return null;
@@ -492,6 +492,14 @@ function submitMessage(rawText) {
 
   if (NEW_WORDS.test(text)) {
     startNewProduction();
+    return;
+  }
+
+  if (state === 'RENDERING' && /^render\b/i.test(text) && renderBlockedReason()) {
+    said(record, text);
+    say(record, renderBlockedReason());
+    persist();
+    render({ stick: true });
     return;
   }
 
@@ -825,7 +833,14 @@ function fillGate(slot, message, record) {
     }
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
-    if (state === 'RENDERING') content.push(goButton('Render and run QA', () => renderFilm(record)), changesButton());
+    if (state === 'RENDERING') {
+      content.push(goButton('Render and run QA', () => renderFilm(record)), changesButton());
+      const blocked = renderBlockedReason();
+      if (blocked) {
+        content[0].disabled = true;
+        content.push(h('p', { class: 'gate-note', text: blocked }));
+      }
+    }
     else if (stage > PROJECT_STATES.indexOf('RENDERING')) content.push(stamp('Rendered'));
   } else if (message.type === 'render') {
     if (state === 'QA') {
@@ -1136,7 +1151,8 @@ function syncComposer() {
   if (document.activeElement !== composerInput || composerInput.placeholder !== 'What should change?') {
     composerInput.placeholder = busy ? `${busy.label}…`
       : record.briefs.length === 0 ? PLACEHOLDERS.NEW
-        : PLACEHOLDERS[state] || PLACEHOLDERS.NEW;
+        : state === 'RENDERING' && renderBlockedReason() ? 'Tell me what to change'
+          : PLACEHOLDERS[state] || PLACEHOLDERS.NEW;
   }
   sendButton.disabled = Boolean(busy) || !composerInput.value.trim();
   const context = record.context;
@@ -1209,7 +1225,8 @@ function renderDock(record) {
   const show = currentView === 'studio' && !busy && record.messages.length > 0 && status && !liveGateVisible;
   dock.hidden = !show;
   if (!show) return;
-  $('dock-status').textContent = failingQa ? 'QA found problems to fix' : status;
+  $('dock-status').textContent = failingQa ? 'QA found problems to fix'
+    : state === 'RENDERING' && renderBlockedReason() ? 'Shots are built, but this deployment can’t render video' : status;
   const gate = pendingGate(record);
   dockGo.hidden = !gate;
   if (gate) dockGo.textContent = gate.label;
@@ -1304,6 +1321,12 @@ function renderLibrary() {
 
 let engine = null;
 let engineError = false;
+let renderInfo = null;
+
+/** Why this deployment can't render, or null when it can (or when we don't know yet). */
+function renderBlockedReason() {
+  return renderInfo && renderInfo.available === false ? renderInfo.reason || 'This deployment can’t render video.' : null;
+}
 
 async function loadEngine() {
   try {
@@ -1311,6 +1334,7 @@ async function loadEngine() {
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error('unavailable');
     engine = result.engine;
+    renderInfo = result.render ?? null;
     engineError = false;
   } catch {
     engineError = true;
@@ -1355,7 +1379,8 @@ function renderSystem() {
       ['Gemini keys', gemini.keys ? `${gemini.keys} set` : 'None set', !gemini.keys],
       ['Thinking level', gemini.thinkingLevel || 'Model default'],
       ['Timeout', `${Math.round(gemini.timeoutMs / 1000)}s per key`],
-      ['On quota errors', gemini.rotateOnQuota ? 'Tries the next key' : 'Skips to the next provider'],
+      ['On quota errors', gemini.rotateOnQuota ? 'Tries the backup model, then the next key' : 'Tries the backup model, then the next provider'],
+      ['Video rendering', renderInfo ? (renderInfo.available ? 'Available on this deployment' : renderInfo.reason) : 'Unknown', Boolean(renderInfo && !renderInfo.available)],
       ...fallbacks.map((fallback) => [fallback.name, fallback.configured ? `Set (${fallback.model})` : 'Not set']),
     ]);
   } else {

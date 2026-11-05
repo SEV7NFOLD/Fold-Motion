@@ -82,8 +82,10 @@ directory provides generation, state-transition, and render endpoints. Use the
 repository root as the Root Directory and the **Other** framework preset.
 
 Set `GEMINI_API_KEY` in Vercel project settings; the key stays server-side.
-The Vercel render endpoint returns an explicit unsupported response; use the
-Render deployment for cloud rendering, QA, and delivery exports.
+**Vercel cannot render video**: it has no FFmpeg and its functions can't run a
+full encode. On Vercel, `/api/engine` reports `render.available: false` and the
+Studio disables rendering with that explanation. Use the Render deployment
+(Docker, with FFmpeg) for rendering, QA, and delivery exports.
 
 ## AI providers
 
@@ -95,7 +97,8 @@ Render deployment for cloud rendering, QA, and delivery exports.
 | `GEMINI_OVERLOAD_RETRIES` | `1` | Retries per model after a 503 or network error, before the backup model. |
 | `GEMINI_RETRY_DELAY_MS` | `1500` | Pause before a retry, multiplied by the retry number. |
 | `GEMINI_THINKING_LEVEL` | unset | Optional `thinkingConfig.thinkingLevel` (for example `low`). Leave unset to use the model's default. |
-| `GEMINI_TIMEOUT_MS` | `30000` | Per-key request timeout. |
+| `GEMINI_TIMEOUT_MS` | `45000` | Per-request timeout. |
+| `GEMINI_BACKUP_THINKING_LEVEL` | `low` | Thinking level for backup models (full thinking models are slow on large structured answers at their default). Set it empty to use the model default. |
 | `GEMINI_ROTATE_ON_QUOTA` | `false` | Keys in one Google Cloud project share a quota, so a 429 stops key rotation. Set `true` only if your keys come from separate projects. |
 | `GROQ_API_KEY` | none | Fallback after Gemini (`llama-3.3-70b-versatile`, then `llama-3.1-8b-instant`). |
 | `OPENROUTER_API_KEY` | none | Fallback after Groq (`openrouter/free`). |

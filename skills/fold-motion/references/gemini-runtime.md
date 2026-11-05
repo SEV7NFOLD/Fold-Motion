@@ -98,7 +98,8 @@ the mock look like AI output.
 | `GEMINI_OVERLOAD_RETRIES` | `1` retry per model on 503 or network errors (max 3) |
 | `GEMINI_RETRY_DELAY_MS` | `1500`, multiplied by the retry number |
 | `GEMINI_THINKING_LEVEL` | unset (model default); sent as `thinkingConfig.thinkingLevel` |
-| `GEMINI_TIMEOUT_MS` | `30000` per key |
+| `GEMINI_TIMEOUT_MS` | `45000` per request |
+| `GEMINI_BACKUP_THINKING_LEVEL` | `low` for backup models; empty uses the model default. If a model rejects the setting, the request is retried without it. |
 | `GEMINI_ROTATE_ON_QUOTA` | `false` |
 | `GEMINI_API_KEY`, `_2`, `_3`, `GEMINI_API_KEYS` | none |
 | `GROQ_API_KEY`, `OPENROUTER_API_KEY` | none |

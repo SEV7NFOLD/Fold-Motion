@@ -24,13 +24,23 @@ function createResponse() {
   };
 }
 
-test('Vercel render endpoint explicitly reports local renderer unavailability', () => {
+test('Vercel render endpoint explains that Vercel cannot render and where to render instead', () => {
   const response = createResponse();
   render({ method: 'POST' }, response);
 
   assert.equal(response.statusCode, 501);
   assert.equal(response.body.success, false);
-  assert.match(response.body.error, /local FOLD Motion renderer/);
+  assert.match(response.body.error, /Vercel, which can’t render video/);
+  assert.match(response.body.error, /Render deployment/);
+});
+
+test('Vercel engine endpoint tells the studio up front that rendering is unavailable', async () => {
+  const { default: engine } = await import('../api/engine.js');
+  const response = createResponse();
+  engine({ method: 'GET' }, response);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.render.available, false);
+  assert.match(response.body.render.reason, /Vercel/);
 });
 
 test('Vercel render endpoint preserves method checks and CORS preflight', () => {

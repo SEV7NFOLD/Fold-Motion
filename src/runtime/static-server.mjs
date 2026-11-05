@@ -155,6 +155,19 @@ async function readJsonRequest(request, response, sizeLimit) {
   }
 }
 
+let renderAvailability;
+/** Whether this server can render video: FFmpeg and FFprobe must both run. Checked once. */
+export function checkRenderAvailability(run = execFileAsync) {
+  renderAvailability ??= Promise.all([
+    run('ffmpeg', ['-version'], { timeout: 5000, windowsHide: true }),
+    run('ffprobe', ['-version'], { timeout: 5000, windowsHide: true }),
+  ]).then(
+    () => ({ available: true, reason: null }),
+    () => ({ available: false, reason: 'FFmpeg and FFprobe are not installed on this server, so it can’t render video. The Docker image (Render deployment) includes them.' }),
+  );
+  return renderAvailability;
+}
+
 async function runNpmScript(args, cwd) {
   try {
     return await execFileAsync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
@@ -307,7 +320,7 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
           response.writeHead(405, { Allow: 'GET' }).end();
           return;
         }
-        sendJson(response, 200, { success: true, engine: getEngineConfig() });
+        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: await checkRenderAvailability() });
         return;
       }
       if (pathname === '/health') {

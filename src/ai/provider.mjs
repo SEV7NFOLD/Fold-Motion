@@ -591,43 +591,55 @@ export class GeminiAIProvider extends BaseAIProvider {
   }
 
   async requestJson({ instruction, responseSchema, systemText, emptyMessage, invalidPrefix }) {
-    const generationConfig = { responseMimeType: 'application/json', responseSchema };
-    if (this.thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel: this.thinkingLevel };
-
-    let response;
-    try {
-      response = await this.fetchImpl(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': this.apiKey,
+    const send = async (withThinking) => {
+      const generationConfig = { responseMimeType: 'application/json', responseSchema };
+      if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: this.thinkingLevel };
+      try {
+        return await this.fetchImpl(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': this.apiKey,
+            },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemText }] },
+              contents: [{ parts: [{ text: instruction }] }],
+              generationConfig,
+            }),
+            signal: AbortSignal.timeout(30_000),
           },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemText }] },
-            contents: [{ parts: [{ text: instruction }] }],
-            generationConfig,
-          }),
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-    } catch (error) {
-      throw new ProviderError(`Gemini request failed: ${error.message}`, { kind: classifyFetchFailure(error), cause: error });
+        );
+      } catch (error) {
+        throw new ProviderError(`Gemini request failed: ${error.message}`, { kind: classifyFetchFailure(error), cause: error });
+      }
+    };
+    const readDetail = async (failed) => {
+      try {
+        const errorBody = await failed.json();
+        return errorBody?.error?.message || '';
+      } catch {
+        try {
+          return (await failed.text()).trim().slice(0, 300);
+        } catch {
+          return '';
+        }
+      }
+    };
+
+    let response = await send(Boolean(this.thinkingLevel));
+    let detail = '';
+    if (!response.ok) {
+      detail = await readDetail(response);
+      // A model that doesn't accept the thinking setting still deserves an answer.
+      if (response.status === 400 && this.thinkingLevel && /thinking/i.test(detail)) {
+        response = await send(false);
+        if (!response.ok) detail = await readDetail(response);
+      }
     }
 
     if (!response.ok) {
-      let detail = '';
-      try {
-        const errorBody = await response.json();
-        detail = errorBody?.error?.message || '';
-      } catch {
-        try {
-          detail = (await response.text()).trim().slice(0, 300);
-        } catch {
-          detail = '';
-        }
-      }
       const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
       throw new ProviderError(`Gemini API returned HTTP ${response.status}${suffix}`, {
         kind: classifyHttpFailure(response.status, detail),

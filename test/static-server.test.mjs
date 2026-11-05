@@ -48,6 +48,7 @@ test('reports the AI engine configuration without exposing keys', async () => {
     assert.equal(body.success, true);
     assert.equal(typeof body.engine.gemini.model, 'string');
     assert.ok(Array.isArray(body.engine.fallbacks));
+    assert.equal(typeof body.render.available, 'boolean');
   } finally {
     await server.close();
   }
