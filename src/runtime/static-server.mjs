@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { generateProductionAction } from './creative-api.mjs';
+import { generateProductionAction, getEngineConfig } from './creative-api.mjs';
 import { getGeminiKeyPool } from '../ai/provider.mjs';
 import { validateStoryboard, validateTimeline } from '../production/production.mjs';
 import { transitionProject } from '../orchestrator/project-state.mjs';
@@ -300,6 +300,14 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
       }
       if (pathname === '/api/state') {
         await handleStateRequest(request, response);
+        return;
+      }
+      if (pathname === '/api/engine') {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end();
+          return;
+        }
+        sendJson(response, 200, { success: true, engine: getEngineConfig() });
         return;
       }
       if (pathname === '/health') {

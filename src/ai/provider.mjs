@@ -56,6 +56,84 @@ export function extractAndParseJSON(rawContent) {
   throw new Error(`Invalid JSON output from provider.${detail}`);
 }
 
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
+
+const GEMINI_DISPLAY_NAMES = Object.freeze({
+  'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
+  'gemini-3.6-flash': 'Gemini 3.6 Flash',
+  'gemini-3.7-flash': 'Gemini 3.7 Flash',
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
+});
+
+export function geminiDisplayName(model) {
+  return GEMINI_DISPLAY_NAMES[model] || `Gemini (${model})`;
+}
+
+/**
+ * Error raised by AI providers. `kind` tells the cascade what to do next:
+ *   quota    HTTP 429: the project's quota is spent; other keys in the same project won't help.
+ *   auth     bad or revoked key: another key may work.
+ *   config   unknown model or bad parameters: every key will fail the same way.
+ *   timeout  the request took too long.
+ *   network  the request never reached the provider.
+ *   overload provider-side 5xx.
+ *   output   the provider answered, but the content can't be used.
+ *   provider anything else.
+ */
+export class ProviderError extends Error {
+  constructor(message, { kind = 'provider', status, cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'ProviderError';
+    this.kind = kind;
+    if (status !== undefined) this.status = status;
+  }
+}
+
+export function classifyHttpFailure(status, detail = '') {
+  const text = String(detail || '');
+  if (status === 429) return 'quota';
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 400 && /api[\s_-]?key|credential|unauthenticated|permission/i.test(text)) return 'auth';
+  if ((status === 400 || status === 404)
+    && /model.{0,40}(not found|unavailable|decommission|does not exist|unsupported)|(not found|unavailable|decommission|does not exist|unsupported).{0,40}model/i.test(text)) {
+    return 'config';
+  }
+  if (status === 404) return 'config';
+  if (status === 408 || status === 504) return 'timeout';
+  if (status >= 500) return 'overload';
+  return 'provider';
+}
+
+function classifyFetchFailure(error) {
+  const name = error?.name || '';
+  const message = String(error?.message || '');
+  return name === 'TimeoutError' || name === 'AbortError' || /abort|timed? ?out/i.test(message)
+    ? 'timeout'
+    : 'network';
+}
+
+/**
+ * Rules the compiled scene specifications must follow. They mirror the checks in
+ * buildTimeline(), so the model is told exactly what will be accepted.
+ */
+function sceneRules(context = {}) {
+  const width = Number.isFinite(context.width) ? context.width : 1280;
+  const height = Number.isFinite(context.height) ? context.height : 720;
+  const fps = Number.isFinite(context.fps) ? context.fps : 24;
+  const primary = context.primaryColor || '#0B0F19';
+  const accent = context.accentColor || '#00F0FF';
+  return [
+    'Rules for every scene specification:',
+    `- width ${width}, height ${height}, fps ${fps}; durationInSeconds equals the storyboard shot's durationSeconds.`,
+    `- The first element is the background: type "rect", x 0, y 0, width ${width}, height ${height}, fill "${primary}".`,
+    '- Allowed element types are "rect", "circle" and "text". Text anchor is "start", "middle" or "end".',
+    '- Every fill is a 6-digit hex color such as "#1A2B3C".',
+    '- Keep every element fully inside the canvas. Text fontSize is at least 16.',
+    "- Include one text element whose content is exactly the shot's onScreenCopy, character for character.",
+    `- Use the accent color "${accent}" as the fill of at least one element.`,
+  ].join('\n');
+}
+
 export class BaseAIProvider {
   constructor(options = {}) {
     this.name = options.name || 'base-provider';
@@ -125,9 +203,6 @@ export class MockAIProvider extends BaseAIProvider {
   }
 }
 
-/**
- * Generates scene specifications with Google's Gemini generateContent API.
- */
 export function getGeminiKeyPool(environment = process.env) {
   const keys = [
     environment.GEMINI_API_KEY,
@@ -195,12 +270,13 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
       'Return a JSON object with a "shotSpecs" array containing one scene specification per storyboard shot, in the same order.',
       'Each scene must include id, title, width, height, fps, durationInSeconds, and elements. Each element must include id and type; include x, y, width, height, fill, content, fontSize, and anchor as appropriate.',
       'Preserve exact on-screen copy, include a full-canvas background and readable text elements, use the requested dimensions and FPS, and use both brand colors. Include supplied subheadline copy in every shot.',
+      sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
       `Production context:\n${JSON.stringify(context)}`,
     ].join('\n\n'));
     const shotSpecs = Array.isArray(result) ? result : result?.shotSpecs;
     if (!Array.isArray(shotSpecs)) {
-      throw new Error(`${this.name} returned shot specifications in an invalid format.`);
+      throw new ProviderError(`${this.name} returned shot specifications in an invalid format.`, { kind: 'output' });
     }
     return shotSpecs;
   }
@@ -233,7 +309,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
-        throw new Error(`${this.name} request failed: ${error.message}`);
+        throw new ProviderError(`${this.name} request failed: ${error.message}`, { kind: classifyFetchFailure(error), cause: error });
       }
 
       if (!response.ok) {
@@ -253,7 +329,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
               signal: AbortSignal.timeout(timeoutMs),
             });
           } catch (error) {
-            throw new Error(`${this.name} retry without JSON mode failed: ${error.message}`);
+            throw new ProviderError(`${this.name} retry without JSON mode failed: ${error.message}`, { kind: classifyFetchFailure(error), cause: error });
           }
           if (!response.ok) detail = await this.readErrorDetail(response);
         }
@@ -263,7 +339,10 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
             continue;
           }
           const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
-          throw new Error(`${this.name} API returned HTTP ${response.status}${suffix}`);
+          throw new ProviderError(`${this.name} API returned HTTP ${response.status}${suffix}`, {
+            kind: classifyHttpFailure(response.status, detail),
+            status: response.status,
+          });
         }
       }
 
@@ -271,20 +350,20 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
       try {
         data = await response.json();
       } catch (error) {
-        throw new Error(`${this.name} returned an unreadable API response: ${error.message}`);
+        throw new ProviderError(`${this.name} returned an unreadable API response: ${error.message}`, { kind: 'output' });
       }
       const rawContent = data.choices?.[0]?.message?.content;
       if (rawContent === undefined || rawContent === null || rawContent === '') {
-        throw new Error(`${this.name} returned no structured production content.`);
+        throw new ProviderError(`${this.name} returned no structured production content.`, { kind: 'output' });
       }
       try {
         return extractAndParseJSON(rawContent);
       } catch (error) {
-        throw new Error(`${this.name} returned invalid production JSON: ${error.message}`);
+        throw new ProviderError(`${this.name} returned invalid production JSON: ${error.message}`, { kind: 'output' });
       }
     }
 
-    throw new Error(`${this.name} has no available configured models.`);
+    throw new ProviderError(`${this.name} has no available configured models.`, { kind: 'config' });
   }
 
   async readErrorDetail(response) {
@@ -316,7 +395,12 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
 }
 
 export class GeminiAIProvider extends BaseAIProvider {
-  constructor({ apiKey, model = 'gemini-3.8-flash', fetchImpl = globalThis.fetch } = {}) {
+  constructor({
+    apiKey,
+    model = DEFAULT_GEMINI_MODEL,
+    thinkingLevel,
+    fetchImpl = globalThis.fetch,
+  } = {}) {
     if (typeof apiKey !== 'string' || !apiKey.trim()) {
       throw new Error('A Gemini API key is required.');
     }
@@ -324,11 +408,9 @@ export class GeminiAIProvider extends BaseAIProvider {
       throw new Error('A fetch implementation is required for the Gemini provider.');
     }
 
-    super({
-      name: model === 'gemini-3.8-flash' ? 'Gemini 3.8 Flash' : `Gemini (${model})`,
-      apiKey,
-    });
+    super({ name: geminiDisplayName(model), apiKey });
     this.model = model;
+    this.thinkingLevel = typeof thinkingLevel === 'string' && thinkingLevel.trim() ? thinkingLevel.trim() : undefined;
     this.fetchImpl = fetchImpl;
   }
 
@@ -382,7 +464,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     return this.generateStructuredJson(
       [
         'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
-        'Include at least two purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
+        'Include 2 to 4 purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         `Creative brief:\n${prompt}`,
@@ -397,17 +479,18 @@ export class GeminiAIProvider extends BaseAIProvider {
       type: 'OBJECT',
       properties: {
         id: { type: 'STRING' },
-        type: { type: 'STRING' },
+        type: { type: 'STRING', enum: ['rect', 'circle', 'text'] },
         x: { type: 'NUMBER' },
         y: { type: 'NUMBER' },
         width: { type: 'NUMBER' },
         height: { type: 'NUMBER' },
+        radius: { type: 'NUMBER' },
         fill: { type: 'STRING' },
         content: { type: 'STRING' },
         fontSize: { type: 'NUMBER' },
-        anchor: { type: 'STRING' },
+        anchor: { type: 'STRING', enum: ['start', 'middle', 'end'] },
       },
-      required: ['id', 'type'],
+      required: ['id', 'type', 'fill'],
     };
     const sceneSchema = {
       type: 'OBJECT',
@@ -426,78 +509,28 @@ export class GeminiAIProvider extends BaseAIProvider {
     const shotSpecs = await this.generateStructuredJson(
       [
         'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
-        'Return a JSON array in the same order and with the same item count as the storyboard shots. Preserve exact on-screen copy, use the requested dimensions/FPS, include a full-canvas background and readable text elements, and use the brand primary/accent colors.',
+        'Return a JSON array in the same order and with the same item count as the storyboard shots.',
         'Preserve any supplied subheadline as an additional readable text element in every shot.',
+        sceneRules(context),
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,
         `Production context:\n${JSON.stringify(context)}`,
       ].join('\n\n'),
       { type: 'ARRAY', items: sceneSchema },
     );
     if (!Array.isArray(shotSpecs)) {
-      throw new Error('Gemini returned shot specifications in an invalid format.');
+      throw new ProviderError('Gemini returned shot specifications in an invalid format.', { kind: 'output' });
     }
     return shotSpecs;
   }
 
   async generateStructuredJson(instruction, responseSchema) {
-    let response;
-    try {
-      response = await this.fetchImpl(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': this.apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: instruction }] }],
-            systemInstruction: {
-              parts: [{
-                text: 'Return only valid raw JSON matching the provided response schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
-              }],
-            },
-            generationConfig: { responseMimeType: 'application/json', responseSchema },
-          }),
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-    } catch (error) {
-      throw new Error(`Gemini request failed: ${error.message}`);
-    }
-
-    if (!response.ok) {
-      let detail = '';
-      try {
-        const errorBody = await response.json();
-        detail = errorBody.error?.message;
-      } catch {
-        try {
-          detail = (await response.text()).trim().slice(0, 300);
-        } catch {
-          detail = '';
-        }
-      }
-      const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
-      throw new Error(`Gemini API returned HTTP ${response.status}${suffix}`);
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch (error) {
-      throw new Error(`Gemini returned an unreadable API response: ${error.message}`);
-    }
-    const rawText = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? '')
-      .join('')
-      .trim();
-    if (!rawText) throw new Error('Gemini returned no structured production content.');
-    try {
-      return extractAndParseJSON(rawText);
-    } catch (error) {
-      throw new Error(`Gemini returned invalid production JSON: ${error.message}`);
-    }
+    return this.requestJson({
+      instruction,
+      responseSchema,
+      systemText: 'Return only valid raw JSON matching the provided response schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
+      emptyMessage: 'Gemini returned no structured production content.',
+      invalidPrefix: 'Gemini returned invalid production JSON',
+    });
   }
 
   async generateSceneSpec(prompt, context = {}) {
@@ -538,6 +571,23 @@ export class GeminiAIProvider extends BaseAIProvider {
       required: ['id', 'title', 'width', 'height', 'fps', 'durationInSeconds', 'elements'],
     };
 
+    return this.requestJson({
+      instruction: [
+        'Generate one FOLD Motion scene specification as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text. The scene must match the supplied context for dimensions, frame rate, duration, and colors. Create a concise title, a stable kebab-case scene id, and an elements array containing objects with string id and type fields.',
+        `Motion brief:\n${prompt}`,
+        `Scene context:\n${JSON.stringify(context)}`,
+      ].join('\n\n'),
+      responseSchema,
+      systemText: 'Return only valid raw JSON matching the provided scene specification schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
+      emptyMessage: 'Gemini returned no scene specification content.',
+      invalidPrefix: 'Gemini returned invalid scene JSON',
+    });
+  }
+
+  async requestJson({ instruction, responseSchema, systemText, emptyMessage, invalidPrefix }) {
+    const generationConfig = { responseMimeType: 'application/json', responseSchema };
+    if (this.thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel: this.thinkingLevel };
+
     let response;
     try {
       response = await this.fetchImpl(
@@ -549,37 +599,22 @@ export class GeminiAIProvider extends BaseAIProvider {
             'x-goog-api-key': this.apiKey,
           },
           body: JSON.stringify({
-            systemInstruction: {
-              parts: [{
-                text: 'Return only valid raw JSON matching the provided scene specification schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
-              }],
-            },
-            contents: [{
-              parts: [{
-                text: [
-                  'Generate one FOLD Motion scene specification as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text. The scene must match the supplied context for dimensions, frame rate, duration, and colors. Create a concise title, a stable kebab-case scene id, and an elements array containing objects with string id and type fields.',
-                  `Motion brief:\n${prompt}`,
-                  `Scene context:\n${JSON.stringify(context)}`,
-                ].join('\n\n'),
-              }],
-            }],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              responseSchema,
-            },
+            systemInstruction: { parts: [{ text: systemText }] },
+            contents: [{ parts: [{ text: instruction }] }],
+            generationConfig,
           }),
           signal: AbortSignal.timeout(30_000),
         },
       );
     } catch (error) {
-      throw new Error(`Gemini request failed: ${error.message}`);
+      throw new ProviderError(`Gemini request failed: ${error.message}`, { kind: classifyFetchFailure(error), cause: error });
     }
 
     if (!response.ok) {
       let detail = '';
       try {
         const errorBody = await response.json();
-        detail = errorBody.error?.message;
+        detail = errorBody?.error?.message || '';
       } catch {
         try {
           detail = (await response.text()).trim().slice(0, 300);
@@ -588,28 +623,33 @@ export class GeminiAIProvider extends BaseAIProvider {
         }
       }
       const suffix = detail ? `: ${detail}` : '. Check provider availability and server configuration.';
-      throw new Error(`Gemini API returned HTTP ${response.status}${suffix}`);
+      throw new ProviderError(`Gemini API returned HTTP ${response.status}${suffix}`, {
+        kind: classifyHttpFailure(response.status, detail),
+        status: response.status,
+      });
     }
 
     let data;
     try {
       data = await response.json();
     } catch (error) {
-      throw new Error(`Gemini returned an unreadable API response: ${error.message}`);
+      throw new ProviderError(`Gemini returned an unreadable API response: ${error.message}`, { kind: 'output' });
     }
 
-    const rawText = data.candidates?.[0]?.content?.parts
+    const rawText = data?.candidates?.[0]?.content?.parts
       ?.map((part) => part.text ?? '')
       .join('')
       .trim();
     if (!rawText) {
-      throw new Error('Gemini returned no scene specification content.');
+      const blockReason = data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason;
+      const reason = blockReason && blockReason !== 'STOP' ? ` (finish reason: ${blockReason})` : '';
+      throw new ProviderError(`${emptyMessage.replace(/\.$/, '')}${reason}.`, { kind: 'output' });
     }
 
     try {
       return extractAndParseJSON(rawText);
     } catch (error) {
-      throw new Error(`Gemini returned invalid scene JSON: ${error.message}`);
+      throw new ProviderError(`${invalidPrefix}: ${error.message}`, { kind: 'output' });
     }
   }
 }

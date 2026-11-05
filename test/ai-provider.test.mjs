@@ -259,8 +259,8 @@ test('GeminiAIProvider requests JSON and parses a scene specification', async ()
 
   const result = await provider.generateSceneSpec('Neon title reveal', { width: 1920 });
 
-  assert.equal(provider.name, 'Gemini 3.8 Flash');
-  assert.match(requestedUrl, /models\/gemini-3\.8-flash:generateContent$/);
+  assert.equal(provider.name, 'Gemini 3.5 Flash-Lite');
+  assert.match(requestedUrl, /models\/gemini-3\.5-flash-lite:generateContent$/);
   assert.equal(requestedOptions.headers['x-goog-api-key'], 'test-api-key');
   assert.equal(requestedOptions.headers['Content-Type'], 'application/json');
   assert.equal(result.id, spec.id);
@@ -357,7 +357,7 @@ test('GeminiAIProvider generates structured storyboard and shot-spec responses',
   assert.deepEqual(await provider.generateStoryboard('Product launch'), storyboard);
   assert.deepEqual(await provider.compileStoryboard(storyboard), shotSpecs);
   assert.equal(requests.length, 2);
-  assert.match(requests[0].url, /gemini-3\.8-flash/);
+  assert.match(requests[0].url, /gemini-3\.5-flash-lite/);
   assert.equal(requests[0].body.generationConfig.responseSchema.properties.shots.type, 'ARRAY');
   assert.equal(requests[1].body.generationConfig.responseSchema.type, 'ARRAY');
   assert.match(requests[0].body.contents[0].parts[0].text, /Return only a raw JSON value/);

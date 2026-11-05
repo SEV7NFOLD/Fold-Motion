@@ -72,11 +72,8 @@ The Free service has ephemeral storage: rendered videos and QA evidence under
 `/app/output` can be lost when the service sleeps, restarts, or is redeployed.
 Download important outputs promptly or move to a paid plan with a persistent
 disk for durable render storage. Add `GEMINI_API_KEY` when prompted during
-Blueprint setup to enable Gemini-backed storyboard and shot-spec generation;
-optionally add `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated
-`GEMINI_API_KEYS` value for sequential failover. `GROQ_API_KEY` and
-`OPENROUTER_API_KEY` are optional provider fallbacks, tried in that order after
-Gemini. The deterministic mock provider remains the final fallback.
+Blueprint setup to enable Gemini-backed storyboard and shot-spec generation.
+See **AI providers** below for the full list of settings.
 
 ## Deploy to Vercel
 
@@ -84,27 +81,38 @@ Deploy from the repository root. `vercel.json` publishes `public/`; the `api/`
 directory provides generation, state-transition, and render endpoints. Use the
 repository root as the Root Directory and the **Other** framework preset.
 
-Set `GEMINI_API_KEY` in Vercel project settings to enable Gemini 3.8 Flash for
-storyboard and shot-spec generation. The key remains server-side. Gemini
-requests have a 30-second timeout. To configure failover, optionally add
-`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, or a comma-separated `GEMINI_API_KEYS`
-list. Gemini keys are tried sequentially, followed by Groq (`GROQ_API_KEY`,
-`openai/gpt-oss-120b`) and OpenRouter (`OPENROUTER_API_KEY`, `openrouter/free`)
-when configured. Provider failures,
-timeouts, and invalid structured output trigger the next provider; logs and
-Studio telemetry report each attempt and rotation without exposing
-credentials. Provider responses are sanitized to extract valid JSON from
-markdown fences or surrounding explanatory text before schema validation.
-OpenRouter requests allow up to 35 seconds; other OpenAI-compatible requests
-allow 20 seconds. Groq retries the `llama-3.1-8b-instant` model if
-`llama-3.3-70b-versatile` is reported unavailable. OpenAI-compatible requests
-also retry without JSON response-format mode when the endpoint rejects it, and
-their system prompt requires 2–4 shots with bounded generated headlines and
-subheadlines.
-Deterministic mock generation is used only after all configured providers fail
-or when no provider credentials are configured. The Vercel render endpoint
-returns an explicit unsupported response; use the Render deployment for cloud
-rendering, QA, and delivery exports.
+Set `GEMINI_API_KEY` in Vercel project settings; the key stays server-side.
+The Vercel render endpoint returns an explicit unsupported response; use the
+Render deployment for cloud rendering, QA, and delivery exports.
+
+## AI providers
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEYS` | none | Gemini keys, tried in order. |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model ID. Flash-Lite has a much larger free-tier daily quota than Flash. Set `gemini-3.8-flash` on a paid tier. |
+| `GEMINI_THINKING_LEVEL` | unset | Optional `thinkingConfig.thinkingLevel` (for example `low`). Leave unset to use the model's default. |
+| `GEMINI_TIMEOUT_MS` | `30000` | Per-key request timeout. |
+| `GEMINI_ROTATE_ON_QUOTA` | `false` | Keys in one Google Cloud project share a quota, so a 429 stops key rotation. Set `true` only if your keys come from separate projects. |
+| `GROQ_API_KEY` | none | Fallback after Gemini (`llama-3.3-70b-versatile`, then `llama-3.1-8b-instant`). |
+| `OPENROUTER_API_KEY` | none | Fallback after Groq (`openrouter/free`). |
+
+**How the cascade decides.** Each failure is classified. A bad key, a timeout or
+a provider outage rotates to the next Gemini key. A quota error (429), an unknown
+model, or an answer that can't be used skips the remaining Gemini keys, because
+every key would fail the same way, and moves straight to Groq, then OpenRouter.
+The deterministic mock runs only when every configured provider has failed, and
+the response's `warning` and `fallbackReason` say why.
+
+**Model output is repaired, not rejected.** Before validation, `src/production/repair.mjs`
+enforces what must be exact: format, timing, the full-canvas background in the
+primary color, the approved on-screen copy, and an accent element. It also fixes
+common model slips (`"center"` anchors, short hex colors, off-canvas shapes,
+unsupported element types). Every change is listed in the response's `repairs`
+array and shown in the Studio.
+
+`GET /api/engine` returns the configured providers (never the keys) for the
+Studio's System view.
 
 ## Verify
 

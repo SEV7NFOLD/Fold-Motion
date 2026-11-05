@@ -26,10 +26,28 @@ test('serves the studio entry point at the site root', async () => {
     assert.match(response.headers.get('content-type'), /^text\/html;/);
     assert.match(html, /FOLD Motion — Studio/);
     assert.match(html, /studio\.js/);
-    assert.match(html, /id="recent-project-list"/);
-    assert.match(html, /id="telemetry-panel" class="telemetry-panel panel minimized"/);
-    assert.match(html, /id="telemetry-toggle-btn"/);
-    assert.match(html, /id="telemetry-logs"/);
+    assert.match(html, /id="thread" role="log"/);
+    assert.match(html, /id="composer"/);
+    assert.match(html, /id="dock"/);
+    for (const view of ['studio', 'projects', 'library', 'system']) {
+      assert.match(html, new RegExp(`data-view="${view}"`));
+      assert.match(html, new RegExp(`data-view-panel="${view}"`));
+    }
+    assert.match(html, /brand\/favicon\.svg/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('reports the AI engine configuration without exposing keys', async () => {
+  const server = await createStaticServer({ root: path.resolve('public') });
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/engine`);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(typeof body.engine.gemini.model, 'string');
+    assert.ok(Array.isArray(body.engine.fallbacks));
   } finally {
     await server.close();
   }

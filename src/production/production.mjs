@@ -1,4 +1,5 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
+import { repairShotSpec, repairStoryboard } from './repair.mjs';
 
 const DEFAULTS = Object.freeze({
   width: 1280,
@@ -78,14 +79,37 @@ export function normalizeProductionContext(context = {}) {
   return normalized;
 }
 
+/**
+ * Splits a brief into readable on-screen copy for the offline fallback: the first
+ * clause becomes the headline, the rest the subheadline, never cutting a word.
+ */
+export function splitBriefCopy(prompt, maxHeadline = 54) {
+  const text = String(prompt || '').trim().replace(/\s+/g, ' ');
+  const clause = text.match(/^(.{3,}?)[:.!?;—–]\s+(.+)$/);
+  let headline = clause && clause[1].length <= maxHeadline ? clause[1] : '';
+  if (!headline) {
+    const words = text.replace(/[.!?]+$/, '').split(' ');
+    for (const word of words) {
+      const next = headline ? `${headline} ${word}` : word;
+      if (next.length > maxHeadline) break;
+      headline = next;
+    }
+    if (!headline) headline = text.slice(0, maxHeadline);
+  }
+  headline = headline.replace(/[,;:—–\s]+$/, '');
+  const rest = text.slice(text.indexOf(headline) + headline.length).replace(/^[\s,.:;!?—–-]+/, '').trim();
+  const subheadline = rest.length > 100 ? `${rest.slice(0, 100).replace(/\s+\S*$/, '')}…` : rest;
+  return { headline, subheadline };
+}
+
 export function buildMockStoryboard(prompt, context = {}) {
   if (!validString(prompt)) {
     throw new Error('A valid text prompt is required to create a storyboard.');
   }
   const normalizedContext = normalizeProductionContext(context);
-  const headline = (normalizedContext.headline || prompt.trim().replace(/[.!?]+$/, '')).slice(0, 54);
-  const subheadline = normalizedContext.subheadline
-    || (prompt.trim().length > headline.length ? prompt.trim().slice(headline.length).trim().replace(/^[,.:;—\-\s]+/, '') : '');
+  const derived = splitBriefCopy(prompt);
+  const headline = normalizedContext.headline || derived.headline;
+  const subheadline = normalizedContext.subheadline || derived.subheadline;
   const shots = [
     {
       id: 'shot-01',
@@ -336,18 +360,25 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     const includesAccent = spec.elements.some((element) => (
       element.fill?.toLowerCase() === normalizedContext.accentColor.toLowerCase()
     ));
-    if (
-      spec.width !== normalizedContext.width
-      || spec.height !== normalizedContext.height
-      || spec.fps !== normalizedContext.fps
-      || Math.round(spec.durationInSeconds * normalizedContext.fps) !== expectedDurationFrames
-      || !hasFullBackground
-      || !preservesCopy
-      || !preservesSubheadline
-      || !includesAccent
-      || !hasRenderableElements
-    ) {
-      throw new Error(`Compiled shot "${shot.id}" does not satisfy its format, copy, and brand constraints.`);
+    const failures = [];
+    if (spec.width !== normalizedContext.width || spec.height !== normalizedContext.height) {
+      failures.push(`format is ${spec.width} × ${spec.height}, expected ${normalizedContext.width} × ${normalizedContext.height}`);
+    }
+    if (spec.fps !== normalizedContext.fps) failures.push(`fps is ${spec.fps}, expected ${normalizedContext.fps}`);
+    if (Math.round(spec.durationInSeconds * normalizedContext.fps) !== expectedDurationFrames) {
+      failures.push(`duration is ${spec.durationInSeconds}s, expected ${shot.durationSeconds}s`);
+    }
+    if (!hasFullBackground) failures.push(`no full-canvas background rect in ${normalizedContext.primaryColor}`);
+    if (!preservesCopy) failures.push(`no text element with the exact copy "${shot.onScreenCopy}"`);
+    if (!preservesSubheadline) failures.push('subheadline missing');
+    if (!includesAccent) failures.push(`accent color ${normalizedContext.accentColor} not used`);
+    if (!hasRenderableElements) {
+      const bad = spec.elements.filter((element) => !isRenderableElement(element, normalizedContext))
+        .map((element) => `${element.id || '?'} (${element.type || 'no type'})`);
+      failures.push(`unrenderable elements: ${bad.join(', ')}`);
+    }
+    if (failures.length > 0) {
+      throw new Error(`Compiled shot "${shot.id}" does not satisfy its format, copy, and brand constraints: ${failures.join('; ')}.`);
     }
     const durationFrames = expectedDurationFrames;
     if (durationFrames < 1) throw new Error(`Shot "${shot.id}" is shorter than one frame.`);
@@ -540,14 +571,21 @@ function shotBackground(spec) {
   ))?.fill;
 }
 
+function markOutputError(error) {
+  if (error && typeof error === 'object' && !error.kind) error.kind = 'output';
+  return error;
+}
+
 export async function createCreativePlan(prompt, context = {}, provider = null) {
   const normalizedContext = normalizeProductionContext(context);
   const generatedStoryboard = provider?.generateStoryboard
     ? await provider.generateStoryboard(prompt, normalizedContext)
     : buildMockStoryboard(prompt, normalizedContext);
-  const storyboard = generatedStoryboard && Array.isArray(generatedStoryboard.shots)
+  let repairs = [];
+  let storyboard = generatedStoryboard && Array.isArray(generatedStoryboard.shots)
     ? { ...generatedStoryboard, shots: generatedStoryboard.shots.map((shot) => ({ ...shot })) }
     : generatedStoryboard;
+  if (provider) ({ storyboard, repairs } = repairStoryboard(storyboard, normalizedContext));
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
     if (normalizedContext.subheadline && storyboard.shots.length > 1) {
@@ -555,11 +593,15 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     }
   }
   const validation = validateStoryboard(storyboard);
-  if (!validation.valid) throw new Error(`Generated storyboard is invalid: ${validation.errors.join(' ')}`);
+  if (!validation.valid) {
+    const error = new Error(`Generated storyboard is invalid: ${validation.errors.join(' ')}`);
+    throw provider ? markOutputError(error) : error;
+  }
   return {
     storyboard,
     acceptance: buildAcceptanceSpec(storyboard, normalizedContext),
     provider: provider?.name ?? 'mock-provider',
+    ...(repairs.length ? { repairs } : {}),
   };
 }
 
@@ -567,12 +609,28 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
   const normalizedContext = normalizeProductionContext(context);
-  const shotSpecs = provider?.compileStoryboard
-    ? await provider.compileStoryboard(storyboard, normalizedContext)
-    : storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext));
-  const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
-  return {
-    timeline,
-    provider: provider?.name ?? 'mock-provider',
-  };
+  if (!provider?.compileStoryboard) {
+    const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext));
+    return { timeline: buildTimeline(storyboard, shotSpecs, normalizedContext), provider: 'mock-provider' };
+  }
+
+  const rawSpecs = await provider.compileStoryboard(storyboard, normalizedContext);
+  if (!Array.isArray(rawSpecs)) {
+    throw markOutputError(new Error(`${provider.name} returned shot specifications in an invalid format.`));
+  }
+  const repairs = [];
+  if (rawSpecs.length !== storyboard.shots.length) {
+    repairs.push(`Model returned ${rawSpecs.length} scenes for ${storyboard.shots.length} shots; matched them by position.`);
+  }
+  const shotSpecs = storyboard.shots.map((shot, index) => {
+    const result = repairShotSpec(rawSpecs[index], shot, index, normalizedContext);
+    repairs.push(...result.repairs);
+    return result.spec;
+  });
+  try {
+    const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
+    return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };
+  } catch (error) {
+    throw markOutputError(error);
+  }
 }

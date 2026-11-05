@@ -72,7 +72,7 @@ test('Gemini generation retries keys sequentially and succeeds with the next key
   });
 
   assert.deepEqual(attemptedKeys, ['first-secret', 'second-secret']);
-  assert.equal(result.provider, 'Gemini 3.8 Flash');
+  assert.equal(result.provider, 'Gemini 3.5 Flash-Lite');
   assert.deepEqual(result.telemetry.map(({ stage }) => stage), [
     'Gemini key attempt',
     'Gemini key failed',
