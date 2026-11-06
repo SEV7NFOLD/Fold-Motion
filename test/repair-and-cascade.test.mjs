@@ -171,7 +171,20 @@ test('engine config describes providers without exposing keys', () => {
   assert.equal(engine.gemini.keys, 2);
   assert.equal(engine.gemini.model, 'gemini-3.8-flash');
   assert.deepEqual(engine.fallbacks.map(({ name, configured }) => [name, configured]), [['Groq', true], ['OpenRouter', false]]);
+  assert.equal(engine.fallbacks[0].model, 'openai/gpt-oss-20b');
+  assert.deepEqual(engine.fallbacks[0].fallbackModels, ['openai/gpt-oss-120b']);
   assert.ok(!JSON.stringify(engine).includes('secret'));
+});
+
+test('OpenRouter response-body timeouts are classified as timeouts, not unusable output', async () => {
+  const { OpenAICompatibleAIProvider } = await import('../src/ai/provider.mjs');
+  const timeout = new Error('The operation was aborted due to timeout');
+  timeout.name = 'TimeoutError';
+  const provider = new OpenAICompatibleAIProvider({
+    name: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', apiKey: 'k', model: 'openrouter/free',
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { throw timeout; } }),
+  });
+  await assert.rejects(provider.generateStoryboard('A title', {}), (error) => error.kind === 'timeout');
 });
 
 test('HTTP failures are classified for the cascade', () => {

@@ -354,7 +354,12 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
       try {
         data = await response.json();
       } catch (error) {
-        throw new ProviderError(`${this.name} returned an unreadable API response: ${error.message}`, { kind: 'output' });
+        const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+          || /abort|timed? ?out/i.test(String(error?.message || ''));
+        throw new ProviderError(`${this.name} returned an unreadable API response: ${error.message}`, {
+          kind: timedOut ? 'timeout' : 'output',
+          cause: error,
+        });
       }
       const rawContent = data.choices?.[0]?.message?.content;
       if (rawContent === undefined || rawContent === null || rawContent === '') {

@@ -155,7 +155,7 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
     if (url.includes('api.groq.com')) return 'Groq';
     return 'OpenRouter';
   }), ['Gemini', 'Groq', 'OpenRouter']);
-  assert.equal(JSON.parse(requests[1].options.body).model, 'llama-3.3-70b-versatile');
+  assert.equal(JSON.parse(requests[1].options.body).model, 'openai/gpt-oss-20b');
   assert.equal(JSON.parse(requests[2].options.body).model, 'openrouter/free');
   assert.equal(requests[2].options.headers['HTTP-Referer'], 'https://fold-motion.onrender.com');
   assert.equal(result.provider, 'OpenRouter');
@@ -223,7 +223,7 @@ test('Groq is tried when Gemini keys are absent and OpenRouter is skipped when u
   assert.deepEqual(result.storyboard, storyboard);
 });
 
-test('Groq model decommissioning retries with the configured fallback model', async () => {
+test('Groq uses the configured active primary and fallback models', async () => {
   const requests = [];
   const result = await generateProductionAction({
     action: 'storyboard',
@@ -234,12 +234,12 @@ test('Groq model decommissioning retries with the configured fallback model', as
     fetchImpl: async (_url, options) => {
       const request = JSON.parse(options.body);
       requests.push(request);
-      return request.model === 'llama-3.3-70b-versatile'
+      return request.model === 'openai/gpt-oss-20b'
         ? {
           ok: false,
           status: 400,
           async json() {
-            return { error: { message: 'The model llama-3.3-70b-versatile has been decommissioned.' } };
+            return { error: { message: 'The model openai/gpt-oss-20b is unavailable.' } };
           },
         }
         : createOpenAIResponse(storyboard);
@@ -248,8 +248,8 @@ test('Groq model decommissioning retries with the configured fallback model', as
   });
 
   assert.deepEqual(requests.map(({ model }) => model), [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-120b',
   ]);
   assert.equal(result.provider, 'Groq');
 });

@@ -16,8 +16,8 @@ const FALLBACK_PROVIDERS = Object.freeze([
     environmentKey: 'GROQ_API_KEY',
     keyNumber: 1,
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'llama-3.3-70b-versatile',
-    fallbackModels: ['llama-3.1-8b-instant'],
+    model: 'openai/gpt-oss-20b',
+    fallbackModels: ['openai/gpt-oss-120b'],
   },
   {
     name: 'OpenRouter',
@@ -93,9 +93,10 @@ export function getEngineConfig(environment = process.env) {
       timeoutMs: gemini.timeoutMs,
       rotateOnQuota: gemini.rotateOnQuota,
     },
-    fallbacks: FALLBACK_PROVIDERS.map(({ name, environmentKey, model }) => ({
+    fallbacks: FALLBACK_PROVIDERS.map(({ name, environmentKey, model, fallbackModels = [] }) => ({
       name,
       model,
+      fallbackModels: [...fallbackModels],
       configured: typeof environment[environmentKey] === 'string' && Boolean(environment[environmentKey].trim()),
     })),
   };
