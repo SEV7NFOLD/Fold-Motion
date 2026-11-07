@@ -7,14 +7,15 @@ import { Resvg } from '@resvg/resvg-js';
 import { generateFrameManifest } from './qa/generate-frame-hashes.mjs';
 import { evaluateCreativeQA, validateTimeline } from '../src/production/production.mjs';
 import { normalizeMotion } from '../src/production/motion.mjs';
+import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
+import { FONT_FILES } from '../src/render/typography.mjs';
 
 const execFileAsync = promisify(execFile);
 
 // One bundled font keeps renders identical on every machine and avoids scanning
 // every system font for each frame (the main cost on small servers).
 export const RENDER_FONT_FAMILY = 'Montserrat';
-const RENDER_FONT_FILE = fileURLToPath(new URL('../assets/fonts/Montserrat-Bold.ttf', import.meta.url));
-const RESVG_FONT_OPTIONS = Object.freeze({ fontFiles: [RENDER_FONT_FILE], loadSystemFonts: false, defaultFontFamily: RENDER_FONT_FAMILY });
+const RESVG_FONT_OPTIONS = Object.freeze({ fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: RENDER_FONT_FAMILY });
 const FONT_STACK = `${RENDER_FONT_FAMILY}, Arial, sans-serif`;
 
 /**
@@ -31,6 +32,13 @@ function gridPath(width, height) {
     gridCache.set(key, lines.join(''));
   }
   return gridCache.get(key);
+}
+
+/** Subtle temporal film grain for v2 films (RENDER_GRAIN, default 3; 0 turns it off). */
+function grainFilter(timeline) {
+  if (!timeline.shots.some((shot) => shot.spec.version === 2)) return '';
+  const strength = Number(process.env.RENDER_GRAIN ?? 3);
+  return Number.isFinite(strength) && strength > 0 ? `noise=alls=${Math.min(20, strength)}:allf=t` : '';
 }
 
 function positiveNumber(value, fallback) {
@@ -274,7 +282,9 @@ export async function renderProductionProject({
     while (frameIndex > timeline.shots[shotIndex].endFrame) shotIndex += 1;
     const shot = timeline.shots[shotIndex];
     const frameProgress = (frameIndex - shot.startFrame) / Math.max(1, shot.durationFrames - 1);
-    const svg = renderShotSvg(shot, frameProgress, timeline.width, timeline.height);
+    const svg = shot.spec.version === 2
+      ? renderTimelineFrame(timeline, frameIndex)
+      : renderShotSvg(shot, frameProgress, timeline.width, timeline.height);
     const frameName = `frame-${String(frameIndex).padStart(6, '0')}`;
     const svgPath = path.join(framesDirectory, `${frameName}.svg`);
     const pngPath = path.join(framesDirectory, `${frameName}.png`);
@@ -300,6 +310,7 @@ export async function renderProductionProject({
     '-y',
     '-framerate', String(timeline.fps),
     '-i', path.join(framesDirectory, 'frame-%06d.png'),
+    ...(grainFilter(timeline) ? ['-vf', grainFilter(timeline)] : []),
     '-c:v', 'libx264',
     // veryfast uses one reference frame and a short lookahead: far less memory and
     // CPU than the default preset, at a quality that holds up for motion graphics.

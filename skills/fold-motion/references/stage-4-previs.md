@@ -29,6 +29,15 @@ These rules are also given to Gemini in `src/ai/prompts/shot-compiler.mjs`.
 - **Exactness:** never change copy, never draw a logo with shapes as a
   stand-in for a supplied logo, never invent product UI.
 
+## v2 staging
+
+For v2 films each built shot shows its recipe, atmosphere, camera and the
+transition to the next shot as tags. Good direction varies recipes between
+shots, opens strong (title reveal or opening card), uses type-stack only for
+punchy two-to-four-word lines, and ends on an end card when there is a brand or
+product to sign off. Kickers must be true and add something the line doesn't
+say.
+
 ## Motion
 
 Each spec's `motion` turns the storyboard's camera and motion notes into the

@@ -10,7 +10,7 @@
 export const MOTION_OPTIONS = Object.freeze({
   camera: Object.freeze(['static', 'push-in', 'pull-out', 'drift-left', 'drift-right']),
   entrance: Object.freeze(['rise-glitch', 'fade', 'slide-up', 'slide-left', 'scale-in', 'type-on', 'wipe']),
-  atmosphere: Object.freeze(['orbit', 'spotlight', 'grid', 'lines', 'clean']),
+  atmosphere: Object.freeze(['orbit', 'spotlight', 'grid', 'lines', 'clean', 'planes', 'dots']),
 });
 
 /** The look every shot had before the vocabulary existed. */
@@ -39,6 +39,8 @@ export const MOTION_DESCRIPTIONS = Object.freeze({
     grid: 'a faint accent grid with a gentle glow',
     lines: 'only the two accent lines low on the left',
     clean: 'the bare brand background',
+    planes: 'large folded triangles drifting at different speeds for depth, with a low glow',
+    dots: 'a field of dots that a ripple of light spreads across, then twinkles',
   }),
 });
 
@@ -65,6 +67,8 @@ const ALIASES = Object.freeze({
     'grid-only': 'grid',
     line: 'lines', minimal: 'lines',
     none: 'clean', plain: 'clean', bare: 'clean',
+    triangles: 'planes', depth: 'planes', parallax: 'planes', shapes: 'planes',
+    dot: 'dots', 'dot-field': 'dots', particles: 'dots', ripple: 'dots',
   }),
 });
 
@@ -106,7 +110,11 @@ function hash(text) {
     value ^= character.codePointAt(0);
     value = Math.imul(value, 16777619) >>> 0;
   }
-  return value;
+  // Final avalanche so similar seeds spread across all buckets.
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x45d9f3b) >>> 0;
+  value ^= value >>> 16;
+  return value >>> 0;
 }
 
 // Coherent film "families" for the offline fallback: one atmosphere per film,
@@ -115,8 +123,8 @@ const FAMILIES = Object.freeze([
   { atmosphere: 'spotlight', entrances: ['fade', 'scale-in', 'fade'], cameras: ['push-in', 'static', 'pull-out'] },
   { atmosphere: 'grid', entrances: ['type-on', 'wipe', 'type-on'], cameras: ['static', 'drift-left', 'static'] },
   { atmosphere: 'lines', entrances: ['slide-left', 'slide-up', 'fade'], cameras: ['drift-right', 'static', 'push-in'] },
-  { atmosphere: 'orbit', entrances: ['rise-glitch', 'scale-in', 'rise-glitch'], cameras: ['static', 'push-in', 'static'] },
-  { atmosphere: 'clean', entrances: ['wipe', 'fade', 'slide-up'], cameras: ['pull-out', 'drift-left', 'static'] },
+  { atmosphere: 'planes', entrances: ['rise-glitch', 'scale-in', 'rise-glitch'], cameras: ['drift-right', 'push-in', 'pull-out'] },
+  { atmosphere: 'dots', entrances: ['wipe', 'fade', 'slide-up'], cameras: ['pull-out', 'drift-left', 'static'] },
 ]);
 
 /**

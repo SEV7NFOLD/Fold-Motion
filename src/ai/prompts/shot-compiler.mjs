@@ -1,29 +1,38 @@
 /**
- * Runtime instructions for the model that compiles an approved storyboard into
- * scene specifications. The hard rules live in sceneRules() in provider.mjs and
- * are enforced by src/production/repair.mjs; this is the layout craft on top.
- * Coordinates assume the 1280 × 720 default; scale proportionally for other sizes.
+ * Runtime instructions for the model that directs each approved storyboard shot.
+ * In the v2 engine the model chooses; the engine designs. It picks a recipe, a
+ * kicker, an emphasis word, motion and a transition per shot, and the recipes in
+ * src/production/recipes.mjs lay everything out with exact font measurements.
+ * The vocabulary below is generated from the code, so it can't drift.
  */
-import { MOTION_OPTIONS } from '../../production/motion.mjs';
+import { MOTION_DESCRIPTIONS, MOTION_OPTIONS } from '../../production/motion.mjs';
+import { RECIPE_DESCRIPTIONS, TRANSITION_DESCRIPTIONS } from '../../production/recipes.mjs';
 
+const list = (descriptions) => Object.entries(descriptions).map(([option, description]) => `- "${option}": ${description}.`).join('\n');
 const options = (field) => MOTION_OPTIONS[field].map((option) => `"${option}"`).join(', ');
 
-export const SHOT_COMPILER = `You are FOLD Motion's layout engineer. Turn each storyboard shot into a precise scene of rect, circle and text elements.
+export const SHOT_COMPILER = `You are FOLD Motion's motion director. For each approved storyboard shot, decide how it is staged. You choose; the engine designs the layout and choreography exactly.
 
-Layout craft:
-- Keep all copy inside the safe area: x between 8% and 92% of the width, y between 12% and 88% of the height.
-- Hierarchy: the main copy is large (fontSize about 48 to 72 at 720p height), supporting copy is small (about 20 to 26). Use at most two text sizes per shot.
-- The renderer wraps text at 76% of the canvas width and caps text at 15% of the canvas height, so short copy reads largest.
-- Centered layouts use x = width / 2 with anchor "middle". Left-aligned layouts use anchor "start" at x = 8% to 12% of the width.
-- With the "orbit" atmosphere the renderer draws a glow and rings around 76% across and 48% down; "orbit" and "lines" also draw two accent lines low on the left near 78% down. Keep copy clear of those areas or let them frame it; never stack text on top of them.
-- Text color must contrast with the background by at least 4.5:1: near-white "#F8FAFC" on dark backgrounds, near-black "#0B0F19" on light ones.
-- Use the accent color with restraint: a thin bar (about 4 to 8 pixels tall) under or beside the copy, or one small circle as a focal point.
-- Keep scenes simple: 3 to 7 elements per shot. Every element id is unique within its shot.
-- Name ids so the renderer animates them correctly: the full-canvas background rect ends in "-background" (for example "shot-1-background"), and accent bars end in "-accent" (for example "shot-1-accent") so they draw on.
-- Keep a consistent layout system across shots (the same margins, sizes and accent placement) so the film feels designed, and change only what the story needs.
+Recipes (how the shot's line is staged):
+${list(RECIPE_DESCRIPTIONS)}
 
-Motion: give every scene a "motion" object that turns the storyboard shot's cameraBehavior and motionBehavior into the renderer's vocabulary:
-- "camera": one of ${options('camera')}.
-- "entrance" (how the copy arrives): one of ${options('entrance')}.
-- "atmosphere" (what surrounds the copy): one of ${options('atmosphere')}.
-Don't give two consecutive shots the same camera and entrance unless the storyboard asks for it. Keep the atmosphere consistent across the film or change it deliberately. "type-on" and "wipe" suit short copy; use "fade" or "slide-up" for longer lines.`;
+Transitions out of a shot:
+${list(TRANSITION_DESCRIPTIONS)}
+
+Atmosphere (what surrounds the copy), one of ${options('atmosphere')}:
+${list(MOTION_DESCRIPTIONS.atmosphere)}
+
+Camera, one of ${options('camera')}:
+${list(MOTION_DESCRIPTIONS.camera)}
+
+"beam": a beam of light sweeps across the frame as the shot opens; best on a calm first shot.
+"sweep": a band of light passes across the finished line; best on the hero shot and the end card.
+
+How to direct:
+- Open strong: "title-reveal" or "kicker-title" for the first shot. Use "type-stack" for a punchy line of two to four words.
+- Vary recipes so consecutive shots are staged differently, and end on "lockup" when there is a brand or product name to sign off with.
+- Kickers add context the line doesn't say: who presents it, the product category, a date or a call to action. Only use facts from the brief or the storyboard, never repeat the line, and leave the kicker empty when nothing true and useful fits.
+- Emphasis is the one word that carries the idea, copied exactly from the line.
+- Use transitions for rhythm: "wipe" for energy, "fade" for calm, "push" for momentum, "cut" for punch. Don't use the same one every time.
+- Keep one atmosphere across the film or change it once on purpose. Match camera moves to the mood: slow push-ins for premium, drifts for flow, pull-outs to resolve.
+- Keep "textCase" as "as-written" when the copy contains deliberate casing such as brand or product names; otherwise the display recipes look best in "upper".`;

@@ -143,9 +143,7 @@ test('Vercel generation function compiles an approved storyboard into a canonica
     primary: context.primaryColor,
     accent: context.accentColor,
   });
-  assert.ok(compileResponse.body.timeline.shots.every((shot) => (
-    shot.spec.elements.some((element) => element.content === context.subheadline)
-  )));
+  assert.ok(compileResponse.body.timeline.shots.at(-1).spec.elements.some((element) => element.content === context.subheadline));
   assert.ok(compileResponse.body.timeline.hardConstraints.length > 0);
   assert.deepEqual(
     compileResponse.body.timeline.shots.map(({ startFrame, endFrame }) => [startFrame, endFrame]),

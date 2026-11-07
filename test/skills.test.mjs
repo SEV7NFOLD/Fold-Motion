@@ -23,7 +23,8 @@ import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from '../src/ai/prompts/index.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillDir = path.join(root, 'skills', 'fold-motion');
-const read = (...parts) => readFileSync(path.join(...parts), 'utf8');
+// Normalize line endings so these checks behave the same on Windows checkouts.
+const read = (...parts) => readFileSync(path.join(...parts), 'utf8').replace(/\r\n/g, '\n');
 const skill = read(skillDir, 'SKILL.md');
 const engine = read(skillDir, 'references', 'engine.md');
 const sceneSpec = read(skillDir, 'references', 'scene-spec.md');
@@ -75,9 +76,11 @@ test('documented element types and anchors match what the engine accepts', async
 
   const context = { primaryColor: '#0B0B10', accentColor: '#C9A86A' };
   const { timeline } = await compileCreativePlan(exampleStoryboard, context, null);
-  const specsWith = (element) => timeline.shots.map((shot, index) => ({
-    ...shot.spec,
-    elements: index === 0 ? [...shot.spec.elements, element] : shot.spec.elements,
+  // Element types are checked on legacy (v1) scenes; v2 scenes are built by recipes.
+  const legacy = timeline.shots.map(({ spec }) => { const { version: _v, ...rest } = spec; return rest; });
+  const specsWith = (element) => legacy.map((spec, index) => ({
+    ...spec,
+    elements: index === 0 ? [...spec.elements, element] : spec.elements,
   }));
   const extras = {
     rect: { id: 'extra', type: 'rect', x: 10, y: 10, width: 20, height: 20, fill: '#C9A86A' },
@@ -98,9 +101,11 @@ test('documented element types and anchors match what the engine accepts', async
     },
   });
   await provider.compileStoryboard(exampleStoryboard, context);
-  const elementProperties = schema.items.properties.elements.items.properties;
-  assert.deepEqual(elementProperties.type.enum, documentedTypes);
-  assert.deepEqual(elementProperties.anchor.enum, ['start', 'middle', 'end']);
+  // v2: the model directs (recipe, transition) and never writes elements.
+  const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
+  assert.equal(schema.items.properties.elements, undefined);
+  assert.deepEqual(schema.items.properties.recipe.enum, [...RECIPE_OPTIONS]);
+  assert.deepEqual(schema.items.properties.transitionOut.enum, [...TRANSITION_OPTIONS]);
 });
 
 test('documented creative QA thresholds match evaluateCreativeQA', async () => {
@@ -130,15 +135,15 @@ test('templates are valid and match the code that produces them', () => {
   }
 });
 
-test('Gemini prompts describe the renderer as it actually behaves', () => {
+test('Gemini prompts describe the renderer as it actually behaves', async () => {
   assert.match(renderer, /animatedWidth = element\.id\.endsWith\('-accent'\)/, 'renderer no longer draws on "-accent" rects: update shot-compiler.mjs, scene-spec.md and engine.md');
   assert.match(renderer, /opacity="\$\{element\.id\.endsWith\('-background'\) \? 1 : fade\}"/, 'renderer no longer keeps "-background" rects opaque: update shot-compiler.mjs, scene-spec.md, engine.md and repair.mjs');
   assert.match(renderer, /width \* 0\.76/, 'renderer wrap width changed: update shot-compiler.mjs and engine.md');
   assert.match(renderer, /height \* 0\.15/, 'renderer text size cap changed: update shot-compiler.mjs and engine.md');
-  assert.match(SHOT_COMPILER, /"-background"/);
-  assert.match(SHOT_COMPILER, /"-accent"/);
-  assert.match(SHOT_COMPILER, /76%/);
-  assert.match(STORYBOARD_DIRECTOR, /Shots cut directly/);
+  // v2 prompts direct recipes; the v1 renderer facts above stay true for legacy scenes.
+  const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
+  for (const option of [...RECIPE_OPTIONS, ...TRANSITION_OPTIONS]) assert.ok(SHOT_COMPILER.includes(`"${option}"`), `compile prompt is missing ${option}`);
+  assert.match(STORYBOARD_DIRECTOR, /a cut, a wipe, a fade or a push-through/);
   assert.match(STORYBOARD_DIRECTOR, /character for character/);
 });
 
@@ -191,9 +196,10 @@ test('the motion vocabulary is the same everywhere it appears', async () => {
     assert.deepEqual([...row.matchAll(/`([a-z-]+)`/g)].map(([, option]) => option), [...options], `scene-spec.md ${field} row`);
     for (const option of options) assert.match(engine, new RegExp(`\`${option}\``), `engine.md should mention ${option}`);
   }
-  // Prompts: Gemini is told about every option.
-  for (const options of Object.values(MOTION_OPTIONS)) {
-    for (const option of options) {
+  // Prompts: Gemini is told about every camera move and atmosphere. Copy entrances
+  // belong to legacy (v1) scenes; v2 recipes choreograph the copy themselves.
+  for (const field of ['camera', 'atmosphere']) {
+    for (const option of MOTION_OPTIONS[field]) {
       assert.ok(STORYBOARD_DIRECTOR.includes(option), `storyboard prompt is missing ${option}`);
       assert.ok(SHOT_COMPILER.includes(`"${option}"`), `compile prompt is missing ${option}`);
     }
@@ -222,4 +228,17 @@ test('the Gemini compile schema requires motion and enumerates the vocabulary', 
   assert.ok(schema.items.required.includes('motion'));
   const motion = schema.items.properties.motion.properties;
   for (const [field, options] of Object.entries(MOTION_OPTIONS)) assert.deepEqual(motion[field].enum, [...options]);
+});
+
+test('the studio labels every recipe and transition', async () => {
+  const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
+  const studio = read(root, 'public', 'studio.js');
+  const keysOf = (name) => [...(studio.match(new RegExp(`const ${name} = \\{(.+)\\};`))?.[1] ?? '').matchAll(/'?([a-z-]+)'?: '/g)].map(([, key]) => key);
+  assert.deepEqual(keysOf('RECIPE_LABELS'), [...RECIPE_OPTIONS]);
+  assert.deepEqual(keysOf('TRANSITION_LABELS'), [...TRANSITION_OPTIONS]);
+});
+
+test('engine.md documents every v2 recipe and transition', async () => {
+  const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
+  for (const option of [...RECIPE_OPTIONS, ...TRANSITION_OPTIONS]) assert.match(engine, new RegExp(`\`${option}\``), `engine.md should document ${option}`);
 });

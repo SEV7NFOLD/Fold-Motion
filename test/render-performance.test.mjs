@@ -16,8 +16,12 @@ const shot = {
 
 test('renders use one bundled font instead of scanning system fonts per frame', () => {
   assert.equal(RENDER_FONT_FAMILY, 'Montserrat');
-  assert.ok(existsSync(new URL('../assets/fonts/Montserrat-Bold.ttf', import.meta.url)));
-  assert.ok(existsSync(new URL('../assets/fonts/OFL.txt', import.meta.url)), 'ship the font license with the font');
+  for (const file of ['Montserrat-Bold.ttf', 'Montserrat-SemiBold.ttf', 'Montserrat-Medium.ttf', 'Anton-Regular.ttf', 'metrics.json']) {
+    assert.ok(existsSync(new URL(`../assets/fonts/${file}`, import.meta.url)), `missing assets/fonts/${file}`);
+  }
+  for (const license of ['OFL-Montserrat.txt', 'OFL-Anton.txt']) {
+    assert.ok(existsSync(new URL(`../assets/fonts/${license}`, import.meta.url)), `ship ${license} with the fonts`);
+  }
   assert.match(renderer, /loadSystemFonts: false/);
   assert.doesNotMatch(renderer, /loadSystemFonts: true/);
   const svg = renderShotSvg(shot, 0.5, 1280, 720);

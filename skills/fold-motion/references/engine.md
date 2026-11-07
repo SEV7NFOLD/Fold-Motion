@@ -4,18 +4,46 @@ Plan and promise only what is in the "Today" column. The skill book in
 `docs/FOLD-MOTION-SKILL-BOOK.md` describes the long-term architecture; where it
 and this file disagree about current behavior, this file and the code win.
 
+## Two scene formats
+
+- **v2 (current):** Gemini *directs* each shot: it picks a recipe, a kicker, an
+  emphasis word, motion and a transition. `src/production/recipes.mjs` expands
+  that into measured, choreographed elements, and `src/render/frame-v2.mjs`
+  draws every frame. The offline fallback also produces v2 shots.
+- **v1 (legacy):** raw `rect`, `circle` and `text` elements with the motion
+  vocabulary below, drawn by `renderShotSvg`. Kept so older projects and older
+  model responses still render; a scene with `elements` and no `recipe` is v1.
+
+### v2 recipes
+
+| Recipe | Staging |
+| --- | --- |
+| `title-reveal` | Display face (Anton), words rise out of masks one by one, tracking tightens, hairline, optional kicker below; the hero shot |
+| `statement` | Bold sans, letters cascade in, optional kicker above and supporting line below |
+| `kicker-title` | Opening card: tracked kicker first, then the line rises under a beam of light |
+| `type-stack` | Two to four words stacked, each line scaled to the same width, sliding in from alternating sides |
+| `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep |
+
+Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
+`fade` (through the background) and `push` (the camera pushes through). Shots
+can also open with a `beam` of light and finish with a `sweep` across the line.
+All text is measured from the bundled fonts (`assets/fonts/metrics.json`), sized
+to fit 84% of the width at its widest moment, and colored to pass 4.5:1
+contrast, including the emphasis gradient. v2 films get subtle film grain at
+encode (`RENDER_GRAIN`, default 3; 0 turns it off).
+
 ## Capabilities
 
 | Area | Today | Not yet |
 | --- | --- | --- |
-| Elements | `rect`, `circle`, `text` on a full-canvas background | images, paths, gradients, logos as images, video footage, 3D |
+| Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps. v1: `rect`, `circle`, `text` | images, logos as images, video footage, 3D |
 | Motion | Per-shot `motion` in the scene spec: a camera move, a copy entrance and an atmosphere, from a fixed vocabulary (below) | Per-element keyframes, custom easing, orbiting or 3D camera moves |
-| Transitions | Hard cut between shots; each shot's copy makes its own entrance | Crossfades, wipes between shots, match cuts |
+| Transitions | v2: `cut`, `wipe`, `fade`, `push`. v1: hard cuts | Zoom through a letter, match cuts |
 | Format | 1280 × 720 at 24 fps by default (`context.width`, `height`, `fps`); the studio always sends the defaults | Vertical or square presets in the studio |
 | Duration | Shot durations from the storyboard, frame-accurate | Global duration control in the studio (the model aims for about 8 seconds) |
 | Audio | `src/audio/audio-track.mjs` models tracks and cues | Audio in the render. Nothing muxes audio into the MP4. |
 | Caching | `src/timeline/render-cache.mjs` exists | Wired into rendering. Every render redraws every frame. |
-| Text | Montserrat Bold (bundled in `assets/fonts`), wrapped at 76% of the width, size capped at 15% of the height, with an accent glow | Other fonts, per-word styling |
+| Text | v2: Anton display with Montserrat 500/600/700, measured layout, per-word and per-letter animation. v1: Montserrat Bold wrapped at 76% of the width, capped at 15% of the height | Uploaded brand fonts |
 | Seek contract | `seek(tLocalSeconds)` exists only in the sample scene (`public/scene-01*.js`) | In the production renderer, which uses `renderShotSvg(shot, progress)` |
 
 ### The motion vocabulary (src/production/motion.mjs)
@@ -28,7 +56,7 @@ pure function of shot progress, so renders stay deterministic.
 | --- | --- | --- |
 | `camera` | `static`, `push-in` (scale up 8%), `pull-out` (settle from 108%), `drift-left`, `drift-right` (3% of the width) | `static` |
 | `entrance` | `rise-glitch`, `fade`, `slide-up`, `slide-left`, `scale-in`, `type-on`, `wipe` | `rise-glitch` |
-| `atmosphere` | `orbit` (glow, rings, grid, lines), `spotlight`, `grid`, `lines`, `clean` | `orbit` |
+| `atmosphere` | `orbit` (glow, rings, grid, lines), `spotlight`, `grid`, `lines`, `clean`, `planes` (drifting folded triangles), `dots` (dot field with a light ripple) | `orbit` |
 
 The defaults reproduce the original look exactly. Other behavior that applies
 to every shot:
@@ -82,7 +110,10 @@ error.
 | `src/ai/provider.mjs` | Gemini and OpenAI-compatible providers, response schemas, `sceneRules()` |
 | `src/ai/prompts/` | Gemini's production thinking: `storyboard-director.mjs`, `shot-compiler.mjs` |
 | `src/production/production.mjs` | Storyboard validation, offline mock, acceptance spec, `buildTimeline`, creative QA |
-| `src/production/repair.mjs` | Fixes model output before validation |
+| `src/production/repair.mjs` | Fixes legacy (v1) model output before validation |
+| `src/production/recipes.mjs` | v2 recipes, direction cleanup (`normalizeDirection`) and the offline fallback's direction |
+| `src/render/frame-v2.mjs` | v2 frame renderer: recipes' choreography, atmospheres, beam, camera, transitions |
+| `src/render/typography.mjs` | Bundled fonts and exact text measurement |
 | `src/production/color.mjs` | Contrast math and readable text color |
 | `src/orchestrator/project-state.mjs` | The state machine and its evidence rules |
 | `scripts/render-production.mjs` | Frames, MP4, ffprobe metadata, production QA, report |
