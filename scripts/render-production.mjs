@@ -6,8 +6,37 @@ import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 import { generateFrameManifest } from './qa/generate-frame-hashes.mjs';
 import { evaluateCreativeQA, validateTimeline } from '../src/production/production.mjs';
+import { normalizeMotion } from '../src/production/motion.mjs';
 
 const execFileAsync = promisify(execFile);
+
+// One bundled font keeps renders identical on every machine and avoids scanning
+// every system font for each frame (the main cost on small servers).
+export const RENDER_FONT_FAMILY = 'Montserrat';
+const RENDER_FONT_FILE = fileURLToPath(new URL('../assets/fonts/Montserrat-Bold.ttf', import.meta.url));
+const RESVG_FONT_OPTIONS = Object.freeze({ fontFiles: [RENDER_FONT_FILE], loadSystemFonts: false, defaultFontFamily: RENDER_FONT_FAMILY });
+const FONT_STACK = `${RENDER_FONT_FAMILY}, Arial, sans-serif`;
+
+/**
+ * The background grid as one path (42 px cells). Rasterizing a single path is far
+ * cheaper than an SVG <pattern>; opacity .1176 equals the pattern's .42 at .28.
+ */
+const gridCache = new Map();
+function gridPath(width, height) {
+  const key = `${width}x${height}`;
+  if (!gridCache.has(key)) {
+    const lines = [];
+    for (let x = 0; x <= width; x += 42) lines.push(`M${x} 0V${height}`);
+    for (let y = 0; y <= height; y += 42) lines.push(`M0 ${y}H${width}`);
+    gridCache.set(key, lines.join(''));
+  }
+  return gridCache.get(key);
+}
+
+function positiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
 
 function escapeXml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -52,10 +81,27 @@ function wrapText(content, maximumCharacters) {
   return lines;
 }
 
+function easeInOutSine(value) {
+  return -(Math.cos(Math.PI * value) - 1) / 2;
+}
+
+/** The camera move as an SVG transform, or '' when the camera is static. */
+function cameraTransform(camera, progress, width, height) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const scaleAbout = (scale) => `translate(${cx} ${cy}) scale(${scale.toFixed(5)}) translate(${-cx} ${-cy})`;
+  if (camera === 'push-in') return scaleAbout(1 + 0.08 * easeInOutSine(progress));
+  if (camera === 'pull-out') return scaleAbout(1.08 - 0.08 * easeOutCubic(progress));
+  if (camera === 'drift-left') return `translate(${(-width * 0.03 * easeInOutSine(progress)).toFixed(2)} 0)`;
+  if (camera === 'drift-right') return `translate(${(width * 0.03 * easeInOutSine(progress)).toFixed(2)} 0)`;
+  return '';
+}
+
 export function renderShotSvg(shot, progress, width, height) {
   const progressValue = clamp(progress, 0, 1);
   const reveal = easeOutCubic(clamp(progressValue * 4, 0, 1));
   const fade = 0.16 + 0.84 * reveal;
+  const { motion } = normalizeMotion(shot.spec.motion);
   const primary = shot.palette?.primary
     || shot.spec.elements.find((element) => element.type === 'rect')?.fill
     || '#0B0F19';
@@ -64,7 +110,8 @@ export function renderShotSvg(shot, progress, width, height) {
     || '#00F0FF';
   const backgroundElements = [];
   const foregroundElements = [];
-  for (const element of shot.spec.elements) {
+  const extraDefs = [];
+  shot.spec.elements.forEach((element, elementIndex) => {
     const fill = escapeXml(element.fill || '#F8FAFC');
     if (element.type === 'rect') {
       const animatedWidth = element.id.endsWith('-accent')
@@ -83,44 +130,99 @@ export function renderShotSvg(shot, progress, width, height) {
         Math.max(1, Math.floor(width * 0.76 / (fittedSize * 0.58))),
       );
       const anchor = element.anchor === 'middle' ? 'middle' : element.anchor === 'end' ? 'end' : 'start';
-      const y = element.y - ((lines.length - 1) * fittedSize * 0.62) / 2 - (1 - fade) * height * 0.035;
-      const textLines = lines.map((line, index) => (
-        `<tspan x="${element.x}" dy="${index === 0 ? 0 : fittedSize * 1.2}">${escapeXml(line)}</tspan>`
+      const size = Math.max(16, fittedSize);
+      const baseY = element.y - ((lines.length - 1) * fittedSize * 0.62) / 2;
+      const textAttributes = (x, y, opacity) => `x="${x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="${FONT_STACK}" font-size="${size}" font-weight="700" letter-spacing="${Math.max(0.4, fittedSize * 0.025)}" opacity="${opacity}" filter="url(#text-glow)" style="font-kerning:normal"`;
+      const plainLines = (x) => lines.map((line, index) => (
+        `<tspan x="${x}" dy="${index === 0 ? 0 : fittedSize * 1.2}">${escapeXml(line)}</tspan>`
       )).join('');
-      const glitchStrength = clamp((0.24 - progressValue) / 0.24, 0, 1);
-      const glitchLayers = glitchStrength > 0
-        ? `<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="#FF0055" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.48}" transform="translate(${Math.round(7 * glitchStrength)} ${Math.round(-2 * glitchStrength)}) skewX(-4)" clip-path="url(#glitch-slice)">${textLines}</text><text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${escapeXml(accent)}" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.38}" transform="translate(${Math.round(-5 * glitchStrength)} ${Math.round(2 * glitchStrength)})">${textLines}</text>`
-        : '';
-      foregroundElements.push(`${glitchLayers}<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="Segoe UI, Arial, sans-serif" font-size="${Math.max(16, fittedSize)}" font-weight="700" letter-spacing="${Math.max(0.4, fittedSize * 0.025)}" opacity="${fade}" filter="url(#text-glow)" style="font-kerning:normal">${textLines}</text>`);
+
+      if (motion.entrance === 'rise-glitch') {
+        const y = element.y - ((lines.length - 1) * fittedSize * 0.62) / 2 - (1 - fade) * height * 0.035;
+        const textLines = lines.map((line, index) => (
+          `<tspan x="${element.x}" dy="${index === 0 ? 0 : fittedSize * 1.2}">${escapeXml(line)}</tspan>`
+        )).join('');
+        const glitchStrength = clamp((0.24 - progressValue) / 0.24, 0, 1);
+        const glitchLayers = glitchStrength > 0
+          ? `<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="#FF0055" font-family="${FONT_STACK}" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.48}" transform="translate(${Math.round(7 * glitchStrength)} ${Math.round(-2 * glitchStrength)}) skewX(-4)" clip-path="url(#glitch-slice)">${textLines}</text><text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${escapeXml(accent)}" font-family="${FONT_STACK}" font-size="${Math.max(16, fittedSize)}" font-weight="700" opacity="${glitchStrength * 0.38}" transform="translate(${Math.round(-5 * glitchStrength)} ${Math.round(2 * glitchStrength)})">${textLines}</text>`
+          : '';
+        foregroundElements.push(`${glitchLayers}<text x="${element.x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="${FONT_STACK}" font-size="${Math.max(16, fittedSize)}" font-weight="700" letter-spacing="${Math.max(0.4, fittedSize * 0.025)}" opacity="${fade}" filter="url(#text-glow)" style="font-kerning:normal">${textLines}</text>`);
+      } else if (motion.entrance === 'fade') {
+        const opacity = easeOutCubic(clamp(progressValue / 0.35, 0, 1));
+        foregroundElements.push(`<text ${textAttributes(element.x, baseY, opacity)}>${plainLines(element.x)}</text>`);
+      } else if (motion.entrance === 'slide-up') {
+        const y = baseY + (1 - reveal) * height * 0.12;
+        foregroundElements.push(`<text ${textAttributes(element.x, y, reveal)}>${plainLines(element.x)}</text>`);
+      } else if (motion.entrance === 'slide-left') {
+        const x = element.x + (1 - reveal) * width * 0.08;
+        foregroundElements.push(`<text ${textAttributes(x, baseY, reveal)}>${plainLines(x)}</text>`);
+      } else if (motion.entrance === 'scale-in') {
+        const scale = 0.86 + 0.14 * reveal;
+        const pivotY = element.y;
+        foregroundElements.push(`<g transform="translate(${element.x} ${pivotY}) scale(${scale.toFixed(5)}) translate(${-element.x} ${-pivotY})"><text ${textAttributes(element.x, baseY, reveal)}>${plainLines(element.x)}</text></g>`);
+      } else if (motion.entrance === 'type-on') {
+        // Unrevealed characters stay in place but transparent, so the layout never shifts.
+        const total = lines.reduce((sum, line) => sum + [...line].length, 0);
+        let remaining = Math.round(total * clamp(progressValue / 0.45, 0, 1));
+        const typed = lines.map((line, index) => {
+          const characters = [...line];
+          const shown = characters.slice(0, Math.max(0, remaining)).join('');
+          const hidden = characters.slice(Math.max(0, remaining)).join('');
+          remaining -= characters.length;
+          const hiddenPart = hidden ? `<tspan fill-opacity="0">${escapeXml(hidden)}</tspan>` : '';
+          return `<tspan x="${element.x}" dy="${index === 0 ? 0 : fittedSize * 1.2}">${escapeXml(shown)}${hiddenPart}</tspan>`;
+        }).join('');
+        foregroundElements.push(`<text ${textAttributes(element.x, baseY, 1)}>${typed}</text>`);
+      } else if (motion.entrance === 'wipe') {
+        const clipId = `wipe-${elementIndex}`;
+        extraDefs.push(`<clipPath id="${clipId}"><rect x="0" y="0" width="${(width * easeOutCubic(clamp(progressValue / 0.4, 0, 1))).toFixed(2)}" height="${height}"/></clipPath>`);
+        foregroundElements.push(`<g clip-path="url(#${clipId})"><text ${textAttributes(element.x, baseY, 1)}>${plainLines(element.x)}</text></g>`);
+      }
     }
+  });
+
+  const grid = `<path d="${gridPath(width, height)}" fill="none" stroke="${escapeXml(accent)}" stroke-width=".5" stroke-opacity=".1176"/>`;
+  const accentLines = `<path d="M ${width * 0.08} ${height * 0.78} H ${width * (0.08 + 0.34 * reveal)}" fill="none" stroke="${escapeXml(accent)}" stroke-width="2" opacity=".78" filter="url(#accent-glow)"/><path d="M ${width * 0.08} ${height * 0.795} H ${width * (0.08 + 0.15 * reveal)}" fill="none" stroke="#FF0055" stroke-width="1" opacity=".72"/>`;
+  let atmosphere = '';
+  if (motion.atmosphere === 'orbit') {
+    atmosphere = `<rect width="${width}" height="${height}" fill="url(#ambient)" opacity=".7"/>${grid}<circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.26}" fill="none" stroke="${escapeXml(accent)}" stroke-width="1" opacity=".42" transform="rotate(${-18 + progressValue * 7} ${width * 0.76} ${height * 0.48})"/><circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.31}" fill="none" stroke="#FF0055" stroke-width="1" stroke-dasharray="3 12" opacity=".34" transform="rotate(${22 - progressValue * 11} ${width * 0.76} ${height * 0.48})"/>${accentLines}`;
+  } else if (motion.atmosphere === 'spotlight') {
+    extraDefs.push(`<radialGradient id="spotlight" cx="50%" cy="46%" r="52%"><stop offset="0" stop-color="${escapeXml(accent)}" stop-opacity=".26"/><stop offset=".55" stop-color="${escapeXml(accent)}" stop-opacity=".06"/><stop offset="1" stop-color="${escapeXml(primary)}" stop-opacity="0"/></radialGradient>`);
+    atmosphere = `<rect width="${width}" height="${height}" fill="url(#spotlight)" opacity="${(0.5 + 0.5 * reveal).toFixed(3)}"/>`;
+  } else if (motion.atmosphere === 'grid') {
+    atmosphere = `<rect width="${width}" height="${height}" fill="url(#ambient)" opacity=".45"/>${grid}`;
+  } else if (motion.atmosphere === 'lines') {
+    atmosphere = accentLines;
   }
-  const atmosphere = `<rect width="${width}" height="${height}" fill="url(#ambient)" opacity=".7"/><rect width="${width}" height="${height}" fill="url(#grid)" opacity=".28"/><circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.26}" fill="none" stroke="${escapeXml(accent)}" stroke-width="1" opacity=".42" transform="rotate(${-18 + progressValue * 7} ${width * 0.76} ${height * 0.48})"/><circle cx="${width * 0.76}" cy="${height * 0.48}" r="${Math.min(width, height) * 0.31}" fill="none" stroke="#FF0055" stroke-width="1" stroke-dasharray="3 12" opacity=".34" transform="rotate(${22 - progressValue * 11} ${width * 0.76} ${height * 0.48})"/><path d="M ${width * 0.08} ${height * 0.78} H ${width * (0.08 + 0.34 * reveal)}" fill="none" stroke="${escapeXml(accent)}" stroke-width="2" opacity=".78" filter="url(#accent-glow)"/><path d="M ${width * 0.08} ${height * 0.795} H ${width * (0.08 + 0.15 * reveal)}" fill="none" stroke="#FF0055" stroke-width="1" opacity=".72"/>`;
+
   const metadata = escapeXml(JSON.stringify({
     palette: shot.palette ?? { primary, accent },
     hardConstraints: shot.hardConstraints ?? [],
     copy: shot.spec.elements.filter((element) => element.type === 'text').map((element) => element.content),
   }));
+  const transform = cameraTransform(motion.camera, progressValue, width, height);
+  const scene = transform
+    ? `<g transform="${transform}">\n${atmosphere}\n${foregroundElements.join('\n')}\n</g>`
+    : `${atmosphere}\n${foregroundElements.join('\n')}`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <defs>
   <radialGradient id="ambient" cx="74%" cy="46%" r="68%"><stop offset="0" stop-color="${escapeXml(accent)}" stop-opacity=".22"/><stop offset=".42" stop-color="#FF0055" stop-opacity=".07"/><stop offset="1" stop-color="${escapeXml(primary)}" stop-opacity="0"/></radialGradient>
-  <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M 42 0 L 0 0 0 42" fill="none" stroke="${escapeXml(accent)}" stroke-width=".5" opacity=".42"/></pattern>
   <filter id="text-glow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="5" result="blur"/><feFlood flood-color="${escapeXml(accent)}" flood-opacity=".34"/><feComposite in2="blur" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   <filter id="accent-glow" x="-30%" y="-300%" width="160%" height="700%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <clipPath id="glitch-slice"><rect x="0" y="${height * 0.42}" width="${width}" height="${height * 0.2}"/></clipPath>
+  <clipPath id="glitch-slice"><rect x="0" y="${height * 0.42}" width="${width}" height="${height * 0.2}"/></clipPath>${extraDefs.length ? `\n  ${extraDefs.join('\n  ')}` : ''}
 </defs>
 <metadata>${metadata}</metadata>
 ${backgroundElements.join('\n')}
-${atmosphere}
-${foregroundElements.join('\n')}
+${scene}
 </svg>`;
 }
 
 async function runCommand(command, args) {
   try {
     return await execFileAsync(command, args, {
-      timeout: 120_000,
+      timeout: positiveNumber(process.env.RENDER_ENCODE_TIMEOUT_MS, 600_000),
       windowsHide: true,
       maxBuffer: 4 * 1024 * 1024,
     });
@@ -179,9 +281,12 @@ export async function renderProductionProject({
     await writeFile(svgPath, svg);
     const rasterizer = new Resvg(svg, {
       fitTo: { mode: 'width', value: timeline.width },
-      font: { defaultFontFamily: 'Segoe UI', loadSystemFonts: true },
+      font: RESVG_FONT_OPTIONS,
     });
     await writeFile(pngPath, rasterizer.render().asPng());
+    // Each rasterizer holds native pixel memory that V8 can't see; collect regularly
+    // so a long film doesn't climb toward a small server's memory limit.
+    if (frameIndex % 12 === 11) globalThis.gc?.();
   }
 
   const manifest = generateFrameManifest(framesDirectory);
@@ -196,6 +301,14 @@ export async function renderProductionProject({
     '-framerate', String(timeline.fps),
     '-i', path.join(framesDirectory, 'frame-%06d.png'),
     '-c:v', 'libx264',
+    // veryfast uses one reference frame and a short lookahead: far less memory and
+    // CPU than the default preset, at a quality that holds up for motion graphics.
+    '-preset', process.env.RENDER_X264_PRESET || 'veryfast',
+    '-crf', String(positiveNumber(process.env.RENDER_X264_CRF, 18)),
+    // aq-mode 3 spends bits on dark, smooth areas, which keeps dark brand
+    // backgrounds and glows from breaking into blocky bands.
+    '-x264-params', 'aq-mode=3',
+    '-threads', String(positiveNumber(process.env.RENDER_FFMPEG_THREADS, 1)),
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
     videoPath,

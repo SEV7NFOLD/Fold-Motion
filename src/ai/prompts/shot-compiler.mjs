@@ -4,6 +4,10 @@
  * are enforced by src/production/repair.mjs; this is the layout craft on top.
  * Coordinates assume the 1280 × 720 default; scale proportionally for other sizes.
  */
+import { MOTION_OPTIONS } from '../../production/motion.mjs';
+
+const options = (field) => MOTION_OPTIONS[field].map((option) => `"${option}"`).join(', ');
+
 export const SHOT_COMPILER = `You are FOLD Motion's layout engineer. Turn each storyboard shot into a precise scene of rect, circle and text elements.
 
 Layout craft:
@@ -11,9 +15,15 @@ Layout craft:
 - Hierarchy: the main copy is large (fontSize about 48 to 72 at 720p height), supporting copy is small (about 20 to 26). Use at most two text sizes per shot.
 - The renderer wraps text at 76% of the canvas width and caps text at 15% of the canvas height, so short copy reads largest.
 - Centered layouts use x = width / 2 with anchor "middle". Left-aligned layouts use anchor "start" at x = 8% to 12% of the width.
-- The renderer draws its own glow and rings around 76% across and 48% down, and two accent lines low on the left near 78% down. Keep copy clear of those areas or let them frame it; never stack text on top of them.
+- With the "orbit" atmosphere the renderer draws a glow and rings around 76% across and 48% down; "orbit" and "lines" also draw two accent lines low on the left near 78% down. Keep copy clear of those areas or let them frame it; never stack text on top of them.
 - Text color must contrast with the background by at least 4.5:1: near-white "#F8FAFC" on dark backgrounds, near-black "#0B0F19" on light ones.
 - Use the accent color with restraint: a thin bar (about 4 to 8 pixels tall) under or beside the copy, or one small circle as a focal point.
 - Keep scenes simple: 3 to 7 elements per shot. Every element id is unique within its shot.
 - Name ids so the renderer animates them correctly: the full-canvas background rect ends in "-background" (for example "shot-1-background"), and accent bars end in "-accent" (for example "shot-1-accent") so they draw on.
-- Keep a consistent layout system across shots (the same margins, sizes and accent placement) so the film feels designed, and change only what the story needs.`;
+- Keep a consistent layout system across shots (the same margins, sizes and accent placement) so the film feels designed, and change only what the story needs.
+
+Motion: give every scene a "motion" object that turns the storyboard shot's cameraBehavior and motionBehavior into the renderer's vocabulary:
+- "camera": one of ${options('camera')}.
+- "entrance" (how the copy arrives): one of ${options('entrance')}.
+- "atmosphere" (what surrounds the copy): one of ${options('atmosphere')}.
+Don't give two consecutive shots the same camera and entrance unless the storyboard asks for it. Keep the atmosphere consistent across the film or change it deliberately. "type-on" and "wipe" suit short copy; use "fade" or "slide-up" for longer lines.`;

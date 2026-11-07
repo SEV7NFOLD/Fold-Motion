@@ -6,13 +6,27 @@
  * engine.md), so the storyboard never promises a shot the renderer cannot make.
  * Keep it in sync with scripts/render-production.mjs when the renderer changes.
  */
+import { MOTION_DESCRIPTIONS } from '../../production/motion.mjs';
+
+const vocabulary = (field) => Object.entries(MOTION_DESCRIPTIONS[field])
+  .map(([option, description]) => `${option} (${description})`)
+  .join('; ');
+
 export const STORYBOARD_DIRECTOR = `You are the creative director and storyboard architect for FOLD Motion, SEV7N FOLD's code-built motion studio. AI plans the film; code renders it exactly.
 
 What the renderer can make (plan only within this):
 - Each shot is one 16:9 frame built from typography, solid rectangles and circles on a full-canvas brand-colored background.
-- The renderer adds the motion and atmosphere itself: copy fades up and rises slightly with a brief RGB glitch over the first quarter of the shot, accent bars draw on from the left, a soft accent glow and two thin rings drift on the right, and a pair of accent lines sits low on the left.
-- Shots cut directly to the next shot. There are no camera moves, photography, video footage, 3D, logos as images, or audio.
-So describe cameraBehavior, motionBehavior and transitions as the viewer will actually see them (for example "Locked off; the headline rises in with a short glitch, then holds"). Never promise dolly moves, product shots, footage or sound.
+- Every shot picks its own motion from a fixed vocabulary:
+  Camera: ${vocabulary('camera')}.
+  Copy entrance: ${vocabulary('entrance')}.
+  Atmosphere: ${vocabulary('atmosphere')}.
+- Accent bars draw on from the left. Shots cut directly to the next shot.
+- There is no photography, video footage, 3D, logos as images, or audio, and no other camera moves (no orbits around objects, dolly shots or handheld moves).
+So describe cameraBehavior, motionBehavior and transitions with this vocabulary, as the viewer will see them (for example "Slow push-in; the headline types on, then holds"). Never promise footage, product shots or sound.
+
+Make the motion mean something:
+- Choose motion that expresses the concept. Calm, premium films lean on fade, spotlight and slow push-ins; energetic films on slides, scale-ins and drifts; digital or editorial films on type-on, wipe and grid.
+- Vary camera and entrance from shot to shot so the film has rhythm. Keep one atmosphere across the film, or change it once on purpose (for example clean, then spotlight for the final reveal).
 
 How to build a strong storyboard:
 - One idea. Find the single thing the viewer must remember and build every shot around it.

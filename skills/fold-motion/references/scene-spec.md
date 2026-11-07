@@ -1,9 +1,9 @@
 # Scene specs
 
-A scene spec describes one shot's final layout. Gemini writes them during
-compile; `repairShotSpec` (in `src/production/repair.mjs`) cleans them;
+A scene spec describes one shot's layout and how it moves. Gemini writes them
+during compile; `repairShotSpec` (in `src/production/repair.mjs`) cleans them;
 `buildTimeline` (in `src/production/production.mjs`) accepts or rejects them.
-The renderer adds all motion, so a spec has no animation fields.
+Motion comes from the `motion` object, chosen from a fixed vocabulary.
 
 ## Shape
 
@@ -15,6 +15,7 @@ The renderer adds all motion, so a spec has no animation fields.
   "height": 720,
   "fps": 24,
   "durationInSeconds": 3,
+  "motion": { "camera": "push-in", "entrance": "fade", "atmosphere": "spotlight" },
   "elements": [
     { "id": "shot-1-background", "type": "rect", "x": 0, "y": 0, "width": 1280, "height": 720, "fill": "#0B0B10" },
     { "id": "shot-1-copy", "type": "text", "content": "Nocturne", "x": 640, "y": 360, "fill": "#F8FAFC", "fontSize": 72, "anchor": "middle" },
@@ -38,6 +39,20 @@ Every `fill` is a 6-digit hex color. Every element has a unique string `id`.
 Id suffixes change how the renderer animates an element: `-background` keeps
 the full-canvas rect opaque, and `-accent` makes a rect draw on.
 
+## Motion
+
+`motion` is optional; missing fields take the default. Options:
+
+| Field | Options |
+| --- | --- |
+| `camera` | `static`, `push-in`, `pull-out`, `drift-left`, `drift-right` |
+| `entrance` | `rise-glitch`, `fade`, `slide-up`, `slide-left`, `scale-in`, `type-on`, `wipe` |
+| `atmosphere` | `orbit`, `spotlight`, `grid`, `lines`, `clean` |
+
+What each looks like is in [engine.md](engine.md). The entrance applies to
+every text element in the shot; the camera moves everything except the
+background.
+
 ## What buildTimeline requires of each shot
 
 1. Format equals the context (`width`, `height`, `fps`).
@@ -49,6 +64,7 @@ the full-canvas rect opaque, and `-accent` makes a rect draw on.
    adds it if missing.
 6. At least one element filled with the accent color.
 7. Every element renderable under the rules above.
+8. `motion`, if present, uses only the options above.
 
 When a check fails, the error names it, for example
 `Compiled shot "shot-02" does not satisfy its format, copy, and brand
@@ -76,6 +92,10 @@ array and in the studio. They cover:
 - **Copy:** near-matches restored to the exact approved copy (case and
   punctuation); the copy added if missing.
 - **Accent:** an accent rule added if no element uses the accent color.
+- **Motion:** aliases mapped (`zoom-in` to `push-in`, `typewriter` to
+  `type-on`, `none` to `clean`); unknown options replaced with the default; a
+  missing `motion` gets a deterministic pick seeded by the storyboard, so a
+  model that forgets it doesn't fall back to the same look every time.
 
 Repairs never change copy wording, invent elements beyond the background, copy
 and accent, or touch the deterministic (offline) path.

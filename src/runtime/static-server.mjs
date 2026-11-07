@@ -168,19 +168,38 @@ export function checkRenderAvailability(run = execFileAsync) {
   return renderAvailability;
 }
 
-async function runNpmScript(args, cwd) {
+const DEFAULT_RENDER_TIMEOUT_MS = 15 * 60 * 1000;
+
+/** Explains why a child process failed in words a director can act on. */
+export function describeProcessFailure(error, label, timeoutMs) {
+  const tail = (text) => String(text || '').trim().split(/\r?\n/).slice(-6).join('\n');
+  if (error?.killed && (error.signal === 'SIGTERM' || error.code === 'ETIMEDOUT')) {
+    return `${label} took longer than ${Math.round(timeoutMs / 60000)} minutes and was stopped. Small servers render slowly; a larger instance or a shorter film will finish sooner (raise RENDER_TIMEOUT_MS to allow more time).`;
+  }
+  if (error?.signal === 'SIGKILL' || error?.code === 137) {
+    return `${label} was killed by the server, most likely because it ran out of memory. Try again, or use an instance with more memory.`;
+  }
+  const detail = tail(error?.stderr) || tail(error?.stdout) || error?.message || 'unknown error';
+  return `${label} failed: ${detail}`;
+}
+
+/** Runs one of the project's Node scripts directly (no npm wrapper process, so less memory). */
+async function runNodeScript(script, args, cwd, { label, timeoutMs = DEFAULT_RENDER_TIMEOUT_MS } = {}) {
   try {
-    return await execFileAsync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
+    return await execFileAsync(process.execPath, ['--expose-gc', script, ...args], {
       cwd,
-      timeout: 180_000,
+      timeout: timeoutMs,
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024,
-      shell: process.platform === 'win32',
     });
   } catch (error) {
-    const detail = [error.message, error.stdout, error.stderr].filter(Boolean).join('\n');
-    throw new Error(`npm ${args.join(' ')} failed.\n${detail}`);
+    throw new Error(describeProcessFailure(error, label, timeoutMs));
   }
+}
+
+function renderTimeoutMs() {
+  const value = Number(process.env.RENDER_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_RENDER_TIMEOUT_MS;
 }
 
 async function handleRenderRequest(request, response, root) {
@@ -240,7 +259,10 @@ async function handleRenderRequest(request, response, root) {
       acceptance: body.acceptance,
       context: body.context,
     }));
-    const renderResult = await runNpmScript(['run', 'render', '--', '--input', requestFile], projectRoot);
+    const renderResult = await runNodeScript('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
+      label: 'Rendering',
+      timeoutMs: renderTimeoutMs(),
+    });
     const reportLine = renderResult.stdout.split(/\r?\n/).find((line) => line.startsWith('RENDER_REPORT:'));
     if (!reportLine) throw new Error('Render command completed without reporting a QA artifact path.');
     const reportPath = path.resolve(reportLine.slice('RENDER_REPORT:'.length));
@@ -252,7 +274,7 @@ async function handleRenderRequest(request, response, root) {
     let qaCommandPassed = true;
     let qaError;
     try {
-      await runNpmScript(['run', 'qa:validate', '--', reportPath], projectRoot);
+      await runNodeScript('scripts/qa/validate-production.mjs', [reportPath], projectRoot, { label: 'QA validation', timeoutMs: 120_000 });
     } catch (error) {
       qaCommandPassed = false;
       qaError = error.message.slice(0, 1200);

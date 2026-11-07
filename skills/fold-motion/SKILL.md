@@ -37,10 +37,11 @@ director's notes appended to the brief.
 ## Rules that hold everywhere
 
 1. **Plan only what the engine can render.** The engine draws `rect`,
-   `circle` and `text` on a brand background, with one built-in motion style
-   and hard cuts. A storyboard that promises camera moves, footage, logos as
-   images or sound is a defect, because the render will not match what the
-   director approved. Read [engine.md](references/engine.md) before planning
+   `circle` and `text` on a brand background. Each shot picks its motion from
+   a fixed vocabulary (camera, copy entrance, atmosphere) and shots hard-cut.
+   A storyboard that promises footage, 3D, logos as images, sound or camera
+   moves outside the vocabulary is a defect, because the render will not match
+   what the director approved. Read [engine.md](references/engine.md) before planning
    or promising anything.
 2. **Code what must be exact.** Copy, colors, format, timing and legibility
    are enforced in `src/production/repair.mjs` and checked in

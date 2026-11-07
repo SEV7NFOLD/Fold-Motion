@@ -1,4 +1,5 @@
 import { contrastRatio, MIN_TEXT_CONTRAST, readableTextColor } from './color.mjs';
+import { fallbackMotion, normalizeMotion } from './motion.mjs';
 
 /**
  * Repair layer for AI output.
@@ -201,7 +202,7 @@ export function repairStoryboard(storyboard, context = {}) {
  * buildTimeline() enforces. Format, timing, background, copy and accent are
  * owned by the system; everything else is kept from the model where possible.
  */
-export function repairShotSpec(spec, shot, index, context) {
+export function repairShotSpec(spec, shot, index, context, seed = '') {
   const repairs = [];
   const label = shot?.id || `Shot ${index + 1}`;
   const note = (message) => repairs.push(`${label}: ${message}`);
@@ -384,6 +385,17 @@ export function repairShotSpec(spec, shot, index, context) {
       fill: accentColor,
     });
     note(`added an accent rule in ${accentColor}.`);
+  }
+
+  // Motion: the model's choices, cleaned up. A missing choice gets a deterministic
+  // pick rather than the old one-size-fits-all default.
+  if (source.motion === undefined) {
+    repaired.motion = fallbackMotion(seed, index);
+    note(`no motion chosen; picked camera "${repaired.motion.camera}", entrance "${repaired.motion.entrance}", atmosphere "${repaired.motion.atmosphere}".`);
+  } else {
+    const { motion, changes } = normalizeMotion(source.motion);
+    repaired.motion = motion;
+    for (const change of changes) note(`motion ${change}.`);
   }
 
   repaired.elements = elements;

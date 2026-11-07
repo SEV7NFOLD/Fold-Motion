@@ -1,6 +1,7 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
+import { fallbackMotion, isValidMotion } from './motion.mjs';
 
 const DEFAULTS = Object.freeze({
   width: 1280,
@@ -259,10 +260,11 @@ export function buildAcceptanceSpec(storyboard, context = {}) {
   };
 }
 
-function makeShotSpec(storyboardShot, index, context) {
+function makeShotSpec(storyboardShot, index, context, seed = '') {
   const id = `${safeSlug(storyboardShot.id)}-scene`;
   return {
     id,
+    motion: fallbackMotion(seed, index),
     title: storyboardShot.onScreenCopy.slice(0, 64),
     width: context.width,
     height: context.height,
@@ -370,6 +372,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     if (!preservesCopy) failures.push(`no text element with the exact copy "${shot.onScreenCopy}"`);
     if (!preservesSubheadline) failures.push('subheadline missing');
     if (!includesAccent) failures.push(`accent color ${normalizedContext.accentColor} not used`);
+    if (!isValidMotion(spec.motion)) failures.push(`motion ${JSON.stringify(spec.motion)} uses an option the renderer doesn't have`);
     if (!hasRenderableElements) {
       const bad = spec.elements.filter((element) => !isRenderableElement(element, normalizedContext))
         .map((element) => `${element.id || '?'} (${element.type || 'no type'})`);
@@ -594,7 +597,8 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
   const normalizedContext = normalizeProductionContext(context);
   if (!provider?.compileStoryboard) {
-    const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext));
+    const seed = `${storyboard.id}|${storyboard.title}`;
+    const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed));
     return { timeline: buildTimeline(storyboard, shotSpecs, normalizedContext), provider: 'mock-provider' };
   }
 
@@ -607,7 +611,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     repairs.push(`Model returned ${rawSpecs.length} scenes for ${storyboard.shots.length} shots; matched them by position.`);
   }
   const shotSpecs = storyboard.shots.map((shot, index) => {
-    const result = repairShotSpec(rawSpecs[index], shot, index, normalizedContext);
+    const result = repairShotSpec(rawSpecs[index], shot, index, normalizedContext, `${storyboard.id}|${storyboard.title}`);
     repairs.push(...result.repairs);
     return result.spec;
   });

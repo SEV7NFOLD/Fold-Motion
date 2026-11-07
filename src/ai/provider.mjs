@@ -1,4 +1,5 @@
 import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
+import { MOTION_OPTIONS } from '../production/motion.mjs';
 
 /**
  * Base AI Provider interface for FOLD Motion.
@@ -133,6 +134,7 @@ function sceneRules(context = {}) {
     '- Keep every element fully inside the canvas. Text fontSize is at least 16, and text contrasts with the background by at least 4.5:1.',
     "- Include one text element whose content is exactly the shot's onScreenCopy, character for character.",
     `- Use the accent color "${accent}" as the fill of at least one element.`,
+    `- Include "motion": { "camera": ${MOTION_OPTIONS.camera.join(' | ')}, "entrance": ${MOTION_OPTIONS.entrance.join(' | ')}, "atmosphere": ${MOTION_OPTIONS.atmosphere.join(' | ')} }.`,
   ].join('\n');
 }
 
@@ -507,6 +509,15 @@ export class GeminiAIProvider extends BaseAIProvider {
       properties: {
         id: { type: 'STRING' },
         title: { type: 'STRING' },
+        motion: {
+          type: 'OBJECT',
+          properties: {
+            camera: { type: 'STRING', enum: [...MOTION_OPTIONS.camera] },
+            entrance: { type: 'STRING', enum: [...MOTION_OPTIONS.entrance] },
+            atmosphere: { type: 'STRING', enum: [...MOTION_OPTIONS.atmosphere] },
+          },
+          required: ['camera', 'entrance', 'atmosphere'],
+        },
         width: { type: 'NUMBER' },
         height: { type: 'NUMBER' },
         fps: { type: 'NUMBER' },
@@ -514,7 +525,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         promptSource: { type: 'STRING' },
         elements: { type: 'ARRAY', items: elementSchema },
       },
-      required: ['id', 'title', 'width', 'height', 'fps', 'durationInSeconds', 'elements'],
+      required: ['id', 'title', 'width', 'height', 'fps', 'durationInSeconds', 'motion', 'elements'],
     };
     const shotSpecs = await this.generateStructuredJson(
       [

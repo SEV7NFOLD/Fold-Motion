@@ -9,7 +9,10 @@ happens here.
 | Call | Instructions | Output contract |
 | --- | --- | --- |
 | Storyboard | `STORYBOARD_DIRECTOR` in `src/ai/prompts/storyboard-director.mjs`, plus the brief and context | `responseSchema` in `GeminiAIProvider.generateStoryboard` |
-| Compile | `SHOT_COMPILER` in `src/ai/prompts/shot-compiler.mjs`, then `sceneRules(context)` in `provider.mjs`, plus the approved storyboard | `responseSchema` in `GeminiAIProvider.compileStoryboard` (element `type` and `anchor` are enums) |
+| Compile | `SHOT_COMPILER` in `src/ai/prompts/shot-compiler.mjs`, then `sceneRules(context)` in `provider.mjs`, plus the approved storyboard | `responseSchema` in `GeminiAIProvider.compileStoryboard` (element `type` and `anchor` are enums; `motion` is required, with enum fields) |
+
+Both prompts read the motion vocabulary from `src/production/motion.mjs`, so
+they always describe exactly what the renderer can do.
 
 Groq and OpenRouter get the same prompt text through
 `OpenAICompatibleAIProvider`, with a short system prompt that also bounds copy

@@ -87,6 +87,35 @@ full encode. On Vercel, `/api/engine` reports `render.available: false` and the
 Studio disables rendering with that explanation. Use the Render deployment
 (Docker, with FFmpeg) for rendering, QA, and delivery exports.
 
+## Motion
+
+Each shot's scene spec carries `motion: { camera, entrance, atmosphere }`,
+chosen by Gemini from a fixed vocabulary in `src/production/motion.mjs`:
+
+- **camera:** `static`, `push-in`, `pull-out`, `drift-left`, `drift-right`
+- **entrance:** `rise-glitch`, `fade`, `slide-up`, `slide-left`, `scale-in`, `type-on`, `wipe`
+- **atmosphere:** `orbit`, `spotlight`, `grid`, `lines`, `clean`
+
+Rendering stays deterministic: every option is a pure function of shot
+progress. A spec without `motion` renders exactly as before. The offline
+fallback picks a coherent family of options seeded by the storyboard, so
+fallback films differ from brief to brief.
+
+## Rendering on small servers
+
+Renders use a bundled font (Montserrat Bold, OFL, in `assets/fonts`), so text
+looks the same everywhere and no system fonts are scanned per frame. An
+8.5-second film takes about 10 to 13 seconds and under 300 MB on one CPU core;
+on Render's free plan (0.1 CPU, 512 MB) expect about two minutes.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `RENDER_TIMEOUT_MS` | `900000` | Time limit for a whole render (15 minutes). |
+| `RENDER_ENCODE_TIMEOUT_MS` | `600000` | Time limit for the FFmpeg and FFprobe steps. |
+| `RENDER_FFMPEG_THREADS` | `1` | Encoder threads; more threads use more memory. |
+| `RENDER_X264_PRESET` | `veryfast` | x264 speed preset. |
+| `RENDER_X264_CRF` | `18` | Quality (lower is better and larger). Encodes use `aq-mode=3` against banding. |
+
 ## AI providers
 
 | Variable | Default | What it does |

@@ -27,17 +27,21 @@ supplied subheadline.
 - Reading time: at least 2 seconds per shot, plus about half a second per
   word beyond three.
 - Durations that add up close to the requested total.
-- Camera, motion and transitions described as the viewer will see them with
-  the built-in motion: "Locked off; the headline rises in with a short glitch,
-  then holds." "Cut to the next shot."
+- Camera, motion and transitions described with the motion vocabulary in
+  [engine.md](engine.md): "Slow push-in; the headline types on, then holds."
+  "Cut to the next shot."
+- Motion that expresses the concept, varied between shots for rhythm, with
+  one atmosphere across the film or a deliberate change.
 - Acceptance criteria a reviewer can check on frames.
 
 ## Review checklist for the storyboard gate
 
 Flag each of these before recommending approval:
 
-- Promises the engine can't keep: camera moves (dolly, push, pan, orbit),
+- Promises the engine can't keep: camera moves outside the vocabulary
+  (dolly, orbit, handheld, 3D; push-in, pull-out and drifts are fine),
   footage, product photography, logos as images, sound, crossfades.
+- Every shot using the same motion, which makes the film feel templated.
 - Copy longer than 40 characters, or supplied copy altered in any way.
 - Durations that don't add up to the target, or shots under 2 seconds with
   more than three words.

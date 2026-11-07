@@ -81,6 +81,14 @@ const STARTERS = [
     accentColor: '#E8B48A',
   },
 ];
+// Mirrors MOTION_OPTIONS in src/production/motion.mjs; a drift test keeps them in sync.
+const MOTION_LABELS = {
+  camera: { static: 'Locked off', 'push-in': 'Push in', 'pull-out': 'Pull out', 'drift-left': 'Drift left', 'drift-right': 'Drift right' },
+  entrance: { 'rise-glitch': 'Rise and glitch', fade: 'Fade', 'slide-up': 'Slide up', 'slide-left': 'Slide in', 'scale-in': 'Scale in', 'type-on': 'Type on', wipe: 'Wipe' },
+  atmosphere: { orbit: 'Orbit', spotlight: 'Spotlight', grid: 'Grid', lines: 'Lines', clean: 'Clean' },
+};
+const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
+
 const APPROVE_WORDS = /^(approve|approved|lgtm|looks good|ship it|go ahead|go|yes|yep|ok|okay)\b[\s.!]*$/i;
 const NEW_WORDS = /^(new|new production|new project|start over)[\s.!]*$/i;
 
@@ -634,23 +642,57 @@ function specToSvg(spec, label, palette = {}) {
   }
   if (!elements.some(isBackground)) svg.append(svgEl('rect', { width, height, fill: primary }));
 
+  const motion = { ...DEFAULT_MOTION, ...(spec.motion || {}) };
+  // Previews show the final frame, so the camera sits where its move ends.
+  const stage = svgEl('g');
+  const camera = {
+    'push-in': `translate(${width / 2} ${height / 2}) scale(1.08) translate(${-width / 2} ${-height / 2})`,
+    'drift-left': `translate(${-width * 0.03} 0)`,
+    'drift-right': `translate(${width * 0.03} 0)`,
+  }[motion.camera];
+  if (camera) stage.setAttribute('transform', camera);
+  svg.append(stage);
+
   const cx = width * 0.76;
   const cy = height * 0.48;
-  svg.append(
-    svgEl('rect', { width, height, fill: `url(#${id}a)`, opacity: 0.7 }),
-    svgEl('rect', { width, height, fill: `url(#${id}g)`, opacity: 0.28 }),
-    svgEl('circle', { cx, cy, r: minSide * 0.26, fill: 'none', stroke: accent, 'stroke-width': 1, opacity: 0.42 }),
-    svgEl('circle', { cx, cy, r: minSide * 0.31, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, 'stroke-dasharray': '3 12', opacity: 0.34, transform: `rotate(11 ${cx} ${cy})` }),
+  const gridLines = () => {
+    const lines = [];
+    for (let x = 0; x <= width; x += 42) lines.push(`M${x} 0V${height}`);
+    for (let y = 0; y <= height; y += 42) lines.push(`M0 ${y}H${width}`);
+    return svgEl('path', { d: lines.join(''), fill: 'none', stroke: accent, 'stroke-width': 0.5, 'stroke-opacity': 0.1176 });
+  };
+  const accentLines = () => [
     svgEl('path', { d: `M ${width * 0.08} ${height * 0.78} H ${width * 0.42}`, fill: 'none', stroke: accent, 'stroke-width': 2, opacity: 0.78 }),
-    svgEl('path', { d: `M ${width * 0.08} ${height * 0.795} H ${width * 0.23}`, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, opacity: 0.72 }));
+    svgEl('path', { d: `M ${width * 0.08} ${height * 0.795} H ${width * 0.23}`, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, opacity: 0.72 }),
+  ];
+  if (motion.atmosphere === 'orbit') {
+    stage.append(
+      svgEl('rect', { width, height, fill: `url(#${id}a)`, opacity: 0.7 }),
+      gridLines(),
+      svgEl('circle', { cx, cy, r: minSide * 0.26, fill: 'none', stroke: accent, 'stroke-width': 1, opacity: 0.42 }),
+      svgEl('circle', { cx, cy, r: minSide * 0.31, fill: 'none', stroke: '#FF0055', 'stroke-width': 1, 'stroke-dasharray': '3 12', opacity: 0.34, transform: `rotate(11 ${cx} ${cy})` }),
+      ...accentLines());
+  } else if (motion.atmosphere === 'spotlight') {
+    const spot = svgEl('radialGradient', { id: `${id}s`, cx: '50%', cy: '46%', r: '52%' });
+    spot.append(
+      svgEl('stop', { offset: 0, 'stop-color': accent, 'stop-opacity': 0.26 }),
+      svgEl('stop', { offset: 0.55, 'stop-color': accent, 'stop-opacity': 0.06 }),
+      svgEl('stop', { offset: 1, 'stop-color': primary, 'stop-opacity': 0 }));
+    defs.append(spot);
+    stage.append(svgEl('rect', { width, height, fill: `url(#${id}s)` }));
+  } else if (motion.atmosphere === 'grid') {
+    stage.append(svgEl('rect', { width, height, fill: `url(#${id}a)`, opacity: 0.45 }), gridLines());
+  } else if (motion.atmosphere === 'lines') {
+    stage.append(...accentLines());
+  }
 
   for (const element of elements) {
     if (isBackground(element)) continue;
     const fill = isHex(element.fill) ? element.fill : '#F8FAFC';
     if (element.type === 'rect') {
-      svg.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
+      stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
     } else if (element.type === 'circle') {
-      svg.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
+      stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
     } else if (element.type === 'text' && element.content) {
       const size = Math.max(16, Math.min(Number.isFinite(element.fontSize) ? element.fontSize : 32, height * 0.15));
       const lines = wrapText(element.content, Math.max(1, Math.floor((width * 0.76) / (size * 0.58))));
@@ -660,7 +702,7 @@ function specToSvg(spec, label, palette = {}) {
         y: element.y - ((lines.length - 1) * size * 0.62) / 2,
         'text-anchor': anchor,
         fill,
-        'font-family': 'Segoe UI, Arial, sans-serif',
+        'font-family': 'Montserrat, Arial, sans-serif',
         'font-size': size,
         'font-weight': 700,
         'letter-spacing': Math.max(0.4, size * 0.025),
@@ -671,7 +713,7 @@ function specToSvg(spec, label, palette = {}) {
         span.textContent = line;
         text.append(span);
       });
-      svg.append(text);
+      stage.append(text);
     }
   }
   return svg;
@@ -713,6 +755,11 @@ function filmstrip(items, palette) {
         h('span', { class: 'shot-number', text: String(index + 1).padStart(2, '0') }),
         h('span', { class: 'shot-duration', text: seconds(item.duration) })),
       h('p', { class: 'shot-copy', text: item.copy }),
+      item.motion ? h('p', { class: 'shot-tags' }, ['camera', 'entrance', 'atmosphere'].map((field) => h('span', {
+        class: 'shot-tag',
+        title: field,
+        text: MOTION_LABELS[field][{ ...DEFAULT_MOTION, ...item.motion }[field]] || '',
+      }))) : null,
       item.purpose ? h('p', { class: 'shot-purpose', text: item.purpose }) : null))));
   const track = h('div', { class: 'timebar-track', 'aria-hidden': 'true' }, items.map((item) => {
     const segment = h('span', { class: 'timebar-segment' });
@@ -933,6 +980,7 @@ function timelineView(message) {
         duration: shot.durationSeconds,
         copy: shot.spec.elements.find((element) => element.type === 'text')?.content || shot.shotId,
         purpose: shot.purpose,
+        motion: shot.spec.motion,
         spec: shot.spec,
       })), palette),
       toggles(message.id, [{ label: 'Timeline JSON', render: () => h('pre', { class: 'code', text: JSON.stringify(timeline, null, 2) }) }]),
@@ -1076,7 +1124,10 @@ const WORKING_SKELETON = {
 function updateWorking() {
   if (!workingNode || !busy) return;
   const elapsed = Math.round((Date.now() - busy.startedAt) / 1000);
-  workingNode.querySelector('.working-time').textContent = elapsed >= 25 ? `${elapsed}s, AI answers can take a minute` : `${elapsed}s`;
+  const hint = busy.label === 'Rendering and checking'
+    ? (elapsed >= 20 ? ', rendering takes a few minutes on small servers' : '')
+    : (elapsed >= 25 ? ', AI answers can take a minute' : '');
+  workingNode.querySelector('.working-time').textContent = `${elapsed}s${hint}`;
 }
 
 function buildWorkingNode() {

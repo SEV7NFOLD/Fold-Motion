@@ -29,9 +29,18 @@ These rules are also given to Gemini in `src/ai/prompts/shot-compiler.mjs`.
 - **Exactness:** never change copy, never draw a logo with shapes as a
   stand-in for a supplied logo, never invent product UI.
 
+## Motion
+
+Each spec's `motion` turns the storyboard's camera and motion notes into the
+renderer's vocabulary. The studio shows each shot's choices as tags under its
+frame. Good motion reads as a decision: it matches the shot's purpose, it
+varies between shots, and `type-on` and `wipe` are kept for short copy.
+
 ## Review checklist for the render gate
 
 - Every shot's copy is fully inside the frame and readable at preview size.
+- The motion tags match what the storyboard promised, and consecutive shots
+  don't all move the same way.
 - Text sits clear of the glow, rings and accent lines, or is framed by them
   on purpose.
 - The layout system is consistent across shots.

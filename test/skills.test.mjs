@@ -181,3 +181,45 @@ test('eval cases follow the skill-creator test-case format', () => {
     }
   }
 });
+
+test('the motion vocabulary is the same everywhere it appears', async () => {
+  const { MOTION_OPTIONS } = await import('../src/production/motion.mjs');
+  // Docs: the scene-spec motion table.
+  const table = sceneSpec.split('## Motion')[1].split('## What buildTimeline')[0];
+  for (const [field, options] of Object.entries(MOTION_OPTIONS)) {
+    const row = table.match(new RegExp(`^\\| \`${field}\` \\| (.+) \\|$`, 'm'))?.[1] ?? '';
+    assert.deepEqual([...row.matchAll(/`([a-z-]+)`/g)].map(([, option]) => option), [...options], `scene-spec.md ${field} row`);
+    for (const option of options) assert.match(engine, new RegExp(`\`${option}\``), `engine.md should mention ${option}`);
+  }
+  // Prompts: Gemini is told about every option.
+  for (const options of Object.values(MOTION_OPTIONS)) {
+    for (const option of options) {
+      assert.ok(STORYBOARD_DIRECTOR.includes(option), `storyboard prompt is missing ${option}`);
+      assert.ok(SHOT_COMPILER.includes(`"${option}"`), `compile prompt is missing ${option}`);
+    }
+  }
+  // Studio: every option has a label.
+  const studio = read(root, 'public', 'studio.js');
+  const labels = studio.split('const MOTION_LABELS = {')[1].split('};')[0];
+  for (const [field, options] of Object.entries(MOTION_OPTIONS)) {
+    const line = labels.match(new RegExp(`^\\s*${field}: \\{(.+)\\},?$`, 'm'))?.[1] ?? '';
+    const keys = [...line.matchAll(/'?([a-z-]+)'?: '/g)].map(([, key]) => key);
+    assert.deepEqual(keys, [...options], `studio MOTION_LABELS.${field}`);
+  }
+});
+
+test('the Gemini compile schema requires motion and enumerates the vocabulary', async () => {
+  const { MOTION_OPTIONS } = await import('../src/production/motion.mjs');
+  let schema;
+  const provider = new GeminiAIProvider({
+    apiKey: 'k',
+    fetchImpl: async (_url, options) => {
+      schema = JSON.parse(options.body).generationConfig.responseSchema;
+      return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: '[]' }] } }] }; } };
+    },
+  });
+  await provider.compileStoryboard(exampleStoryboard, {});
+  assert.ok(schema.items.required.includes('motion'));
+  const motion = schema.items.properties.motion.properties;
+  for (const [field, options] of Object.entries(MOTION_OPTIONS)) assert.deepEqual(motion[field].enum, [...options]);
+});
