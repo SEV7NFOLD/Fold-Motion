@@ -192,3 +192,25 @@ test('a length in the brief is read and the storyboard is fitted to it exactly',
   const unasked = await createCreativePlan('A teaser with no stated length', DARK, null);
   assert.equal(unasked.storyboard.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0), 8);
 });
+
+test('emphasis colors only its own words, even when a whole line rises as one unit', () => {
+  const spec = { version: 2, recipe: 'kicker-title', emphasis: 'film', durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  spec.elements = expandRecipe(spec, { copy: 'AI plans the film.', context: DARK });
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: 72, shots: [{ shotId: 's', startFrame: 0, endFrame: 71, durationFrames: 72, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] };
+  for (const frame of [30, 71]) {
+    const svg = renderTimelineFrame(timeline, frame);
+    const fills = [...svg.matchAll(/<text [^>]*fill="([^"]+)"[^>]*>(AI|PLANS|THE|FILM\.)<\/text>/g)].map(([, fill, word]) => [word, fill.startsWith('url(') ? 'gradient' : 'solid']);
+    assert.deepEqual(Object.fromEntries(fills), { AI: 'solid', PLANS: 'solid', THE: 'solid', 'FILM.': 'gradient' }, `frame ${frame}`);
+  }
+});
+
+test('kickers that repeat part of the line and emphasis covering most of it are removed', () => {
+  const end = normalizeDirection({ recipe: 'lockup', kicker: 'December 2026', emphasis: 'FOLD Motion December', transitionOut: 'cut' }, { copy: 'FOLD Motion December 2026', index: 2, count: 3, seed: 's' });
+  assert.equal(end.direction.kicker, '');
+  assert.equal(end.direction.emphasis, '');
+  assert.ok(end.changes.some((change) => change.includes('repeated')));
+  assert.ok(end.changes.some((change) => change.includes('covered too much')));
+  const fine = normalizeDirection({ recipe: 'title-reveal', kicker: 'Launching December 2026', emphasis: 'motion', transitionOut: 'wipe' }, { copy: 'Ideas into motion', index: 0, count: 3, seed: 's' });
+  assert.equal(fine.direction.kicker, 'Launching December 2026');
+  assert.equal(fine.direction.emphasis, 'motion');
+});

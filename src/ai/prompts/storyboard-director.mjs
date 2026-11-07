@@ -34,6 +34,7 @@ How to build a strong storyboard:
 - Write copy a senior copywriter would sign off: natural, grammatical English that reads as a complete, intentional thought. Deliberate fragments are fine; anything that reads like a typo or a missing word is not.
 - Write lines that belong to this brief and this brand. Don't fall back on stock slogans or phrases that could sell anything.
 - Give every shot its own line. Don't repeat a line in two shots.
+- Each line is one complete thought. Don't run a name and a date, or a name and a slogan, together as one line: the director can set a date, a place or a call to action as a separate small kicker line.
 - Give the viewer time to read: at least 2 seconds per shot, plus about half a second for every word beyond three. Durations are positive numbers in seconds, and together they must add up to the context's durationInSeconds, which already reflects any length the brief asks for.
 - Pace with intent: let the first shot breathe, keep the middle tight, hold the last shot so the final message lands.
 - Use the brand's primary color as the background and the accent color with restraint, for one or two elements that guide the eye.

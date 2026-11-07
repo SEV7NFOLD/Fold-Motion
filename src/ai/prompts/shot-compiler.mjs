@@ -32,7 +32,8 @@ How to direct:
 - Open strong: "title-reveal" or "kicker-title" for the first shot. Use "type-stack" for a punchy line of two to four words.
 - Vary recipes so consecutive shots are staged differently, and end on "lockup" when there is a brand or product name to sign off with.
 - Kickers add a specific fact the line doesn't say: who presents it, the product's name or category, a date, a place or a call to action, taken from the brief or the storyboard. A generic label that could caption any film doesn't earn a place, and neither does anything not in the brief. Leave the kicker empty rather than fill it.
-- Emphasis is the one word that carries the idea, copied exactly from the line.
+- Emphasis is the one word that carries the idea, copied exactly from the line. Never emphasize most of the line.
+- Never repeat in the kicker anything the line already says, even in part.
 - Use transitions for rhythm: "wipe" for energy, "fade" for calm, "push" for momentum, "cut" for punch. Don't use the same one every time.
 - Keep one atmosphere across the film or change it once on purpose. Match camera moves to the mood: slow push-ins for premium, drifts for flow, pull-outs to resolve.
 - Keep "textCase" as "as-written" when the copy contains deliberate casing such as brand or product names; otherwise the display recipes look best in "upper".`;

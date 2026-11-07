@@ -80,8 +80,11 @@ function renderText(element, t, ctx) {
         const p = ease.outExpo(span(t, begin, begin + reveal.duration));
         if (p <= 0) return;
         const y = baseline + (1 - p) * cap * 1.25;
-        const fill = unit.words.length === 1 ? fillFor(unit.words[0]) : (unit.words.some((i) => emphasis.has(i)) ? `url(#${gradientId})` : element.fill);
-        const text = `<text x="${f(unit.x)}" y="${f(y)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" fill="${fill}">${esc(unit.text)}</text>`;
+        // Each word keeps its own fill, so emphasis colors only the emphasized words
+        // even when a whole line rises as one unit.
+        const text = reveal.unit === 'line'
+          ? words.map((word, i) => `<text x="${f(word.x)}" y="${f(y)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" fill="${fillFor(wordIndex + i)}">${esc(word.word)}</text>`).join('')
+          : `<text x="${f(unit.x)}" y="${f(y)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" fill="${fillFor(unit.words[0])}">${esc(unit.text)}</text>`;
         if (p < 1) {
           const clipId = `${element.id}-m${lineIndex}-${unitIndex}`;
           defs.push(`<clipPath id="${clipId}"><rect x="${f(unit.x - size * 0.08)}" y="${f(baseline - cap - size * 0.18)}" width="${f(unit.width + size * 0.16)}" height="${f(cap + size * 0.36)}"/></clipPath>`);
