@@ -87,6 +87,17 @@ full encode. On Vercel, `/api/engine` reports `render.available: false` and the
 Studio disables rendering with that explanation. Use the Render deployment
 (Docker, with FFmpeg) for rendering, QA, and delivery exports.
 
+## The v2 engine
+
+Gemini directs each shot by choosing a recipe (`title-reveal`, `statement`,
+`kicker-title`, `type-stack`, `lockup`), a short kicker, an emphasis word, motion
+and a transition (`cut`, `wipe`, `fade`, `push`). The engine lays the exact copy
+out with real font measurements (Anton and Montserrat, bundled in
+`assets/fonts`) and choreographs it: words rising out of masks, letter
+cascades, tracking that settles, gradient emphasis, hairlines, light sweeps,
+beams, depth planes and dot-field ripples, with film grain at encode. See
+`skills/fold-motion/references/engine.md`.
+
 ## Motion
 
 Each shot's scene spec carries `motion: { camera, entrance, atmosphere }`,

@@ -1,5 +1,6 @@
 import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
 import { MOTION_OPTIONS } from '../production/motion.mjs';
+import { RECIPE_OPTIONS, TEXT_CASE_OPTIONS, TRANSITION_OPTIONS } from '../production/recipes.mjs';
 
 /**
  * Base AI Provider interface for FOLD Motion.
@@ -122,19 +123,17 @@ function classifyFetchFailure(error) {
 function sceneRules(context = {}) {
   const width = Number.isFinite(context.width) ? context.width : 1280;
   const height = Number.isFinite(context.height) ? context.height : 720;
-  const fps = Number.isFinite(context.fps) ? context.fps : 24;
-  const primary = context.primaryColor || '#0B0F19';
-  const accent = context.accentColor || '#00F0FF';
   return [
-    'Rules for every scene specification:',
-    `- width ${width}, height ${height}, fps ${fps}; durationInSeconds equals the storyboard shot's durationSeconds.`,
-    `- The first element is the background: type "rect", id ending in "-background", x 0, y 0, width ${width}, height ${height}, fill "${primary}".`,
-    '- Allowed element types are "rect", "circle" and "text". Text anchor is "start", "middle" or "end".',
-    '- Every fill is a 6-digit hex color such as "#1A2B3C".',
-    '- Keep every element fully inside the canvas. Text fontSize is at least 16, and text contrasts with the background by at least 4.5:1.',
-    "- Include one text element whose content is exactly the shot's onScreenCopy, character for character.",
-    `- Use the accent color "${accent}" as the fill of at least one element.`,
-    `- Include "motion": { "camera": ${MOTION_OPTIONS.camera.join(' | ')}, "entrance": ${MOTION_OPTIONS.entrance.join(' | ')}, "atmosphere": ${MOTION_OPTIONS.atmosphere.join(' | ')} }.`,
+    'Rules for every shot direction:',
+    '- Return one object per storyboard shot, in the same order and with the same count.',
+    `- "recipe": one of ${RECIPE_OPTIONS.join(' | ')}.`,
+    `- "transitionOut": one of ${TRANSITION_OPTIONS.join(' | ')}. The last shot's transition is ignored.`,
+    `- "motion": { "camera": ${MOTION_OPTIONS.camera.join(' | ')}, "atmosphere": ${MOTION_OPTIONS.atmosphere.join(' | ')} }.`,
+    '- "kicker" (optional): at most 32 characters, a short label that adds context and never repeats the line. Use only facts from the brief. Leave it empty rather than pad.',
+    "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
+    '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
+    '- "beam" and "sweep" are true or false.',
+    `- Do not output elements, coordinates or sizes: the engine lays out the copy itself on a ${width} × ${height} canvas.`,
   ].join('\n');
 }
 
@@ -271,10 +270,8 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
 
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
-      'Compile the approved FOLD Motion storyboard into deterministic scene specifications.',
-      'Return a JSON object with a "shotSpecs" array containing one scene specification per storyboard shot, in the same order.',
-      'Each scene must include id, title, width, height, fps, durationInSeconds, and elements. Each element must include id and type; include x, y, width, height, fill, content, fontSize, and anchor as appropriate.',
-      'Preserve exact on-screen copy, include a full-canvas background and readable text elements, use the requested dimensions and FPS, and use both brand colors. Include supplied subheadline copy in every shot.',
+      'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -487,28 +484,15 @@ export class GeminiAIProvider extends BaseAIProvider {
   }
 
   async compileStoryboard(storyboard, context = {}) {
-    const elementSchema = {
-      type: 'OBJECT',
-      properties: {
-        id: { type: 'STRING' },
-        type: { type: 'STRING', enum: ['rect', 'circle', 'text'] },
-        x: { type: 'NUMBER' },
-        y: { type: 'NUMBER' },
-        width: { type: 'NUMBER' },
-        height: { type: 'NUMBER' },
-        radius: { type: 'NUMBER' },
-        fill: { type: 'STRING' },
-        content: { type: 'STRING' },
-        fontSize: { type: 'NUMBER' },
-        anchor: { type: 'STRING', enum: ['start', 'middle', 'end'] },
-      },
-      required: ['id', 'type', 'fill'],
-    };
     const sceneSchema = {
       type: 'OBJECT',
       properties: {
         id: { type: 'STRING' },
         title: { type: 'STRING' },
+        recipe: { type: 'STRING', enum: [...RECIPE_OPTIONS] },
+        textCase: { type: 'STRING', enum: [...TEXT_CASE_OPTIONS] },
+        kicker: { type: 'STRING' },
+        emphasis: { type: 'STRING' },
         motion: {
           type: 'OBJECT',
           properties: {
@@ -516,22 +500,18 @@ export class GeminiAIProvider extends BaseAIProvider {
             entrance: { type: 'STRING', enum: [...MOTION_OPTIONS.entrance] },
             atmosphere: { type: 'STRING', enum: [...MOTION_OPTIONS.atmosphere] },
           },
-          required: ['camera', 'entrance', 'atmosphere'],
+          required: ['camera', 'atmosphere'],
         },
-        width: { type: 'NUMBER' },
-        height: { type: 'NUMBER' },
-        fps: { type: 'NUMBER' },
-        durationInSeconds: { type: 'NUMBER' },
-        promptSource: { type: 'STRING' },
-        elements: { type: 'ARRAY', items: elementSchema },
+        transitionOut: { type: 'STRING', enum: [...TRANSITION_OPTIONS] },
+        beam: { type: 'BOOLEAN' },
+        sweep: { type: 'BOOLEAN' },
       },
-      required: ['id', 'title', 'width', 'height', 'fps', 'durationInSeconds', 'motion', 'elements'],
+      required: ['id', 'recipe', 'motion', 'transitionOut'],
     };
     const shotSpecs = await this.generateStructuredJson(
       [
-        'Compile the approved storyboard into one deterministic FOLD Motion scene specification for each storyboard shot. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
+        'Direct the approved storyboard: return one FOLD Motion shot direction for each storyboard shot. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         'Return a JSON array in the same order and with the same item count as the storyboard shots.',
-        'Preserve any supplied subheadline as an additional readable text element in every shot.',
         SHOT_COMPILER,
         sceneRules(context),
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,

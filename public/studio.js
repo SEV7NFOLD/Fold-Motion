@@ -85,9 +85,18 @@ const STARTERS = [
 const MOTION_LABELS = {
   camera: { static: 'Locked off', 'push-in': 'Push in', 'pull-out': 'Pull out', 'drift-left': 'Drift left', 'drift-right': 'Drift right' },
   entrance: { 'rise-glitch': 'Rise and glitch', fade: 'Fade', 'slide-up': 'Slide up', 'slide-left': 'Slide in', 'scale-in': 'Scale in', 'type-on': 'Type on', wipe: 'Wipe' },
-  atmosphere: { orbit: 'Orbit', spotlight: 'Spotlight', grid: 'Grid', lines: 'Lines', clean: 'Clean' },
+  atmosphere: { orbit: 'Orbit', spotlight: 'Spotlight', grid: 'Grid', lines: 'Lines', clean: 'Clean', planes: 'Planes', dots: 'Dots' },
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
+// Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card' };
+const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through' };
+const PREVIEW_FONTS = {
+  display: ['Anton, Impact, sans-serif', 400],
+  bold: ['Montserrat, Arial, sans-serif', 700],
+  semibold: ['Montserrat, Arial, sans-serif', 600],
+  medium: ['Montserrat, Arial, sans-serif', 500],
+};
 
 const APPROVE_WORDS = /^(approve|approved|lgtm|looks good|ship it|go ahead|go|yes|yep|ok|okay)\b[\s.!]*$/i;
 const NEW_WORDS = /^(new|new production|new project|start over)[\s.!]*$/i;
@@ -684,6 +693,18 @@ function specToSvg(spec, label, palette = {}) {
     stage.append(svgEl('rect', { width, height, fill: `url(#${id}a)`, opacity: 0.45 }), gridLines());
   } else if (motion.atmosphere === 'lines') {
     stage.append(...accentLines());
+  } else if (motion.atmosphere === 'planes') {
+    for (const [size, px, py, rotation, opacity] of [[0.7, 0.77, 0.08, -8, 0.08], [0.47, 0.09, 0.58, 12, 0.1], [0.3, 0.83, 0.72, 24, 0.13]]) {
+      const s = size * width;
+      const x = px * width;
+      const y = py * height;
+      stage.append(svgEl('path', { d: `M ${x - s / 2} ${y - s * 0.29} L ${x + s / 2} ${y - s * 0.29} L ${x} ${y + s * 0.58} Z`, fill: 'none', stroke: accent, 'stroke-width': 1.5, opacity, transform: `rotate(${rotation} ${x} ${y})` }));
+    }
+  } else if (motion.atmosphere === 'dots') {
+    const step = Math.round(width / 32);
+    for (let y = step / 2; y < height; y += step) {
+      for (let x = step / 2; x < width; x += step) stage.append(svgEl('circle', { cx: x, cy: y, r: 1.4, fill: accent, opacity: 0.16 }));
+    }
   }
 
   for (const element of elements) {
@@ -693,6 +714,36 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
     } else if (element.type === 'circle') {
       stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
+    } else if (element.type === 'line') {
+      const x = element.reveal?.from === 'left' ? element.x : element.x - element.width / 2;
+      stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
+    } else if (element.type === 'text' && Array.isArray(element.lines)) {
+      // v2 text: the recipe already measured and wrapped it; draw its final state.
+      const [family, weight] = PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
+      const emphasis = new Set(element.emphasis?.words ?? []);
+      let wordIndex = 0;
+      let baseline = element.y;
+      element.lines.forEach((line, index) => {
+        const size = element.lineSizes?.[index] ?? element.fontSize;
+        if (index > 0) baseline = element.lineSizes ? baseline + element.lineHeight + size * (element.font === 'display' ? 0.86 : 0.7) : element.y + index * element.lineHeight;
+        const text = svgEl('text', {
+          x: element.x,
+          y: baseline,
+          'text-anchor': element.anchor === 'start' ? 'start' : element.anchor === 'end' ? 'end' : 'middle',
+          fill,
+          'font-family': family,
+          'font-weight': weight,
+          'font-size': size,
+          'letter-spacing': (element.tracking || 0) * size,
+        });
+        line.split(' ').forEach((word, position) => {
+          const span = svgEl('tspan', emphasis.has(wordIndex) && element.emphasis?.to ? { fill: element.emphasis.to } : {});
+          span.textContent = position ? ` ${word}` : word;
+          text.append(span);
+          wordIndex += 1;
+        });
+        stage.append(text);
+      });
     } else if (element.type === 'text' && element.content) {
       const size = Math.max(16, Math.min(Number.isFinite(element.fontSize) ? element.fontSize : 32, height * 0.15));
       const lines = wrapText(element.content, Math.max(1, Math.floor((width * 0.76) / (size * 0.58))));
@@ -755,11 +806,16 @@ function filmstrip(items, palette) {
         h('span', { class: 'shot-number', text: String(index + 1).padStart(2, '0') }),
         h('span', { class: 'shot-duration', text: seconds(item.duration) })),
       h('p', { class: 'shot-copy', text: item.copy }),
-      item.motion ? h('p', { class: 'shot-tags' }, ['camera', 'entrance', 'atmosphere'].map((field) => h('span', {
-        class: 'shot-tag',
-        title: field,
-        text: MOTION_LABELS[field][{ ...DEFAULT_MOTION, ...item.motion }[field]] || '',
-      }))) : null,
+      item.recipe ? h('p', { class: 'shot-tags' },
+        h('span', { class: 'shot-tag', title: 'staging', text: RECIPE_LABELS[item.recipe] || item.recipe }),
+        h('span', { class: 'shot-tag', title: 'atmosphere', text: MOTION_LABELS.atmosphere[{ ...DEFAULT_MOTION, ...item.motion }.atmosphere] || '' }),
+        h('span', { class: 'shot-tag', title: 'camera', text: MOTION_LABELS.camera[{ ...DEFAULT_MOTION, ...item.motion }.camera] || '' }),
+        item.transitionOut && item.transitionOut !== 'cut' && !item.last ? h('span', { class: 'shot-tag', title: 'transition to the next shot', text: `then ${(TRANSITION_LABELS[item.transitionOut] || item.transitionOut).toLowerCase()}` }) : null)
+        : item.motion ? h('p', { class: 'shot-tags' }, ['camera', 'entrance', 'atmosphere'].map((field) => h('span', {
+          class: 'shot-tag',
+          title: field,
+          text: MOTION_LABELS[field][{ ...DEFAULT_MOTION, ...item.motion }[field]] || '',
+        }))) : null,
       item.purpose ? h('p', { class: 'shot-purpose', text: item.purpose }) : null))));
   const track = h('div', { class: 'timebar-track', 'aria-hidden': 'true' }, items.map((item) => {
     const segment = h('span', { class: 'timebar-segment' });
@@ -978,9 +1034,12 @@ function timelineView(message) {
         h('span', { class: 'block-badge', text: `${timeline.width} × ${timeline.height}` })),
       ...filmstrip(timeline.shots.map((shot) => ({
         duration: shot.durationSeconds,
-        copy: shot.spec.elements.find((element) => element.type === 'text')?.content || shot.shotId,
+        copy: (shot.spec.elements.find((element) => element.role === 'title') || shot.spec.elements.find((element) => element.type === 'text'))?.content || shot.shotId,
         purpose: shot.purpose,
         motion: shot.spec.motion,
+        recipe: shot.spec.version === 2 ? shot.spec.recipe : undefined,
+        transitionOut: shot.spec.transitionOut,
+        last: shot === timeline.shots.at(-1),
         spec: shot.spec,
       })), palette),
       toggles(message.id, [{ label: 'Timeline JSON', render: () => h('pre', { class: 'code', text: JSON.stringify(timeline, null, 2) }) }]),

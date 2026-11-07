@@ -1,7 +1,8 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
-import { fallbackMotion, isValidMotion } from './motion.mjs';
+import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
+import { expandRecipe, fallbackDirection, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 
 const DEFAULTS = Object.freeze({
   width: 1280,
@@ -44,6 +45,19 @@ function isRenderableElement(element, context) {
       && element.x >= 0
       && element.y >= 0
       && element.x <= context.width
+      && element.y <= context.height;
+  }
+  if (element.type === 'line') {
+    return hasColor
+      && Number.isFinite(element.x)
+      && Number.isFinite(element.y)
+      && Number.isFinite(element.width)
+      && Number.isFinite(element.height)
+      && element.width > 0
+      && element.height > 0
+      && element.x >= 0
+      && element.y >= 0
+      && element.x + (element.reveal?.from === 'left' ? element.width : element.width / 2) <= context.width
       && element.y <= context.height;
   }
   if (element.type === 'text') {
@@ -260,57 +274,56 @@ export function buildAcceptanceSpec(storyboard, context = {}) {
   };
 }
 
-function makeShotSpec(storyboardShot, index, context, seed = '') {
-  const id = `${safeSlug(storyboardShot.id)}-scene`;
+function makeShotSpec(storyboardShot, index, context, seed = '', count = 1) {
   return {
-    id,
-    motion: fallbackMotion(seed, index),
+    version: 2,
+    id: `${safeSlug(storyboardShot.id)}-scene`,
     title: storyboardShot.onScreenCopy.slice(0, 64),
     width: context.width,
     height: context.height,
     fps: context.fps,
     durationInSeconds: storyboardShot.durationSeconds,
     promptSource: storyboardShot.purpose,
-    elements: [
-      {
-        id: `shot-${index + 1}-background`,
-        type: 'rect',
-        x: 0,
-        y: 0,
-        width: context.width,
-        height: context.height,
-        fill: context.primaryColor,
-      },
-      {
-        id: `shot-${index + 1}-accent`,
-        type: 'rect',
-        x: context.width * 0.12,
-        y: context.height * 0.69,
-        width: context.width * 0.28,
-        height: Math.max(4, context.height * 0.006),
-        fill: context.accentColor,
-      },
-      {
-        id: `shot-${index + 1}-copy`,
-        type: 'text',
-        content: storyboardShot.onScreenCopy,
-        x: context.width / 2,
-        y: context.height / 2,
-        fill: readableTextColor(context.primaryColor),
-        fontSize: Math.max(32, Math.round(context.height * 0.067)),
-        anchor: 'middle',
-      },
-      ...(context.subheadline ? [{
-        id: `shot-${index + 1}-subheadline`,
-        type: 'text',
-        content: context.subheadline,
-        x: context.width / 2,
-        y: context.height * 0.61,
-        fill: readableTextColor(context.primaryColor),
-        fontSize: Math.max(16, Math.round(context.height * 0.027)),
-        anchor: 'middle',
-      }] : []),
-    ],
+    motion: fallbackMotion(seed, index),
+    ...fallbackDirection(seed, index, count, storyboardShot.onScreenCopy),
+    elements: [],
+  };
+}
+
+/** A model scene that carries raw elements and no recipe is a legacy (v1) scene. */
+function isLegacyScene(raw) {
+  return Boolean(raw) && typeof raw === 'object' && Array.isArray(raw.elements) && raw.elements.length > 0 && raw.recipe === undefined;
+}
+
+/** Turns the model's direction for one shot into a v2 spec, listing what was repaired. */
+function directedShotSpec(raw, shot, index, count, context, seed) {
+  const label = shot.id;
+  const repairs = [];
+  const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed });
+  repairs.push(...changes.map((change) => `${label}: ${change}.`));
+  let motion;
+  if (raw?.motion === undefined) {
+    motion = fallbackMotion(seed, index);
+    repairs.push(`${label}: no motion chosen; picked camera "${motion.camera}" and atmosphere "${motion.atmosphere}".`);
+  } else {
+    const normalized = normalizeMotion(raw.motion);
+    motion = normalized.motion;
+    repairs.push(...normalized.changes.map((change) => `${label}: motion ${change}.`));
+  }
+  return {
+    spec: {
+      version: 2,
+      id: typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : `${safeSlug(shot.id)}-scene`,
+      title: typeof raw?.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 64) : shot.onScreenCopy.slice(0, 64),
+      width: context.width,
+      height: context.height,
+      fps: context.fps,
+      durationInSeconds: shot.durationSeconds,
+      motion,
+      ...direction,
+      elements: [],
+    },
+    repairs,
   };
 }
 
@@ -321,7 +334,20 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
   }
   let cursor = 0;
   const shots = storyboard.shots.map((shot, index) => {
-    const sourceSpec = shotSpecs[index];
+    let sourceSpec = shotSpecs[index];
+    const isV2 = sourceSpec?.version === 2;
+    const isLast = index === storyboard.shots.length - 1;
+    if (isV2) {
+      // v2: the recipe lays the copy out; the subheadline rides on the final shot.
+      const support = isLast && normalizedContext.subheadline && shot.onScreenCopy !== normalizedContext.subheadline
+        ? normalizedContext.subheadline : '';
+      const recipe = support && !RECIPES_WITH_SUPPORT.includes(sourceSpec.recipe) ? 'lockup' : sourceSpec.recipe;
+      const expanded = { ...sourceSpec, recipe, durationInSeconds: shot.durationSeconds };
+      sourceSpec = {
+        ...expanded,
+        elements: expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support }),
+      };
+    }
     const validation = validateSceneSpec(sourceSpec);
     if (!validation.valid) {
       throw new Error(`Compiled shot "${shot.id}" is invalid: ${validation.errors.join(' ')}`);
@@ -339,7 +365,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     const preservesCopy = spec.elements.some((element) => (
       element.type === 'text' && element.content === shot.onScreenCopy
     ));
-    if (normalizedContext.subheadline && !spec.elements.some((element) => (
+    if (!isV2 && normalizedContext.subheadline && !spec.elements.some((element) => (
       element.type === 'text' && element.content === normalizedContext.subheadline
     ))) {
       spec.elements.push({
@@ -353,7 +379,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
         anchor: 'middle',
       });
     }
-    const preservesSubheadline = !normalizedContext.subheadline || spec.elements.some((element) => (
+    const preservesSubheadline = !normalizedContext.subheadline || (isV2 && !isLast) || spec.elements.some((element) => (
       element.type === 'text' && element.content === normalizedContext.subheadline
     ));
     const hasRenderableElements = spec.elements.every((element) => isRenderableElement(element, normalizedContext));
@@ -598,7 +624,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   const normalizedContext = normalizeProductionContext(context);
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
-    const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed));
+    const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed, storyboard.shots.length));
     return { timeline: buildTimeline(storyboard, shotSpecs, normalizedContext), provider: 'mock-provider' };
   }
 
@@ -610,8 +636,12 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   if (rawSpecs.length !== storyboard.shots.length) {
     repairs.push(`Model returned ${rawSpecs.length} scenes for ${storyboard.shots.length} shots; matched them by position.`);
   }
+  const seed = `${storyboard.id}|${storyboard.title}`;
   const shotSpecs = storyboard.shots.map((shot, index) => {
-    const result = repairShotSpec(rawSpecs[index], shot, index, normalizedContext, `${storyboard.id}|${storyboard.title}`);
+    const raw = rawSpecs[index];
+    const result = isLegacyScene(raw)
+      ? repairShotSpec(raw, shot, index, normalizedContext, seed)
+      : directedShotSpec(raw, shot, index, storyboard.shots.length, normalizedContext, seed);
     repairs.push(...result.repairs);
     return result.spec;
   });

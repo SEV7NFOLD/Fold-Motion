@@ -9,10 +9,11 @@ happens here.
 | Call | Instructions | Output contract |
 | --- | --- | --- |
 | Storyboard | `STORYBOARD_DIRECTOR` in `src/ai/prompts/storyboard-director.mjs`, plus the brief and context | `responseSchema` in `GeminiAIProvider.generateStoryboard` |
-| Compile | `SHOT_COMPILER` in `src/ai/prompts/shot-compiler.mjs`, then `sceneRules(context)` in `provider.mjs`, plus the approved storyboard | `responseSchema` in `GeminiAIProvider.compileStoryboard` (element `type` and `anchor` are enums; `motion` is required, with enum fields) |
+| Compile | `SHOT_COMPILER` in `src/ai/prompts/shot-compiler.mjs`, then `sceneRules(context)` in `provider.mjs`, plus the approved storyboard | `responseSchema` in `GeminiAIProvider.compileStoryboard`: a v2 direction per shot (`recipe`, `textCase`, `kicker`, `emphasis`, `motion`, `transitionOut`, `beam`, `sweep`), all choices enumerated. No elements or coordinates. |
 
-Both prompts read the motion vocabulary from `src/production/motion.mjs`, so
-they always describe exactly what the renderer can do.
+Both prompts read the motion, recipe and transition vocabularies from
+`src/production/motion.mjs` and `src/production/recipes.mjs`, so they always
+describe exactly what the engine can do.
 
 Groq and OpenRouter get the same prompt text through
 `OpenAICompatibleAIProvider`, with a short system prompt that also bounds copy
@@ -50,7 +51,7 @@ Context always includes `width`, `height`, `fps`, `durationInSeconds`
    rather than claiming an improvement you haven't observed.
 
 Prompts are sent on every call. On the free tier the token budget is
-generous, but keep each prompt focused: under about 600 words.
+generous, but keep each prompt focused: under about 700 words.
 
 ## The provider cascade
 

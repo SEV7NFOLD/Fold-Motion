@@ -256,7 +256,7 @@ test('Gemini storyboard and compile requests carry the FOLD Motion craft prompts
   await provider.compileStoryboard(plan.storyboard, context);
   assert.ok(bodies[0].contents[0].parts[0].text.includes(STORYBOARD_DIRECTOR));
   assert.ok(bodies[1].contents[0].parts[0].text.includes(SHOT_COMPILER));
-  assert.match(bodies[1].contents[0].parts[0].text, /id ending in "-background"/);
+  assert.match(bodies[1].contents[0].parts[0].text, /"recipe": one of title-reveal/);
 });
 
 test('OpenAI-compatible fallbacks get the same craft prompts', async () => {

@@ -1,5 +1,36 @@
 # Scene specs
 
+## v2 shot directions (current)
+
+Gemini returns one direction per shot; the engine never takes layout from the
+model.
+
+```json
+{
+  "id": "shot-01-scene",
+  "recipe": "title-reveal",
+  "textCase": "upper",
+  "kicker": "SEV7N FOLD presents",
+  "emphasis": "motion",
+  "motion": { "camera": "push-in", "atmosphere": "planes" },
+  "transitionOut": "wipe",
+  "beam": true,
+  "sweep": true
+}
+```
+
+`normalizeDirection` (in `src/production/recipes.mjs`) maps aliases, keeps the
+kicker to 32 characters without repeating the line, drops an emphasis that
+isn't a word in the line, refuses `type-stack` outside two to four words, and
+forces the last shot's transition to `cut`. Every change is listed in
+`repairs`. `buildTimeline` then expands the recipe with the shot's exact copy
+and runs the same checks as for v1 below; the subheadline rides on the final
+shot.
+
+The rest of this file describes v1 scenes, which carry their own elements.
+
+## v1 scenes (legacy)
+
 A scene spec describes one shot's layout and how it moves. Gemini writes them
 during compile; `repairShotSpec` (in `src/production/repair.mjs`) cleans them;
 `buildTimeline` (in `src/production/production.mjs`) accepts or rejects them.
@@ -47,7 +78,7 @@ the full-canvas rect opaque, and `-accent` makes a rect draw on.
 | --- | --- |
 | `camera` | `static`, `push-in`, `pull-out`, `drift-left`, `drift-right` |
 | `entrance` | `rise-glitch`, `fade`, `slide-up`, `slide-left`, `scale-in`, `type-on`, `wipe` |
-| `atmosphere` | `orbit`, `spotlight`, `grid`, `lines`, `clean` |
+| `atmosphere` | `orbit`, `spotlight`, `grid`, `lines`, `clean`, `planes`, `dots` |
 
 What each looks like is in [engine.md](engine.md). The entrance applies to
 every text element in the shot; the camera moves everything except the

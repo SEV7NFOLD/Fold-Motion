@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
 import { renderShotSvg } from '../scripts/render-production.mjs';
 import { validateProductionReport } from '../scripts/qa/validate-production.mjs';
 import {
@@ -62,7 +63,10 @@ test('compilation creates a continuous canonical timeline and measurable creativ
   invalidTimeline.shots[1].startFrame += 1;
   assert.equal(validateTimeline(invalidTimeline).valid, false);
 
-  const unsupportedShot = structuredClone(timeline.shots[0].spec);
+  // Element-level validation applies to legacy (v1) scenes; v2 scenes rebuild their
+  // elements from the recipe, so a v1 copy of the spec is used here.
+  const { version: _version, ...legacySpec } = structuredClone(timeline.shots[0].spec);
+  const unsupportedShot = legacySpec;
   unsupportedShot.elements[1].type = 'path';
   assert.throws(
     () => buildTimeline(storyboard, [unsupportedShot, ...timeline.shots.slice(1).map((shot) => shot.spec)], context),
@@ -143,13 +147,16 @@ test('fallback storyboards and timelines preserve supplied copy and brand palett
   const { timeline } = await compileCreativePlan(storyboard, customContext);
   assert.equal(timeline.palette.primary, customContext.primaryColor);
   assert.equal(timeline.palette.accent, customContext.accentColor);
-  assert.ok(timeline.shots.every((shot) => (
-    shot.spec.elements.some((element) => element.type === 'text' && element.content === customContext.subheadline)
+  // v2 films carry the subheadline on the final shot (the storyboard puts it there)
+  // and every shot carries its own exact copy.
+  assert.ok(timeline.shots.at(-1).spec.elements.some((element) => element.type === 'text' && element.content === customContext.subheadline));
+  assert.ok(timeline.shots.every((shot, index) => (
+    shot.spec.elements.some((element) => element.type === 'text' && element.content === storyboard.shots[index].onScreenCopy)
   )));
-  const svg = renderShotSvg(timeline.shots[0], 0.5, timeline.width, timeline.height);
+  const last = timeline.shots.at(-1);
+  const svg = renderTimelineFrame(timeline, last.endFrame);
   assert.match(svg, /#112233/);
   assert.match(svg, /#44AABB/);
-  assert.match(svg, /Designed for the next generation/);
 });
 
 test('provider storyboards cannot discard explicitly supplied headline or sub-headline copy', async () => {
