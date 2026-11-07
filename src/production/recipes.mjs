@@ -353,9 +353,16 @@ export function normalizeDirection(raw, { copy, index, count, seed }) {
   const textCase = TEXT_CASE_OPTIONS.includes(slug(source.textCase)) ? slug(source.textCase) : undefined;
 
   let kicker = typeof source.kicker === 'string' ? source.kicker.replace(/["“”]/g, '').replace(/\s+/g, ' ').trim() : '';
-  if (kicker && kicker.toLowerCase().includes(String(copy).toLowerCase())) {
-    changes.push('kicker repeated the on-screen copy; removed');
-    kicker = '';
+  if (kicker) {
+    // A kicker must add something: drop it when it repeats the line or a part of it.
+    const tokens = (text) => String(text).toLowerCase().split(/\s+/).map((word) => word.replace(/[^\p{L}\p{N}'-]/gu, '')).filter(Boolean);
+    const lineWords = new Set(tokens(copy));
+    const kickerWords = tokens(kicker);
+    const shared = kickerWords.filter((word) => lineWords.has(word)).length;
+    if (kicker.toLowerCase().includes(String(copy).toLowerCase()) || String(copy).toLowerCase().includes(kicker.toLowerCase()) || (kickerWords.length && shared / kickerWords.length >= 0.6)) {
+      changes.push(`kicker "${kicker}" repeated the on-screen copy; removed`);
+      kicker = '';
+    }
   }
   if ([...kicker].length > KICKER_MAX) {
     const cut = kicker.slice(0, KICKER_MAX + 1).replace(/\s+\S*$/, '').trim();
@@ -367,8 +374,13 @@ export function normalizeDirection(raw, { copy, index, count, seed }) {
   if (emphasis) {
     const available = new Set(words.map((word) => word.toLowerCase().replace(/[^\p{L}\p{N}'-]/gu, '')));
     const wanted = emphasis.toLowerCase().split(/\s+/).map((word) => word.replace(/[^\p{L}\p{N}'-]/gu, '')).filter(Boolean);
-    if (wanted.length === 0 || wanted.length > 3 || !wanted.every((word) => available.has(word))) {
+    const limit = words.length <= 1 ? 1 : Math.max(1, Math.floor(words.length / 2));
+    if (wanted.length === 0 || !wanted.every((word) => available.has(word))) {
       changes.push(`emphasis "${emphasis}" is not a word in the line; removed`);
+      emphasis = '';
+    } else if (wanted.length > Math.min(3, limit)) {
+      // Emphasis that covers most of the line emphasizes nothing.
+      changes.push(`emphasis "${emphasis}" covered too much of the line; removed`);
       emphasis = '';
     }
   }
