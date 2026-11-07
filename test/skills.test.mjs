@@ -23,7 +23,8 @@ import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from '../src/ai/prompts/index.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillDir = path.join(root, 'skills', 'fold-motion');
-const read = (...parts) => readFileSync(path.join(...parts), 'utf8');
+// Normalize line endings so these checks behave the same on Windows checkouts.
+const read = (...parts) => readFileSync(path.join(...parts), 'utf8').replace(/\r\n/g, '\n');
 const skill = read(skillDir, 'SKILL.md');
 const engine = read(skillDir, 'references', 'engine.md');
 const sceneSpec = read(skillDir, 'references', 'scene-spec.md');
