@@ -41,7 +41,8 @@ Context always includes `width`, `height`, `fps`, `durationInSeconds`
    characters", "every shot has the same layout", "promises a dolly move").
 2. Change the relevant prompt in `src/ai/prompts/`. Say what to do and why,
    in plain sentences; models follow reasons better than capital-letter
-   commands.
+   commands. Don't quote example copy: the model lifts quoted lines verbatim
+   (two example phrases once ended up on screen). A drift test checks this.
 3. Keep every instruction inside the engine's capabilities in
    [engine.md](engine.md). Never ask for anything the renderer can't draw.
 4. Keep the exact-copy rule and the color rules.

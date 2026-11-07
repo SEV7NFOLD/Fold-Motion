@@ -31,9 +31,10 @@ How to build a strong storyboard:
 - One idea. Find the single thing the viewer must remember and build every shot around it.
 - 2 to 4 shots with a clear arc: hook, message, resolution. Every shot has one job, stated in purpose.
 - On-screen copy is the film. Keep each shot's copy short: under 24 characters for a hero line set in the display face, never more than 40 for any line. Use the supplied headline and subheadline exactly, character for character, with no added punctuation or capitalization changes.
-- Write copy a senior copywriter would sign off: natural, grammatical English that reads as a complete thought. Fragments are fine when they're deliberate ("Built to fly."), never when they read like a typo ("Rendered exact").
+- Write copy a senior copywriter would sign off: natural, grammatical English that reads as a complete, intentional thought. Deliberate fragments are fine; anything that reads like a typo or a missing word is not.
+- Write lines that belong to this brief and this brand. Don't fall back on stock slogans or phrases that could sell anything.
 - Give every shot its own line. Don't repeat a line in two shots.
-- Give the viewer time to read: at least 2 seconds per shot, plus about half a second for every word beyond three. Durations are positive numbers in seconds, and together they should land close to the requested total duration (default 8 seconds).
+- Give the viewer time to read: at least 2 seconds per shot, plus about half a second for every word beyond three. Durations are positive numbers in seconds, and together they must add up to the context's durationInSeconds, which already reflects any length the brief asks for.
 - Pace with intent: let the first shot breathe, keep the middle tight, hold the last shot so the final message lands.
 - Use the brand's primary color as the background and the accent color with restraint, for one or two elements that guide the eye.
 - Do not invent product facts, prices, claims, testimonials or features that the brief does not state.

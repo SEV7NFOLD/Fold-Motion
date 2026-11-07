@@ -1447,6 +1447,65 @@ button.tool:hover,
   background: none;
 }
 
+.hex-input {
+  width: 6.2em;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+.hex-input:focus {
+  border-color: var(--indigo-line);
+  outline: none;
+}
+
+.hex-input[aria-invalid="true"] {
+  border-color: rgb(255 97 102 / 0.6);
+}
+
+.brief-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.brief-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.brief-chip.is-missing {
+  border-color: var(--indigo-line);
+  color: var(--lavender);
+}
+
+.brief-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+
+.msg-director {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .details-note {
   grid-column: 1 / -1;
   margin: 0;
