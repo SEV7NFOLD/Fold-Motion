@@ -69,8 +69,8 @@
                 <div class="brief-details" id="brief-details" hidden>
                   <label>Headline<input id="headline-input" type="text" maxlength="54" placeholder="Written from your brief"></label>
                   <label>Subheadline<input id="subheadline-input" type="text" maxlength="100" placeholder="Optional"></label>
-                  <label class="color-field">Primary<span class="color-input"><input id="primary-color-input" type="color" value="#0b0f19"><span id="primary-hex">#0B0F19</span></span></label>
-                  <label class="color-field">Accent<span class="color-input"><input id="accent-color-input" type="color" value="#00f0ff"><span id="accent-hex">#00F0FF</span></span></label>
+                  <label class="color-field">Primary<span class="color-input"><input id="primary-color-input" type="color" value="#0b0f19"><input id="primary-hex" class="hex-input" type="text" inputmode="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Primary color hex code" value="#0B0F19"></span></label>
+                  <label class="color-field">Accent<span class="color-input"><input id="accent-color-input" type="color" value="#00f0ff"><input id="accent-hex" class="hex-input" type="text" inputmode="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Accent color hex code" value="#00F0FF"></span></label>
                   <p class="details-note" id="details-note">Exact copy and brand colors. The AI can’t change these.</p>
                 </div>
                 <label class="sr-only" for="composer-input">Message</label>
@@ -79,7 +79,7 @@
                   <div class="tools">
                     <button class="tool" id="details-toggle" type="button" aria-expanded="false" aria-controls="brief-details">
                       <span class="swatches" aria-hidden="true"><span class="swatch" id="swatch-primary"></span><span class="swatch" id="swatch-accent"></span></span>
-                      <span id="details-label">Copy and colors</span>
+                      <span id="details-label">Add headline and colors</span>
                     </button>
                     <span class="tool tool-static">16:9, 24 fps</span>
                     <button class="tool engine" id="engine-chip" type="button" data-view="system">

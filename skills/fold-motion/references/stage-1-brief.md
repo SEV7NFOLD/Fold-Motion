@@ -13,10 +13,13 @@ generated from the approved storyboard.
 | `headline` | Copy and colors panel | Exact copy for the first shot; up to 54 characters |
 | `subheadline` | Copy and colors panel | Exact copy for the last shot and every shot's supporting line; up to 100 characters |
 | `primaryColor`, `accentColor` | Copy and colors panel | 6-digit hex; background and accent |
-| `width`, `height`, `fps`, `durationInSeconds` | Defaults (1280, 720, 24, 8) | Not yet editable in the studio |
+| `durationInSeconds` | The brief ("10-second", "15 sec", "ten seconds", "10s") | Read by `durationFromBrief` (`public/brief-length.mjs`, shared with the studio), clamped to 3–30 seconds. When a length is asked for, shot durations are scaled to hit it exactly, in whole frames. With none, the storyboard's own pacing stands (it aims for 8 seconds). |
+| `width`, `height`, `fps` | Defaults (1280, 720, 24) | Not yet editable in the studio |
 
 Anything else in a brief (audience, platform, references, tone) reaches Gemini
-only as part of the brief text.
+only as part of the brief text. The studio shows what each brief was sent with
+(headline, subheadline, colors, length) as chips under the message, so a missing
+headline or a mistyped color is visible before anything is built.
 
 ## Method
 

@@ -3,6 +3,9 @@ import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { expandRecipe, fallbackDirection, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { durationFromBrief } from '../../public/brief-length.mjs';
+
+export { durationFromBrief };
 
 const DEFAULTS = Object.freeze({
   width: 1280,
@@ -584,13 +587,38 @@ function shotBackground(spec) {
   ))?.fill;
 }
 
+/**
+ * Scales shot durations so the film is exactly `target` seconds, in whole frames,
+ * keeping every shot at least one second. Returns the old total if it changed.
+ */
+function fitStoryboardDuration(storyboard, target, fps) {
+  const shots = storyboard.shots;
+  const total = shots.reduce((sum, shot) => sum + shot.durationSeconds, 0);
+  const targetFrames = Math.round(target * fps);
+  if (Math.abs(Math.round(total * fps) - targetFrames) < 1) return undefined;
+  const frames = shots.map((shot) => Math.max(fps, Math.round((shot.durationSeconds * targetFrames) / total)));
+  let difference = targetFrames - frames.reduce((sum, value) => sum + value, 0);
+  while (difference !== 0) {
+    const step = Math.sign(difference);
+    const candidates = frames.map((value, index) => ({ value, index })).filter(({ value }) => step > 0 || value > fps);
+    if (candidates.length === 0) break;
+    const { index } = candidates.reduce((best, item) => (item.value > best.value ? item : best));
+    frames[index] += step;
+    difference -= step;
+  }
+  shots.forEach((shot, index) => { shot.durationSeconds = frames[index] / fps; });
+  return total;
+}
+
 function markOutputError(error) {
   if (error && typeof error === 'object' && !error.kind) error.kind = 'output';
   return error;
 }
 
 export async function createCreativePlan(prompt, context = {}, provider = null) {
-  const normalizedContext = normalizeProductionContext(context);
+  // A length in the brief wins over the default, unless the caller set one explicitly.
+  const briefSeconds = context.durationInSeconds === undefined ? durationFromBrief(prompt) : undefined;
+  const normalizedContext = normalizeProductionContext(briefSeconds ? { ...context, durationInSeconds: briefSeconds } : context);
   const generatedStoryboard = provider?.generateStoryboard
     ? await provider.generateStoryboard(prompt, normalizedContext)
     : buildMockStoryboard(prompt, normalizedContext);
@@ -609,6 +637,14 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   if (!validation.valid) {
     const error = new Error(`Generated storyboard is invalid: ${validation.errors.join(' ')}`);
     throw provider ? markOutputError(error) : error;
+  }
+  // A requested length (from the brief or the caller) is a client requirement, so code
+  // makes it exact. With no request, the storyboard's own pacing stands.
+  const requestedSeconds = context.durationInSeconds ?? briefSeconds;
+  const previousTotal = requestedSeconds === undefined ? undefined
+    : fitStoryboardDuration(storyboard, normalizedContext.durationInSeconds, normalizedContext.fps);
+  if (previousTotal !== undefined && provider) {
+    repairs.push(`Shot durations scaled from ${Number(previousTotal.toFixed(2))}s to the requested ${normalizedContext.durationInSeconds}s.`);
   }
   return {
     storyboard,

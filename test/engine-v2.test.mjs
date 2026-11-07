@@ -162,3 +162,33 @@ test('every frame of a film using all recipes, atmospheres and transitions raste
     assert.ok(png.length > 1000);
   }
 });
+
+test('a length in the brief is read and the storyboard is fitted to it exactly', async () => {
+  const { durationFromBrief } = await import('../src/production/production.mjs');
+  assert.equal(durationFromBrief('A 10-second launch film'), 10);
+  assert.equal(durationFromBrief('a 15 sec teaser'), 15);
+  assert.equal(durationFromBrief('Ten seconds, calm'), 10);
+  assert.equal(durationFromBrief('cut a 12s spot'), 12);
+  assert.equal(durationFromBrief('a 90s-inspired retro film'), undefined);
+  assert.equal(durationFromBrief('launching December 2026'), undefined);
+  assert.equal(durationFromBrief('a 60-second ad'), 30, 'clamped to the maximum');
+
+  const offline = await createCreativePlan('A 10-second launch film for FOLD Motion', DARK, null);
+  assert.equal(offline.storyboard.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0), 10);
+  assert.equal(offline.acceptance.technicalRequirements.durationInSeconds, 10);
+
+  // Gemini plans 8 seconds for a brief that asks for 10: code fits it and says so.
+  const eightSeconds = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A 10-second launch film for FOLD Motion', context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(eightSeconds) }] } }] }; } }),
+  });
+  assert.equal(result.provider, 'Gemini 3.5 Flash-Lite');
+  assert.equal(result.storyboard.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0), 10);
+  assert.ok(result.storyboard.shots.every((shot) => Number.isInteger(Math.round(shot.durationSeconds * 24 * 1000) / 1000)));
+  assert.ok(result.repairs.some((message) => message.includes('scaled from 8s to the requested 10s')));
+
+  // No length asked for: the storyboard's own pacing stands.
+  const unasked = await createCreativePlan('A teaser with no stated length', DARK, null);
+  assert.equal(unasked.storyboard.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0), 8);
+});

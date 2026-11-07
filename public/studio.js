@@ -1,4 +1,5 @@
 import { PROJECT_STATES } from './workflow-states.mjs';
+import { durationFromBrief } from './brief-length.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -338,7 +339,13 @@ function addMessage(record, role, type, data = {}) {
 }
 
 const say = (record, text) => addMessage(record, 'system', 'text', { text });
-const said = (record, text) => addMessage(record, 'director', 'text', { text });
+const said = (record, text, extra = {}) => addMessage(record, 'director', 'text', { text, ...extra });
+
+/** What a brief was actually sent with, shown as chips under the message. */
+function usedContext(record, fullBrief) {
+  const { headline, subheadline, primaryColor, accentColor } = record.context;
+  return { context: { headline, subheadline, primaryColor, accentColor }, seconds: durationFromBrief(fullBrief) ?? null };
+}
 
 function providerResult(result) {
   return {
@@ -547,14 +554,14 @@ function submitMessage(rawText) {
   if (record.briefs.length > 0 && record.project.state !== 'BRIEF') {
     record.version += 1;
     record.briefs.push(text);
-    said(record, text);
+    said(record, text, usedContext(record, composeBrief(record.briefs)));
     if (STAGE_OF_STATE[state] >= 1) {
       say(record, 'Revising with your notes. The production restarts from the storyboard.');
     }
   } else {
     if (record.briefs.length === 0) record.briefs = [text];
     else record.briefs.push(text);
-    said(record, text);
+    said(record, text, usedContext(record, composeBrief(record.briefs)));
   }
   record.project = freshProject(`${record.id}-v${record.version}`, composeBrief(record.briefs), record.context);
   persist();
@@ -1111,10 +1118,25 @@ function exportLinks(artifacts) {
       ])) : null);
 }
 
+function briefChips(data) {
+  const { headline, subheadline, primaryColor, accentColor } = data.context;
+  const chip = (content, title, extra = '') => h('span', { class: `brief-chip${extra}`, title }, ...content);
+  const swatch = (color) => { const dot = h('span', { class: 'brief-swatch', 'aria-hidden': 'true' }); dot.style.background = color; return dot; };
+  return h('div', { class: 'brief-chips', 'aria-label': 'Sent with' },
+    headline
+      ? chip([`Headline “${headline}”`], 'Exact headline for the first shot')
+      : chip(['No headline set: Gemini writes the copy'], 'Add one under Add headline and colors', ' is-missing'),
+    subheadline ? chip([`Subheadline “${subheadline}”`], 'Exact line for the final shot') : null,
+    chip([swatch(primaryColor), primaryColor, swatch(accentColor), accentColor], 'Primary and accent colors'),
+    chip([data.seconds ? `${data.seconds}s from your brief` : '8s default length'], data.seconds ? 'Length read from the brief' : 'Say a length in the brief, like "10-second"'));
+}
+
 function messageView(message, record) {
   const { type, role, data } = message;
   if (role === 'director') {
-    return { node: h('article', { class: 'msg msg-director' }, h('div', { class: 'bubble' }, h('span', { class: 'sr-only', text: 'You: ' }), data.text)) };
+    const node = h('article', { class: 'msg msg-director' }, h('div', { class: 'bubble' }, h('span', { class: 'sr-only', text: 'You: ' }), data.text));
+    if (data.context) node.append(briefChips(data));
+    return { node };
   }
   try {
     if (type === 'storyboard') return storyboardView(message);
@@ -1268,8 +1290,12 @@ function syncComposer() {
   const context = record.context;
   $('swatch-primary').style.background = context.primaryColor;
   $('swatch-accent').style.background = context.accentColor;
-  $('primary-hex').textContent = context.primaryColor;
-  $('accent-hex').textContent = context.accentColor;
+  for (const [field, color] of [['primary-hex', context.primaryColor], ['accent-hex', context.accentColor]]) {
+    if (document.activeElement !== $(field)) $(field).value = color;
+  }
+  $('details-label').textContent = context.headline
+    ? `“${context.headline.length > 24 ? `${context.headline.slice(0, 23).trimEnd()}…` : context.headline}”`
+    : 'Add headline and colors';
   $('details-note').textContent = record.briefs.length && state !== 'BRIEF'
     ? 'Changes here apply to the next storyboard you ask for.'
     : 'Exact copy and brand colors. The AI can’t change these.';
@@ -1606,6 +1632,26 @@ for (const [id, key] of [
     record.context = cleanContext({ ...record.context, [key]: event.target.value });
     persist();
     syncComposer();
+  });
+}
+
+// Typed hex codes: accept "0E0E11" or "#0e0e11", update the picker as soon as it's valid.
+for (const [field, picker, key] of [['primary-hex', 'primary-color-input', 'primaryColor'], ['accent-hex', 'accent-color-input', 'accentColor']]) {
+  $(field).addEventListener('input', (event) => {
+    const raw = event.target.value.trim();
+    const hex = raw.startsWith('#') ? raw : `#${raw}`;
+    const valid = /^#[\da-f]{6}$/i.test(hex);
+    event.target.setAttribute('aria-invalid', String(!valid));
+    if (!valid) return;
+    const record = activeRecord();
+    record.context = cleanContext({ ...record.context, [key]: hex });
+    $(picker).value = hex.toLowerCase();
+    persist();
+    syncComposer();
+  });
+  $(field).addEventListener('blur', (event) => {
+    event.target.removeAttribute('aria-invalid');
+    event.target.value = activeRecord().context[key];
   });
 }
 

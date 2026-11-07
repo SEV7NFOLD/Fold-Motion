@@ -242,3 +242,13 @@ test('engine.md documents every v2 recipe and transition', async () => {
   const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
   for (const option of [...RECIPE_OPTIONS, ...TRANSITION_OPTIONS]) assert.match(engine, new RegExp(`\`${option}\``), `engine.md should document ${option}`);
 });
+
+test('prompts quote no example copy the model could lift into a film', () => {
+  // Quoted example lines get copied verbatim: "Built to fly." and "Rendered exact"
+  // both ended up on screen once. Describe copy rules; don't demonstrate them.
+  for (const [name, prompt] of [['STORYBOARD_DIRECTOR', STORYBOARD_DIRECTOR], ['SHOT_COMPILER', SHOT_COMPILER]]) {
+    assert.doesNotMatch(prompt, /built to fly|rendered exact/i, `${name} still quotes a past example`);
+    const quotedLines = [...prompt.matchAll(/\("([A-Z][^"]{3,40})"\)/g)].map(([, line]) => line);
+    assert.deepEqual(quotedLines, [], `${name} quotes example copy: ${quotedLines.join(', ')}`);
+  }
+});
