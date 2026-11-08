@@ -175,6 +175,11 @@ function cleanContext(context = {}) {
   };
 }
 
+/** A new production keeps the brand (colors) but never the last film's copy. */
+function brandOnly(context = {}) {
+  return { ...context, headline: '', subheadline: '' };
+}
+
 function newRecord(context) {
   const id = `production-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const at = nowIso();
@@ -344,7 +349,11 @@ const said = (record, text, extra = {}) => addMessage(record, 'director', 'text'
 /** What a brief was actually sent with, shown as chips under the message. */
 function usedContext(record, fullBrief) {
   const { headline, subheadline, primaryColor, accentColor } = record.context;
-  return { context: { headline, subheadline, primaryColor, accentColor }, seconds: durationFromBrief(fullBrief) ?? null };
+  return {
+    context: { headline, subheadline, primaryColor, accentColor },
+    seconds: durationFromBrief(fullBrief) ?? null,
+    briefHasOnScreenText: /on[-\s]?screen\s+text\s*:/i.test(fullBrief),
+  };
 }
 
 function providerResult(result) {
@@ -498,12 +507,13 @@ function runRetry(record, kind) {
 
 function startNewProduction({ focus = true } = {}) {
   const previous = activeRecord();
-  const record = newRecord(previous.context);
+  const record = newRecord(brandOnly(previous.context));
   store.records[record.id] = record;
   store.activeId = record.id;
   // Drop the previous record if it never got a message.
   if (previous.messages.length === 0) delete store.records[previous.id];
   persist();
+  fillDetails(record);
   showView('studio');
   if (focus) composerInput.focus();
 }
@@ -545,10 +555,11 @@ function submitMessage(rawText) {
   }
 
   if (state === 'DELIVERED') {
-    const next = newRecord(record.context);
+    const next = newRecord(brandOnly(record.context));
     store.records[next.id] = next;
     store.activeId = next.id;
     record = next;
+    fillDetails(record);
   }
 
   if (record.briefs.length > 0 && record.project.state !== 'BRIEF') {
@@ -1128,7 +1139,10 @@ function briefChips(data) {
       : chip(['No headline set: Gemini writes the copy'], 'Add one under Add headline and colors', ' is-missing'),
     subheadline ? chip([`Subheadline “${subheadline}”`], 'Exact line for the final shot') : null,
     chip([swatch(primaryColor), primaryColor, swatch(accentColor), accentColor], 'Primary and accent colors'),
-    chip([data.seconds ? `${data.seconds}s from your brief` : '8s default length'], data.seconds ? 'Length read from the brief' : 'Say a length in the brief, like "10-second"'));
+    chip([data.seconds ? `${data.seconds}s from your brief` : '8s default length'], data.seconds ? 'Length read from the brief' : 'Say a length in the brief, like "10-second"'),
+    data.briefHasOnScreenText && (headline || subheadline)
+      ? chip(['Copy fields override your brief’s on-screen text'], 'Clear the headline and subheadline to use the brief’s own text', ' is-missing')
+      : null);
 }
 
 function messageView(message, record) {

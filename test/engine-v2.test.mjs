@@ -354,3 +354,21 @@ test('an On-Screen Text section in the brief becomes the offline copy', async ()
   assert.doesNotMatch(splitBriefCopy('The Quantum Sculptor. 0:00 - 0:03 | The Quiet Opening').subheadline, /\d:\d\d|\|/, 'no timecodes or separators on screen');
   assert.deepEqual(splitBriefCopy('A perfume called Nocturne. After dark, unforgettable.'), { headline: 'A perfume called Nocturne', subheadline: 'After dark, unforgettable.' });
 });
+
+test('long shots stay alive: slower reveals, a late light sweep, a breathing camera', () => {
+  const long = expandRecipe({ recipe: 'title-reveal', durationInSeconds: 5 }, { copy: 'Ideas into motion', context: DARK });
+  const short = expandRecipe({ recipe: 'title-reveal', durationInSeconds: 3 }, { copy: 'Ideas into motion', context: DARK });
+  const [longTitle, shortTitle] = [long, short].map((elements) => elements.find((element) => element.role === 'title'));
+  assert.ok(longTitle.reveal.duration > shortTitle.reveal.duration, 'reveals stretch with the shot');
+  assert.ok(longTitle.sweep && longTitle.sweep.start >= 2.5, 'a long shot gets a sweep in its back half');
+  assert.equal(shortTitle.sweep, undefined, 'a short shot without a sweep request stays as directed');
+
+  const timelineFor = (seconds) => {
+    const spec = { version: 2, recipe: 'statement', durationInSeconds: seconds, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+    spec.elements = expandRecipe(spec, { copy: 'Creativity at scale', context: DARK });
+    const frames = seconds * 24;
+    return { width: 1280, height: 720, fps: 24, totalFrames: frames, shots: [{ shotId: 's', startFrame: 0, endFrame: frames - 1, durationFrames: frames, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] };
+  };
+  assert.match(renderTimelineFrame(timelineFor(5), 60), /<g transform="translate\(640(?:\.\d+)? 360\) scale\(1\.0\d+\)/, 'a locked-off 5 s shot breathes');
+  assert.doesNotMatch(renderTimelineFrame(timelineFor(3), 36), /scale\(1\.0\d+\)/, 'a locked-off 3 s shot stays locked');
+});

@@ -257,6 +257,7 @@ function cameraTransform(camera, progress, extraScale, ctx) {
   else if (camera === 'pull-out') scale = 1.08 - 0.08 * ease.outCubic(progress);
   else if (camera === 'drift-left') dx = -ctx.width * 0.03 * ease.inOutSine(progress);
   else if (camera === 'drift-right') dx = ctx.width * 0.03 * ease.inOutSine(progress);
+  else if (camera === 'breathe') scale = 1 + 0.022 * ease.inOutSine(progress);
   scale *= extraScale;
   if (scale === 1 && dx === 0) return '';
   return `translate(${f(cx + dx)} ${f(cy)}) scale(${scale.toFixed(5)}) translate(${f(-cx)} ${f(-cy)})`;
@@ -368,7 +369,9 @@ function shotLayers(timeline, index, t, extraScale = 1) {
       layers.push(`<circle cx="${f(element.x)}" cy="${f(element.y)}" r="${f(element.radius ?? 12)}" fill="${element.fill}"/>`);
     }
   }
-  const transform = cameraTransform(motion.camera, clamp(t / duration), extraScale, ctx);
+  // A locked-off camera on a long shot breathes slightly, so the frame never freezes.
+  const camera = motion.camera === 'static' && duration >= 4 ? 'breathe' : motion.camera;
+  const transform = cameraTransform(camera, clamp(t / duration), extraScale, ctx);
   const scene = transform ? `<g transform="${transform}">${layers.join('\n')}</g>` : layers.join('\n');
   return { defs, content: `<rect width="${W}" height="${H}" fill="${background?.fill || primary}"/>\n${scene}` };
 }
