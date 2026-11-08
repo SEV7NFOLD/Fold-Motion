@@ -104,7 +104,7 @@ test('Vercel generation function rejects invalid prompts and request methods', a
   const preflightResponse = createResponse();
   await generate({ method: 'OPTIONS' }, preflightResponse);
   assert.equal(preflightResponse.statusCode, 204);
-  assert.equal(preflightResponse.headers['Access-Control-Allow-Headers'], 'Content-Type');
+  assert.equal(preflightResponse.headers['Access-Control-Allow-Headers'], 'Content-Type, Authorization');
 });
 
 test('Vercel generation function compiles an approved storyboard into a canonical timeline', async () => {

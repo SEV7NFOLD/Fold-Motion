@@ -12,6 +12,7 @@ import { transitionProject } from '../orchestrator/project-state.mjs';
 import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 
 import { resolveBrandAssets } from '../production/brand-assets.mjs';
+import { loadStoredAssets, publicAuthConfig, requireUser, storeFilm, FILM_BUCKET } from './supabase-server.mjs';
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
 const MAX_RENDER_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_SCENE_CONTEXT = {
@@ -253,6 +254,9 @@ async function handleRenderRequest(request, response, root) {
 
   // The logo is checked before any work starts, so a bad file fails fast and clearly.
   try {
+    if (request.fold?.config && body.assets?.logo?.path) {
+      body.assets = await loadStoredAssets(request.fold.config, request.fold.user, body.assets);
+    }
     resolveBrandAssets(body.assets);
   } catch (error) {
     sendJson(response, 400, { success: false, error: error.message });
@@ -288,7 +292,23 @@ async function handleRenderRequest(request, response, root) {
       qaCommandPassed = false;
       qaError = error.message.slice(0, 1200);
     }
-    sendJson(response, 200, { success: true, report, qaCommandPassed, qaError });
+    // Signed in with Supabase: the film is kept in the user's films folder, not on this
+    // server's disk (which a free Render instance wipes on every restart).
+    let storageError;
+    if (request.fold?.config && request.fold.user) {
+      try {
+        const film = await storeFilm(request.fold.config, request.fold.user, {
+          projectId: body.timeline.id,
+          runId: path.basename(path.dirname(reportPath)),
+          file: await readFile(path.join(path.dirname(reportPath), 'production.mp4')),
+          durationSeconds: body.timeline.durationInSeconds,
+        });
+        report.artifacts = { ...report.artifacts, video: film.url, film: { bucket: FILM_BUCKET, path: film.path } };
+      } catch (error) {
+        storageError = `${error.message} The film is playable from this server until it restarts.`;
+      }
+    }
+    sendJson(response, 200, { success: true, report, qaCommandPassed, qaError, ...(storageError ? { storageError } : {}) });
   } catch (error) {
     sendJson(response, 500, { success: false, error: error.message });
   } finally {
@@ -330,6 +350,15 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
   const server = http.createServer(async (request, response) => {
     try {
       const { pathname } = new URL(request.url, 'http://127.0.0.1');
+      // With Supabase configured, generating, planning and rendering need a signed-in user.
+      if (['/api/storyboard', '/api/generate', '/api/render', '/api/state'].includes(pathname) && request.method === 'POST') {
+        const auth = await requireUser(request.headers);
+        if (auth.error) {
+          sendJson(response, auth.status || 401, { success: false, error: auth.error, signIn: true });
+          return;
+        }
+        request.fold = auth;
+      }
       if (pathname === '/api/storyboard') {
         await handleStoryboardRequest(request, response);
         return;
@@ -351,7 +380,7 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
           response.writeHead(405, { Allow: 'GET' }).end();
           return;
         }
-        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: await checkRenderAvailability() });
+        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: await checkRenderAvailability(), auth: publicAuthConfig() });
         return;
       }
       if (pathname === '/health') {

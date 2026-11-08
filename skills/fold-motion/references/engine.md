@@ -57,6 +57,19 @@ take the film's text color. The Fold's paper carries the logo debossed in one
 tint. Product photos are stored and sent nowhere yet; product shots arrive in
 Phase 3.
 
+### Accounts and storage
+
+When `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` are
+set, the studio requires email sign-in and keeps projects, the brand kit and
+films in Supabase (`supabase/migrations/20261108000000_fold_motion.sql`; row
+level security keeps every row and file private to its owner). The server
+(`src/runtime/supabase-server.mjs`) refuses unsigned requests to the generate,
+storyboard, state and render endpoints with 401, verifies tokens with Supabase
+Auth, loads logos only from the user's own `brand-assets/<user id>/` folder, and
+stores each film at `films/<user id>/<project>/<run>.mp4` with a signed link.
+The browser client (`public/supabase-client.mjs`) uses only the publishable key.
+Without those variables nothing changes: the studio saves to the browser.
+
 ## Capabilities
 
 | Area | Today | Not yet |

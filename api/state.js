@@ -1,10 +1,13 @@
+import { requireUser } from '../src/runtime/supabase-server.mjs';
 import { transitionProject } from '../src/orchestrator/project-state.mjs';
 
-export default function transition(request, response) {
+export default async function transition(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     return response.status(405).json({ success: false, error: 'Method not allowed.' });
   }
+  const auth = await requireUser(request.headers);
+  if (auth.error) return response.status(auth.status || 401).json({ success: false, error: auth.error, signIn: true });
   const { project, nextState, evidence } = request.body || {};
   try {
     return response.status(200).json({

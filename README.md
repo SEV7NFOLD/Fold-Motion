@@ -98,6 +98,35 @@ cascades, tracking that settles, gradient emphasis, hairlines, light sweeps,
 beams, depth planes and dot-field ripples, with film grain at encode. See
 `skills/fold-motion/references/engine.md`.
 
+## Accounts and storage (Supabase)
+
+With Supabase configured, FOLD Motion asks people to sign in with an emailed
+link, and keeps each person's projects, brand kit and rendered films in their own
+private space. Without it, the studio runs as before, saving to the browser.
+
+| Variable | Where it's used | Value |
+| --- | --- | --- |
+| `SUPABASE_URL` | Server and studio | `https://<project>.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | Sent to the studio (safe in browsers) | Supabase > Settings > API Keys > Publishable key (`sb_publishable_…`). The legacy `SUPABASE_ANON_KEY` also works. |
+| `SUPABASE_SECRET_KEY` | Server only, never sent to browsers | Same page > Secret key (`sb_secret_…`). The legacy `SUPABASE_SERVICE_ROLE_KEY` also works. |
+
+Set up once, in this order:
+
+1. In the Supabase SQL Editor, run `supabase/migrations/20261108000000_fold_motion.sql`.
+   It creates the `projects`, `brand_kits` and `films` tables and the private
+   `brand-assets` and `films` buckets, with row level security so each user can
+   only reach their own rows and files. It is safe to run again.
+2. Under Authentication > URL Configuration, set the Site URL to the studio's
+   address and add every address people open it from (with `/**`) to Redirect URLs.
+3. Add the three variables to Render (and Vercel), then redeploy.
+
+On first sign-in, projects and the brand kit already saved in that browser are
+imported once. Generating, planning and rendering require a signed-in user. The
+server checks each user's access token with Supabase Auth, reads logos only from
+that user's folder, and saves each film to `films/<user id>/…` with a private
+link that is renewed whenever the film is reopened. `tools/mock-supabase.mjs` is a
+local stand-in for end-to-end tests.
+
 ## Brand assets
 
 Upload a logo (SVG or PNG) and up to three product photos under Add headline
