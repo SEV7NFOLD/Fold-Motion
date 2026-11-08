@@ -48,14 +48,15 @@ function hasTransitionEvidence(project, nextState, evidence) {
       return evidence.finalCutApproved === true
         && project.renderReport?.productionQA?.pass === true
         && project.renderReport?.creativeQA?.pass === true;
-    case 'DELIVERED':
-      return hasObject(project.renderReport?.artifacts)
-        && typeof project.renderReport.artifacts.video === 'string'
-        && typeof project.renderReport.artifacts.source === 'string'
-        && project.renderReport.artifacts.video.startsWith('/output/')
-        && project.renderReport.artifacts.source.startsWith('/output/')
-        && !project.renderReport.artifacts.video.includes('..')
-        && !project.renderReport.artifacts.source.includes('..');
+    case 'DELIVERED': {
+      const artifacts = project.renderReport?.artifacts;
+      if (!hasObject(artifacts)) return false;
+      const local = (value) => typeof value === 'string' && value.startsWith('/output/') && !value.includes('..');
+      // Signed in with Supabase, the film lives in the user's films folder
+      // (<user id>/<project>/<run>.mp4) instead of on the render server's disk.
+      const stored = typeof artifacts.film?.path === 'string' && /^[0-9a-f-]{36}\/[a-z0-9-]+\/[a-z0-9-]+\.mp4$/i.test(artifacts.film.path);
+      return (local(artifacts.video) || stored) && local(artifacts.source);
+    }
     default:
       return false;
   }

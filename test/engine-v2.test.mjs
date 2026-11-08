@@ -580,7 +580,7 @@ test('a storyboard that reuses the end card is rewritten once, and direction gai
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /reused the end card's text/);
   assert.deepEqual(result.storyboard.shots.map((shot) => shot.onScreenCopy), ['Precision in silence', 'Every frame decided', 'FOLD Motion']);
-  assert.ok(result.repairs.some((message) => message.includes('rewritten once')));
+  assert.ok(result.repairs.some((message) => message.includes('rewritten once') && message.includes('reused the end card')));
 
   const directions = result.storyboard.shots.map((shot) => ({ id: shot.id, recipe: 'statement', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'cut' }));
   const built = await generateProductionAction({
@@ -590,4 +590,27 @@ test('a storyboard that reuses the end card is rewritten once, and direction gai
   assert.equal(built.timeline.shots[0].spec.transitionOut, 'fold');
   assert.ok(built.timeline.shots.some((shot) => shot.spec.emphasis));
   assert.ok(built.repairs.some((message) => message.includes('The Fold carries the film')));
+});
+
+test('too few shots for the film gets one rewrite asking for more cuts', async () => {
+  const brief = '0:00 - 0:03 | Opening. 0:03 - 0:07 | Product. 0:07 - 0:10 | Sign-off';
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  const three = { ...base, shots: ['Pure form', 'Elevate daily care', 'Alpha'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 3 })) };
+  const six = { ...base, shots: ['Pure form', 'Quiet', 'Elevate daily care', 'Every drop', 'Built to last', 'Alpha'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 10 / 6 })) };
+  const prompts = [];
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: brief, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => {
+      prompts.push(JSON.parse(options.body).contents[0].parts[0].text);
+      const reply = prompts.length === 1 ? three : six;
+      return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] } }] }; } };
+    },
+  });
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /only 3 shots for a 10-second film/);
+  assert.match(prompts[1], /two or three shots inside each timecoded beat/);
+  assert.equal(result.storyboard.shots.length, 6);
+  let elapsed = 0;
+  const cuts = result.storyboard.shots.map((shot) => { elapsed += shot.durationSeconds; return Math.round(elapsed * 1000) / 1000; });
+  assert.ok(cuts.includes(3) && cuts.includes(7), `cuts at ${cuts.join(', ')}`);
 });
