@@ -34,7 +34,7 @@ How to build a strong storyboard:
 - Write copy a senior copywriter would sign off: natural, grammatical English that reads as a complete, intentional thought. Deliberate fragments are fine; anything that reads like a typo or a missing word is not.
 - Write lines that belong to this brief and this brand. Don't fall back on stock slogans or phrases that could sell anything.
 - Give every shot its own line. Don't repeat a line in two shots, and don't reuse the supplied headline or subheadline in a middle shot: they open and close the film.
-- If the brief lays out beats with timecodes, treat each beat as a section that holds one or more shots, in order, with the shots' durations filling that section.
+- If the brief lays out beats with timecodes, treat each beat as a section, in order, with its shots' durations filling it. A beat of 3 seconds or more gets two or three shots; never cover a whole beat with one long shot.
 - If the brief has an "On-Screen Text" section, it is the end card: FOLD Motion puts those lines on the final shot exactly. Write new, different lines for every earlier shot and never reuse those words there. The supplied headline and subheadline still take priority when they're set.
 - Each line is one complete thought. Don't run a name and a date, or a name and a slogan, together as one line: the director can set a date, a place or a call to action as a separate small kicker line.
 - Give the viewer time to read: at least 1.2 seconds per shot, plus about 0.3 seconds for every word beyond three. Short lines (one to four words) let the film cut faster. Durations are positive numbers in seconds, and together they must add up to the context's durationInSeconds, which already reflects any length the brief asks for.

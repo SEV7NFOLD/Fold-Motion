@@ -50,7 +50,9 @@ export async function startMockSupabase({ port = 0, publishableKey = 'sb_publish
         objects: [...objects.keys()],
       });
     }
-    if (apikey !== publishableKey && !service) return send(response, 401, { message: 'Invalid API key' });
+    // Signed links carry their own token, like real Supabase: no API key needed.
+    const signedGet = request.method === 'GET' && /^\/storage\/v1\/object\/sign\//.test(url.pathname) && url.searchParams.has('token');
+    if (apikey !== publishableKey && !service && !signedGet) return send(response, 401, { message: 'Invalid API key' });
 
     // ---- auth
     if (url.pathname === '/auth/v1/otp' && request.method === 'POST') {
@@ -107,6 +109,7 @@ export async function startMockSupabase({ port = 0, publishableKey = 'sb_publish
         return send(response, 200, { signedURL: `/object/sign/${bucket}/${rawPath}?token=signed-${Date.now()}` });
       }
       const object = objects.get(`${bucket}/${path}`);
+      if (object && url.searchParams.has('download')) response.setHeader('Content-Disposition', `attachment; filename="${url.searchParams.get('download') || path.split('/').pop()}"`);
       return object ? send(response, 200, object.body, object.type) : send(response, 404, { message: 'Object not found' });
     }
     const object = /^\/storage\/v1\/object\/([^/]+)(?:\/(.+))?$/.exec(url.pathname);

@@ -140,6 +140,15 @@ const seconds = (value) => `${Number(value).toFixed(Number.isInteger(Number(valu
 const safeOutputUrl = (url) => typeof url === 'string' && !url.includes('..') && (url.startsWith('/output/')
   || Boolean(authInfo?.url && url.startsWith(`${authInfo.url}/storage/v1/object/sign/films/`)));
 
+/**
+ * A cross-site link ignores the download attribute, so Supabase links ask the
+ * server to send the film as an attachment instead.
+ */
+function downloadUrl(url, name = 'fold-motion-film.mp4') {
+  if (!authInfo?.url || !String(url).startsWith(`${authInfo.url}/storage/v1/object/sign/`)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(name)}`;
+}
+
 // Film links from Supabase expire after a week; reopened films get a fresh one.
 const freshFilmLinks = new Map();
 async function refreshFilmLinks() {
@@ -151,7 +160,7 @@ async function refreshFilmLinks() {
     try {
       if (!freshFilmLinks.has(path)) freshFilmLinks.set(path, await cloud.signedUrl('films', path));
       const url = freshFilmLinks.get(path);
-      if (node.tagName === 'A') node.href = url; else node.src = url;
+      if (node.tagName === 'A') node.href = node.dataset.download === 'true' ? downloadUrl(url) : url; else node.src = url;
     } catch { /* the stored link still works until it expires */ }
   }
 }
@@ -1508,7 +1517,7 @@ function exportLinks(artifacts) {
     ['QA report', artifacts?.qa],
   ].filter(([, url]) => safeOutputUrl(url));
   return h('div', { class: 'exports' },
-    film ? h('a', { class: 'pill pill-go', href: film, download: '' }, icon('download'), 'Download film') : null,
+    film ? h('a', { class: 'pill pill-go', href: downloadUrl(film), download: '', ...(artifacts?.film?.path ? { 'data-film-path': artifacts.film.path, 'data-download': 'true' } : {}) }, icon('download'), 'Download film') : null,
     sources.length ? h('p', { class: 'sources' },
       sources.flatMap(([label, url], index) => [
         index ? h('span', { class: 'sources-slash', 'aria-hidden': 'true', text: ' / ' }) : null,

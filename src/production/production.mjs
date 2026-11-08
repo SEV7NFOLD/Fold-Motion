@@ -789,13 +789,23 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     : buildMockStoryboard(prompt, normalizedContext);
   // The end card's text belongs on the end card. If the model reused it earlier in
   // the film, it gets one rewrite with a note saying exactly what to change.
+  // Two problems get one rewrite with a note saying exactly what to change: shots
+  // that reuse the end card's text, and too few shots for the film's length.
   let rewriteNote = '';
   const reused = earlierShotsReusing(generatedStoryboard, onScreenText);
-  if (reused.length && provider?.generateStoryboard) {
-    const note = `Revision: shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`;
+  const shotCount = Array.isArray(generatedStoryboard?.shots) ? generatedStoryboard.shots.length : 0;
+  const seconds = normalizedContext.durationInSeconds;
+  // Only when a length was asked for (in the brief or by the caller): a default
+  // 8-second film with three shots is acceptable, and not worth another call.
+  const lengthRequested = briefSeconds !== undefined || context.durationInSeconds !== undefined;
+  const tooFew = lengthRequested && seconds >= 8 && shotCount > 0 && shotCount < 4;
+  if ((reused.length || tooFew) && provider?.generateStoryboard) {
+    const notes = [];
+    if (reused.length) notes.push(`Shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`);
+    if (tooFew) notes.push(`This storyboard has only ${shotCount} shots for a ${seconds}-second film, so each shot holds too long. Use ${Math.max(5, Math.round(seconds / 2))} to ${Math.min(8, Math.round(seconds / 1.3))} shots, about one cut every 1.5 to 2 seconds${beatsFromBrief(prompt) ? ', with two or three shots inside each timecoded beat' : ''}.`);
     try {
-      generatedStoryboard = await provider.generateStoryboard(`${prompt}\n\n${note}`, normalizedContext);
-      rewriteNote = `Earlier shots reused the end card's text, so the storyboard was rewritten once.`;
+      generatedStoryboard = await provider.generateStoryboard(`${prompt}\n\nRevision: ${notes.join(' ')}`, normalizedContext);
+      rewriteNote = `The storyboard was rewritten once: ${[reused.length ? 'earlier shots reused the end card' : '', tooFew ? `${shotCount} shots was too few for ${seconds}s` : ''].filter(Boolean).join('; ')}.`;
     } catch {
       // Keep the first storyboard; repeated lines are still removed below.
     }

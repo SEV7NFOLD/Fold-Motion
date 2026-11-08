@@ -91,3 +91,19 @@ test('the migration turns on row level security for every table and keeps bucket
   assert.match(sql, /\('films', 'films', false,/);
   assert.doesNotMatch(sql, /films: (insert|upload)/, 'only the server writes films');
 });
+
+test('a film kept in Supabase storage counts as delivery evidence', async () => {
+  const { transitionProject } = await import('../src/orchestrator/project-state.mjs');
+  const states = ['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW', 'BUILDING', 'RENDERING', 'QA', 'APPROVED'];
+  const approved = (artifacts) => ({
+    id: 'p', brief: 'b', context: {}, state: 'APPROVED', storyboard: null, acceptance: null, timeline: null,
+    renderReport: { verified: true, productionQA: { pass: true }, creativeQA: { pass: true }, artifacts },
+    history: states.map((state) => ({ state, at: '2026-11-08T00:00:00Z' })),
+  });
+  const source = '/output/p/run/source';
+  const stored = { video: 'https://cipkgsyvvgmfalfazije.supabase.co/storage/v1/object/sign/films/u/p/run.mp4?token=t', source, film: { bucket: 'films', path: `${USER.id}/project-1/2026-11-08T22-40-57-674Z.mp4` } };
+  assert.equal(transitionProject(approved(stored), 'DELIVERED').state, 'DELIVERED');
+  assert.equal(transitionProject(approved({ video: '/output/p/run/production.mp4', source }), 'DELIVERED').state, 'DELIVERED', 'local films still deliver');
+  assert.throws(() => transitionProject(approved({ ...stored, film: { path: '../etc/passwd.mp4' } }), 'DELIVERED'), /evidence is incomplete/);
+  assert.throws(() => transitionProject(approved({ video: 'https://evil.example/x.mp4', source }), 'DELIVERED'), /evidence is incomplete/);
+});
