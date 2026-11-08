@@ -306,7 +306,7 @@ function hashSeed(text) {
 
 const DIRECTIONS = Object.freeze([
   { openers: ['kicker-title', 'title-reveal'], middle: 'title-reveal', transitions: ['fold', 'push', 'fade'], beam: true },
-  { openers: ['type-stack', 'title-reveal'], middle: 'statement', transitions: ['push', 'fold', 'push'], beam: false },
+  { openers: ['type-stack', 'title-reveal'], middle: 'statement', transitions: ['fold', 'push', 'push'], beam: false },
   { openers: ['title-reveal', 'title-reveal'], middle: 'statement', transitions: ['fold', 'wipe', 'fade'], beam: true },
   { openers: ['type-stack', 'title-reveal'], middle: 'title-reveal', transitions: ['wipe', 'wipe', 'push'], beam: false },
 ]);

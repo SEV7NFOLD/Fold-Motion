@@ -33,7 +33,9 @@ How to build a strong storyboard:
 - On-screen copy is the film. Keep each shot's copy short: under 24 characters for a hero line set in the display face, never more than 40 for any line. Use the supplied headline and subheadline exactly, character for character, with no added punctuation or capitalization changes.
 - Write copy a senior copywriter would sign off: natural, grammatical English that reads as a complete, intentional thought. Deliberate fragments are fine; anything that reads like a typo or a missing word is not.
 - Write lines that belong to this brief and this brand. Don't fall back on stock slogans or phrases that could sell anything.
-- Give every shot its own line. Don't repeat a line in two shots.
+- Give every shot its own line. Don't repeat a line in two shots, and don't reuse the supplied headline or subheadline in a middle shot: they open and close the film.
+- If the brief lays out beats with timecodes, make one shot per beat, in the same order.
+- If the brief has an "On-Screen Text" section, those lines are exact copy: use them character for character in the shots they belong to. The supplied headline and subheadline still take priority when they're set.
 - Each line is one complete thought. Don't run a name and a date, or a name and a slogan, together as one line: the director can set a date, a place or a call to action as a separate small kicker line.
 - Give the viewer time to read: at least 2 seconds per shot, plus about half a second for every word beyond three. Durations are positive numbers in seconds, and together they must add up to the context's durationInSeconds, which already reflects any length the brief asks for.
 - Pace with intent: let the first shot breathe, keep the middle tight, hold the last shot so the final message lands.

@@ -290,6 +290,67 @@ test('Gemini asking for three folds gets two, and the repairs say so', async () 
     action: 'compile', storyboard, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
     fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }),
   });
-  assert.deepEqual(result.timeline.shots.map((shot) => shot.spec.transitionOut), ['fold', 'fold', 'wipe', 'wipe', 'cut']);
+  const count = result.timeline.shots.length;
+  assert.ok(count >= 4);
+  assert.deepEqual(result.timeline.shots.map((shot) => shot.spec.transitionOut), ['fold', 'fold', ...Array(count - 3).fill('wipe'), 'cut']);
   assert.ok(result.repairs.some((message) => message.includes('more than 2 folds')));
+});
+
+const QUANTUM_SCULPTOR = `The Quantum Sculptor
+FOLD Motion is premium, precise, and a little bold.
+0:00 - 0:03 | The Quiet Opening
+Visual: A pitch-black frame. A single, razor-thin line of pure white light cuts across the center.
+0:03 - 0:07 | The Confident Build
+Visual: The geometric mesh folds rapidly in hyper-speed.
+0:07 - 0:10 | The Bold Reveal
+On-Screen Text: FOLD Motion. AI-Directed Studio. Dec 2026.`;
+
+test('timecoded beats set the film length and each shot length', async () => {
+  const { beatsFromBrief, durationFromBrief } = await import('../public/brief-length.mjs');
+  assert.equal(durationFromBrief(QUANTUM_SCULPTOR), 10);
+  assert.deepEqual(beatsFromBrief(QUANTUM_SCULPTOR), { total: 10, beats: [3, 4, 3] });
+  assert.deepEqual(beatsFromBrief('0:00–0:04 open. 0:04–0:12 build. 0:12–0:15 end'), { total: 15, beats: [4, 8, 3] });
+  assert.equal(beatsFromBrief('Doors open 9:30 - 11:00, drinks at 18:30'), undefined, 'times of day are not beats');
+  assert.equal(beatsFromBrief('0:00 - 0:03 a, 0:05 - 0:10 b'), undefined, 'beats must be continuous');
+  assert.equal(durationFromBrief('A 12-second film. 0:00 - 0:03 opening, 0:03 - 0:10 rest'), 12, 'an explicit length wins');
+
+  // Gemini plans 8 seconds in three shots for the Quantum Sculptor: code makes it 3 + 4 + 3.
+  const eight = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  eight.shots = [
+    { ...eight.shots[0], id: 'shot-01', onScreenCopy: 'Precision, made visible', durationSeconds: 2.5 },
+    { ...eight.shots[0], id: 'shot-02', onScreenCopy: 'Every frame decided', durationSeconds: 3 },
+    { ...eight.shots[0], id: 'shot-03', onScreenCopy: 'FOLD Motion', durationSeconds: 2.5 },
+  ];
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: QUANTUM_SCULPTOR, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(eight) }] } }] }; } }),
+  });
+  assert.deepEqual(result.storyboard.shots.map((shot) => shot.durationSeconds), [3, 4, 3]);
+  assert.ok(result.repairs.some((message) => message.includes("follow the brief's beats: 3s, 4s, 3s")));
+});
+
+test('a middle shot that repeats a line is dropped and its time shared', async () => {
+  const context = { ...DARK, headline: 'Ideas into motion', subheadline: 'Creativity at scale' };
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  base.shots = [
+    { ...base.shots[0], id: 'shot-01', onScreenCopy: 'Anything', durationSeconds: 3 },
+    { ...base.shots[0], id: 'shot-02', onScreenCopy: 'Creativity at scale', durationSeconds: 3 },
+    { ...base.shots[0], id: 'shot-03', onScreenCopy: 'Anything else', durationSeconds: 2 },
+  ];
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A teaser', context, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(base) }] } }] }; } }),
+  });
+  assert.deepEqual(result.storyboard.shots.map((shot) => shot.onScreenCopy), ['Ideas into motion', 'Creativity at scale']);
+  assert.deepEqual(result.storyboard.shots.map((shot) => shot.durationSeconds), [4.5, 3.5]);
+  assert.ok(result.repairs.some((message) => message.includes('repeated "Creativity at scale"')));
+});
+
+test('an On-Screen Text section in the brief becomes the offline copy', async () => {
+  const { onScreenTextFromBrief, splitBriefCopy } = await import('../src/production/production.mjs');
+  const brief = '0:07 - 0:10 | The Bold Reveal\n• Visual: A white flash.\n• On-Screen Text:\nFOLD Motion\nAI-Directed Studio. Dec 2026.\n• Audio: A heavy thud.';
+  assert.deepEqual(onScreenTextFromBrief(brief), ['FOLD Motion', 'AI-Directed Studio. Dec 2026.']);
+  assert.deepEqual(splitBriefCopy(brief), { headline: 'FOLD Motion', subheadline: 'AI-Directed Studio. Dec 2026.' });
+  assert.doesNotMatch(splitBriefCopy('The Quantum Sculptor. 0:00 - 0:03 | The Quiet Opening').subheadline, /\d:\d\d|\|/, 'no timecodes or separators on screen');
+  assert.deepEqual(splitBriefCopy('A perfume called Nocturne. After dark, unforgettable.'), { headline: 'A perfume called Nocturne', subheadline: 'After dark, unforgettable.' });
 });

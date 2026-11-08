@@ -147,7 +147,9 @@ test('Vercel generation function compiles an approved storyboard into a canonica
   assert.ok(compileResponse.body.timeline.hardConstraints.length > 0);
   assert.deepEqual(
     compileResponse.body.timeline.shots.map(({ startFrame, endFrame }) => [startFrame, endFrame]),
-    [[0, 71], [72, 143], [144, 191]],
+    // The offline storyboard repeats its headline in the middle shot; that shot is
+    // dropped and its 3 seconds shared with its neighbors (3 + 1.5, 2 + 1.5).
+    [[0, 107], [108, 191]],
   );
 });
 

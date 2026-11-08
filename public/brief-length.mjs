@@ -22,6 +22,37 @@ export function durationFromBrief(text) {
   if (spelled) value = Number(spelled[1]);
   else if (compact && Number(compact[1]) <= MAX_FILM_SECONDS) value = Number(compact[1]);
   else if (worded) value = NUMBER_WORDS[worded[1]];
+  else value = beatsFromBrief(text)?.total;
   if (!Number.isFinite(value) || value <= 0) return undefined;
   return Math.min(MAX_FILM_SECONDS, Math.max(MIN_FILM_SECONDS, value));
+}
+
+const TIMECODE = /(\d{1,2}):([0-5]\d)(?:\.(\d))?/;
+const RANGE = new RegExp(`${TIMECODE.source}\\s*(?:-|–|—|to)\\s*${TIMECODE.source}`, 'g');
+
+/**
+ * Beats written as timecode ranges, the way an editor writes a brief:
+ * "0:00 - 0:03 | The Quiet Opening ... 0:07 - 0:10 | The Bold Reveal".
+ * Returns { total, beats } in seconds, or undefined. Requires the ranges to start
+ * at 0:00 and run in order, so times of day ("doors 9:30 - 11:00") are ignored.
+ */
+export function beatsFromBrief(text) {
+  const seconds = (m, s, tenths) => Number(m) * 60 + Number(s) + (tenths ? Number(tenths) / 10 : 0);
+  const ranges = [...String(text || '').matchAll(RANGE)].map((match) => ({
+    start: seconds(match[1], match[2], match[3]),
+    end: seconds(match[4], match[5], match[6]),
+  }));
+  if (ranges.length === 0 || ranges[0].start !== 0) return undefined;
+  for (let index = 0; index < ranges.length; index += 1) {
+    const { start, end } = ranges[index];
+    if (end <= start) return undefined;
+    if (index > 0 && Math.abs(start - ranges[index - 1].end) > 0.5) return undefined;
+  }
+  const total = ranges.at(-1).end;
+  if (total < MIN_FILM_SECONDS || total > 120) return undefined;
+  const scale = total > MAX_FILM_SECONDS ? MAX_FILM_SECONDS / total : 1;
+  return {
+    total: Math.min(MAX_FILM_SECONDS, total),
+    beats: ranges.map(({ start, end }) => (end - start) * scale),
+  };
 }
