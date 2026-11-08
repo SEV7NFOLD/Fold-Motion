@@ -816,6 +816,7 @@ function renderFilm(record) {
       acceptance: record.project.acceptance,
       context: withBrand(record.project.context),
       ...(brandAssets() ? { assets: brandAssets() } : {}),
+      music: record.music || 'auto',
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -1351,7 +1352,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), changesButton());
+      content.push(goButton('Render and run QA', () => renderFilm(record)), musicPicker(record), changesButton());
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1461,6 +1462,36 @@ function timelineView(message) {
   return { node, gate };
 }
 
+
+// ------------------------------------------------------------------ music (FOLD Score)
+
+const MUSIC_CHOICES = [
+  ['auto', 'Music: Auto'],
+  ['premium', 'Music: Premium calm'],
+  ['energetic', 'Music: Energetic'],
+  ['editorial', 'Music: Editorial'],
+  ['warm', 'Music: Warm'],
+  ['off', 'No music'],
+];
+
+/** The soundtrack choice for this production, sent with the render. */
+function musicPicker(record) {
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Music for this film', title: 'FOLD Score composes music from your edit. Auto picks a mood from your brief.' },
+    ...MUSIC_CHOICES.map(([value, label]) => h('option', { value, text: label, ...((record.music || 'auto') === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => {
+    record.music = select.value;
+    persist();
+  });
+  return select;
+}
+
+function musicLine(report) {
+  const audio = report?.audio;
+  if (!audio) return null;
+  const text = audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}` : 'No music';
+  return h('p', { class: 'music-line', text });
+}
+
 function qaChecks(report) {
   const production = report?.productionQA || {};
   const creative = report?.creativeQA || {};
@@ -1473,6 +1504,9 @@ function qaChecks(report) {
     ['Contrast', creative.contrast, (c) => `${number(c.minimumRatio, 1)}:1, needs ${c.requiredRatio}:1`],
     ['Legibility', creative.legibility, (c) => `Smallest text ${c.minimumFontSize}px`],
     ['Brand colors', creative.brandFidelity, (c) => `${String(c.primaryColor).toUpperCase()}, ${String(c.accentColor).toUpperCase()}`],
+    ['Loudness', production.audio?.loudness, (c) => `${number(c.actual, 1)} LUFS, target ${c.target}`],
+    ['Peaks', production.audio?.truePeak, (c) => `${number(c.actual, 1)} dB, limit ${c.limit}`],
+    ['Sync', production.audio?.sync, (c) => `${c.onTime} of ${c.checked} hits within ${c.tolerance}`],
   ].filter(([, check]) => check);
   return checks.map(([name, check, describe]) => {
     let detail = '';
@@ -1497,6 +1531,7 @@ function renderView(message) {
       : `Your cut rendered, but ${failed} check${failed === 1 ? '' : 's'} failed. Ask for changes and I’ll fix them.` }),
     h('div', { class: 'block' },
       safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true, ...(report?.artifacts?.film?.path ? { 'data-film-path': report.artifacts.film.path } : {}) }) : null,
+      musicLine(report),
       h('p', { class: `qa-summary${failed ? ' is-fail' : ''}` },
         h('span', { class: 'qa-summary-dot', 'aria-hidden': 'true', text: failed ? String(failed) : '✓' }),
         failed ? `${failed} of ${checks.length} QA checks failed` : `All ${checks.length} QA checks passed`),

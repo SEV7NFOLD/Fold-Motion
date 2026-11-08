@@ -98,6 +98,16 @@ cascades, tracking that settles, gradient emphasis, hairlines, light sweeps,
 beams, depth planes and dot-field ripples, with film grain at encode. See
 `skills/fold-motion/references/engine.md`.
 
+## Sound (FOLD Score)
+
+Every film gets a soundtrack composed from its own edit: the score reads each
+cut, transition, word landing, type-window letter, sweep, logo and product moment
+from the timeline, picks a tempo whose beats line up with the cuts, and puts a
+hit on every one. Four moods (Premium calm, Energetic, Editorial, Warm), chosen
+in the studio's Music picker or automatically from the brief; or no music. The
+score is mastered to -14 LUFS and checked in production QA for loudness, peaks
+and sync (every major hit within one frame).
+
 ## Accounts and storage (Supabase)
 
 With Supabase configured, FOLD Motion asks people to sign in with an emailed

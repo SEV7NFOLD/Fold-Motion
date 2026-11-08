@@ -150,12 +150,13 @@ test('Gemini prompts describe the renderer as it actually behaves', async () => 
 test('capabilities documented as "not yet" are still missing from the renderer', () => {
   // When one of these fails, the capability shipped: update engine.md, the
   // storyboard-director prompt and this test in the same change.
-  assert.doesNotMatch(renderer, /audio/i, 'audio reached the renderer');
+  // FOLD Score shipped (Phase 4): the renderer composes and muxes it.
+  assert.match(renderer, /composeScore/);
   assert.doesNotMatch(renderer, /render-cache/, 'the render cache is now wired in');
   // Uploaded product photos and logos shipped (Phase 3); generated imagery did not.
   assert.doesNotMatch(renderer, /<path d="M .* fill="(?!none)/, 'the renderer can now draw filled paths');
   assert.match(engine, /graded product photos/);
-  assert.match(engine, /Nothing muxes audio into the MP4/);
+  assert.match(engine, /FOLD Score/);
 });
 
 test('eval cases follow the skill-creator test-case format', () => {

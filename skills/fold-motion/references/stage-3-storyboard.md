@@ -41,7 +41,8 @@ Flag each of these before recommending approval:
 - Promises the engine can't keep: camera moves outside the vocabulary
   (dolly, orbit, handheld, 3D; push-in, pull-out and drifts are fine),
   footage, generated product photography (only uploaded product photos and
-  logos can appear), sound, crossfades.
+  logos can appear), voiceover or licensed music (FOLD Score composes the
+  soundtrack from the edit), crossfades.
 - Every shot using the same motion, which makes the film feel templated.
 - Copy longer than 40 characters, or supplied copy altered in any way.
 - Durations that don't add up to the target, or shots under 2 seconds with

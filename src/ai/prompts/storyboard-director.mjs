@@ -20,8 +20,8 @@ What the engine can make (plan only within this):
   Camera: ${vocabulary('camera')}.
   Atmosphere: ${vocabulary('atmosphere')}.
   Shots change with a cut, a wipe, a fade, a push-through or The Fold, FOLD Motion's signature, where the frame folds in half like paper to reveal the next shot.
-- When the client uploads them, product photos can appear (graded into the brand palette, as a feathered panel beside the line or filling giant letters), and the logo can sit on the end card or draw itself on. Nothing else photographic: no generated imagery, video footage, 3D or audio, and no other camera moves (no orbits around objects, dolly shots or handheld moves).
-So describe cameraBehavior, motionBehavior and transitions in these terms, as the viewer will see them (for example "Slow push-in; the words rise in one by one, then a light sweep"). Never promise footage or sound, and promise product shots only when product photos are uploaded.
+- When the client uploads them, product photos can appear (graded into the brand palette, as a feathered panel beside the line or filling giant letters), and the logo can sit on the end card or draw itself on. Nothing else photographic: no generated imagery, video footage or 3D, and no other camera moves (no orbits around objects, dolly shots or handheld moves).
+So describe cameraBehavior, motionBehavior and transitions in these terms, as the viewer will see them (for example "Slow push-in; the words rise in one by one, then a light sweep"). Sound is automatic: FOLD Score composes music from the finished edit, with hits on every cut, so describe the mood in creativeDirection rather than specific music. Never promise footage, voiceover, dialogue or licensed songs, and promise product shots only when product photos are uploaded.
 
 Make the motion mean something:
 - Calm, premium films lean on fades, spotlight and slow push-ins; energetic films on stacked type, wipes and drifts; digital or editorial films on grids, dots and cascades.

@@ -11,6 +11,7 @@ import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
 import { FONT_FILES } from '../src/render/typography.mjs';
 import { resolveBrandAssets } from '../src/production/brand-assets.mjs';
 import { mix } from '../src/production/color.mjs';
+import { composeScore, encodeWav, masterScore, MOOD_OPTIONS } from '../src/audio/fold-score.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -313,6 +314,7 @@ export async function renderProductionProject({
   acceptance,
   context,
   assets,
+  music = 'auto',
   outputRoot = path.resolve('output'),
 }) {
   const validation = validateTimeline(timeline);
@@ -368,6 +370,19 @@ export async function renderProductionProject({
   const manifest = generateFrameManifest(framesDirectory);
   await writeFile(path.join(framesDirectory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
+  // FOLD Score: composed from this timeline, so every hit lands on its cut.
+  const scored = music !== 'off';
+  let score = null;
+  const scorePath = path.join(outputDirectory, 'score.wav');
+  if (scored) {
+    score = composeScore(timeline, {
+      mood: MOOD_OPTIONS.includes(music) ? music : 'auto',
+      text: [storyboard?.title, storyboard?.narrativeConcept, storyboard?.creativeDirection].filter(Boolean).join(' '),
+    });
+    masterScore(score, { target: -14, ceiling: -2 });
+    await writeFile(scorePath, encodeWav(score));
+  }
+
   const isWindows = process.platform === 'win32';
   const ffmpeg = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   const ffprobe = isWindows ? 'ffprobe.exe' : 'ffprobe';
@@ -376,7 +391,10 @@ export async function renderProductionProject({
     '-y',
     '-framerate', String(timeline.fps),
     '-i', path.join(framesDirectory, 'frame-%06d.png'),
+    ...(scored ? ['-i', scorePath] : []),
     ...(grainFilter(timeline) ? ['-vf', grainFilter(timeline)] : []),
+    // The score arrives mastered to -14 LUFS; FFmpeg only encodes it.
+    ...(scored ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-shortest'] : []),
     '-c:v', 'libx264',
     // veryfast uses one reference frame and a short lookahead: far less memory and
     // CPU than the default preset, at a quality that holds up for motion graphics.
@@ -399,6 +417,24 @@ export async function renderProductionProject({
   ]);
   const metadata = JSON.parse(probe.stdout);
   const stream = metadata.streams?.[0];
+  let audioQA = null;
+  if (scored) {
+    const audioProbe = JSON.parse((await runCommand(ffprobe, ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=codec_name,sample_rate,channels,duration', '-of', 'json', videoPath])).stdout);
+    const audioStream = audioProbe.streams?.[0];
+    const loudnessRun = await runCommand(ffmpeg, ['-nostats', '-i', videoPath, '-map', '0:a', '-af', 'ebur128=peak=true', '-f', 'null', '-']).catch((error) => ({ stderr: error.stderr || '' }));
+    const summary = String(loudnessRun.stderr || '').split('Summary:').pop();
+    const integrated = Number.parseFloat(/I:\s+(-?[\d.]+) LUFS/.exec(summary)?.[1]);
+    const truePeak = Number.parseFloat(/Peak:\s+(-?[\d.]+) dBFS/.exec(summary)?.[1]);
+    const audioDuration = Number.parseFloat(audioStream?.duration ?? 'NaN');
+    audioQA = {
+      present: { pass: Boolean(audioStream), codec: audioStream?.codec_name, channels: audioStream?.channels },
+      duration: { pass: Math.abs(audioDuration - timeline.durationInSeconds) <= 1 / timeline.fps + 0.03, expected: timeline.durationInSeconds, actual: audioDuration },
+      loudness: { pass: Number.isFinite(integrated) && Math.abs(integrated + 14) <= 1.5, target: -14, actual: integrated },
+      truePeak: { pass: Number.isFinite(truePeak) && truePeak <= -0.5, limit: -0.5, actual: truePeak },
+      sync: { pass: score.sync.pass, onTime: score.sync.onTime, checked: score.sync.checked, tolerance: '1 frame' },
+    };
+    audioQA.pass = Object.values(audioQA).every((check) => check.pass);
+  }
   const expectedRate = timeline.fps;
   const actualRate = parseFrameRate(stream?.avg_frame_rate);
   const actualDuration = Number.parseFloat(metadata.format?.duration ?? 'NaN');
@@ -412,7 +448,9 @@ export async function renderProductionProject({
       && stream?.height === timeline.height
       && Math.abs(actualRate - expectedRate) < 0.01
       && Math.abs(actualDuration - timeline.durationInSeconds) <= 1 / timeline.fps
-      && frameIntegrityPass,
+      && frameIntegrityPass
+      && (audioQA ? audioQA.pass : true),
+    ...(audioQA ? { audio: audioQA } : {}),
     dimensions: {
       pass: stream?.width === timeline.width && stream?.height === timeline.height,
       expected: { width: timeline.width, height: timeline.height },
@@ -447,6 +485,7 @@ export async function renderProductionProject({
     renderer: 'resvg + ffmpeg',
     productionQA,
     creativeQA,
+    ...(score ? { audio: { engine: 'FOLD Score', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
     videoMetadata: metadata,
     artifacts: {
       video: `${baseUrl}/production.mp4`,
