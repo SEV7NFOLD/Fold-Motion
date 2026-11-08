@@ -271,6 +271,7 @@ async function handleRenderRequest(request, response, root) {
       acceptance: body.acceptance,
       context: body.context,
       ...(body.assets ? { assets: body.assets } : {}),
+      ...(typeof body.music === 'string' ? { music: body.music } : {}),
     }));
     const renderResult = await runNodeScript('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
       label: 'Rendering',

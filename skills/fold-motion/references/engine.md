@@ -66,6 +66,23 @@ window draws the photo once per frame through a mask of all its letters. With
 product photos uploaded, `ensureProductShot` makes sure the film shows the
 product at least once.
 
+### Sound (FOLD Score)
+
+`composeScore(timeline, { mood, text })` reads every cue from the timeline
+(cuts and their transitions, word and type-window letter landings, light sweeps,
+the opening beam, logo drawing and glint, product reveals, the end card), picks
+the tempo in the mood's range whose beat grid sits closest to the cuts, and
+synthesizes a stereo score: a pad that changes chord on each cut and resolves
+on the end card, a groove (kick, hats, bass, arpeggio) between the opening and
+the end card, and sound design on every cue. Moods: `premium` (Premium calm),
+`energetic`, `editorial`, `warm`; `auto` picks one from the storyboard's words,
+and `off` renders silent. `masterScore` measures loudness with ITU-R BS.1770
+and brings it to -14 LUFS under a -2 dBFS look-ahead limiter, so FFmpeg only
+encodes AAC. It is deterministic: the same timeline and mood give the same
+samples. Production QA adds audio checks: present, duration, loudness within
+1.5 LU of -14, true peak at most -0.5 dBFS, and at least 90% of cuts, letters and
+the end card with an onset within one frame.
+
 ### Accounts and storage
 
 When `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` are
@@ -88,7 +105,7 @@ Without those variables nothing changes: the studio saves to the browser.
 | Transitions | v2: `cut`, `wipe`, `fade`, `push`, `fold`. v1: hard cuts | Zoom through a letter, match cuts |
 | Format | 1280 × 720 at 24 fps by default (`context.width`, `height`, `fps`); the studio always sends the defaults | Vertical or square presets in the studio |
 | Duration | Shot durations from the storyboard, frame-accurate | Global duration control in the studio (the model aims for about 8 seconds) |
-| Audio | `src/audio/audio-track.mjs` models tracks and cues | Audio in the render. Nothing muxes audio into the MP4. |
+| Audio | FOLD Score (`src/audio/fold-score.mjs`): a stereo score composed from the timeline, mastered to -14 LUFS and muxed as AAC; four moods or none | Voiceover, licensed music, AI-generated music beds |
 | Caching | `src/timeline/render-cache.mjs` exists | Wired into rendering. Every render redraws every frame. |
 | Text | v2: Anton display with Montserrat 500/600/700, measured layout, per-word and per-letter animation. v1: Montserrat Bold wrapped at 76% of the width, capped at 15% of the height | Uploaded brand fonts |
 | Seek contract | `seek(tLocalSeconds)` exists only in the sample scene (`public/scene-01*.js`) | In the production renderer, which uses `renderShotSvg(shot, progress)` |

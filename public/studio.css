@@ -2499,3 +2499,29 @@ button.tool:hover,
 .signin-status[data-tone="warn"] {
   color: #ff8a8f;
 }
+
+/* ------------------------------------------------------------------ music */
+.music-pick {
+  padding: 0.5rem 2rem 0.5rem 0.85rem;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface-2) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23aaa6a3' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 0.8rem center;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  appearance: none;
+  cursor: pointer;
+}
+
+.music-pick:hover,
+.music-pick:focus-visible {
+  border-color: var(--indigo-line);
+  outline: none;
+}
+
+.music-line {
+  margin: 0.6rem 0 0;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
