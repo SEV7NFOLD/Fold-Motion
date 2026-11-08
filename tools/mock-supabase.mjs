@@ -87,7 +87,12 @@ export async function startMockSupabase({ port = 0, publishableKey = 'sb_publish
         return send(response, 201);
       }
       if (request.method === 'DELETE') {
-        for (const [id, row] of tables[table]) if (service || row.owner === user.id) tables[table].delete(id);
+        // Honor PostgREST equality filters (?id=eq.x&owner=eq.y), like the real API.
+        const filters = [...url.searchParams].filter(([, value]) => value.startsWith('eq.')).map(([column, value]) => [column, value.slice(3)]);
+        for (const [id, row] of tables[table]) {
+          const allowed = service || row.owner === user.id;
+          if (allowed && filters.every(([column, value]) => String(row[column]) === value)) tables[table].delete(id);
+        }
         return send(response, 204);
       }
     }

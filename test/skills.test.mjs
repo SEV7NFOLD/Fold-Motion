@@ -252,3 +252,16 @@ test('prompts quote no example copy the model could lift into a film', () => {
     assert.deepEqual(quotedLines, [], `${name} quotes example copy: ${quotedLines.join(', ')}`);
   }
 });
+
+test('the studio has a chat history with New chat, and an attach button for the brand kit', () => {
+  const html = read(root, 'public', 'index.html');
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(html, /id="history-new"[^>]*>[\s\S]*?New chat<\/button>/);
+  assert.match(html, /id="history-list"/);
+  assert.match(html, /id="attach-button"[^>]*aria-haspopup="menu"/);
+  assert.match(html, /data-attach="logo"/);
+  assert.match(html, /data-attach="products"/);
+  // Deleting a chat removes it from Supabase too, so it can't come back on reload.
+  assert.match(studio, /async function removeRecord[\s\S]*?cloud\.remove\('projects', `id=eq\./);
+  assert.doesNotMatch(studio, /delete store\.records\[record\.id\];\s*if \(store\.activeId === record\.id\) store\.activeId = null;\s*persist\(\);\s*render\(\);/, 'no local-only delete left');
+});

@@ -42,6 +42,12 @@
       <main class="views">
         <!-- Studio: one conversation per production -->
         <section class="view view-studio is-empty" id="view-studio" data-view-panel="studio" aria-labelledby="project-title">
+          <aside class="history" id="history" aria-label="Chats">
+            <button class="history-new" id="history-new" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
+            <nav class="history-list" id="history-list" aria-label="Chat history"></nav>
+          </aside>
+          <button class="history-toggle" id="history-toggle" type="button" aria-controls="history" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Chats</button>
+          <div class="history-scrim" id="history-scrim" hidden></div>
           <header class="studio-head" id="studio-head">
             <h1 class="project-title" id="project-title">New production</h1>
             <ol class="stepper" id="stages" aria-label="Production stages">
@@ -76,6 +82,8 @@
                 </div>
               </div>
               <div class="composer-box">
+                <div class="composer-attachments" id="composer-attachments" hidden aria-label="Attached to every brief"></div>
+                <p class="attach-error" id="attach-error" role="alert" hidden></p>
                 <div class="brief-details" id="brief-details" hidden>
                   <label>Headline<input id="headline-input" type="text" maxlength="54" placeholder="Written from your brief"></label>
                   <label>Subheadline<input id="subheadline-input" type="text" maxlength="100" placeholder="Optional"></label>
@@ -100,6 +108,13 @@
                 <textarea id="composer-input" rows="1" placeholder="Describe the film you want to make"></textarea>
                 <div class="composer-row">
                   <div class="tools">
+                    <div class="attach">
+                      <button class="tool tool-icon" id="attach-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="attach-menu" aria-label="Attach logo or product photos" title="Attach logo or product photos"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 11.5 12.6 19.4a5 5 0 0 1-7.1-7.1l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5"/></svg></button>
+                      <div class="attach-menu" id="attach-menu" role="menu" hidden>
+                        <button type="button" role="menuitem" data-attach="logo"><strong>Upload logo</strong><span>SVG draws itself on; PNG works too</span></button>
+                        <button type="button" role="menuitem" data-attach="products"><strong>Add product photos</strong><span>Up to 3, for product shots</span></button>
+                      </div>
+                    </div>
                     <button class="tool" id="details-toggle" type="button" aria-expanded="false" aria-controls="brief-details">
                       <span class="swatches" aria-hidden="true"><span class="swatch" id="swatch-primary"></span><span class="swatch" id="swatch-accent"></span></span>
                       <span id="details-label">Add headline and colors</span>

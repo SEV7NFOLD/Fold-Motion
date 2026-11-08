@@ -580,9 +580,12 @@ async function loadBrandKitFromCloud() {
 }
 
 function showAssetError(message) {
-  const node = $('asset-error');
-  node.textContent = message || '';
-  node.hidden = !message;
+  for (const id of ['asset-error', 'attach-error']) {
+    const node = $(id);
+    if (!node) continue;
+    node.textContent = message || '';
+    node.hidden = !message;
+  }
 }
 
 /** Downscales an image file on a canvas and returns it as a data URI. */
@@ -678,6 +681,7 @@ function renderBrandTray() {
     },
   })));
   $('product-button').hidden = brandKit.products.length >= BRAND_LIMITS.products;
+  renderComposerAttachments();
 }
 
 /** Planning requests carry logo metadata only (so recipes can lay it out). */
@@ -1737,12 +1741,7 @@ function renderProjects() {
       h('button', {
         class: 'project-open',
         type: 'button',
-        onclick: () => {
-          store.activeId = record.id;
-          persist();
-          fillDetails(record);
-          showView('studio');
-        },
+        onclick: () => openRecord(record),
       },
       h('span', { class: 'poster' }, posterFor(record)),
       h('span', { class: 'project-name', text: recordTitle(record) }),
@@ -1756,13 +1755,7 @@ function renderProjects() {
         'aria-label': `Remove ${recordTitle(record)}`,
         disabled: Boolean(busy && busy.recordId === record.id),
         text: 'Remove',
-        onclick: () => {
-          if (!window.confirm(`Remove “${recordTitle(record)}” and its conversation from this browser?`)) return;
-          delete store.records[record.id];
-          if (store.activeId === record.id) store.activeId = null;
-          persist();
-          render();
-        },
+        onclick: () => removeRecord(record),
       }));
   }));
 }
@@ -1905,6 +1898,7 @@ function render(options = {}) {
   count.textContent = String(pending);
   count.setAttribute('aria-label', `${pending} waiting on you`);
   renderEngineChip();
+  renderHistory();
   if (currentView === 'studio') {
     renderHead(record);
     renderThread(record, options);
@@ -2032,6 +2026,160 @@ window.addEventListener('beforeunload', (event) => {
   if (busy) event.preventDefault();
 });
 
+
+
+// ------------------------------------------------------------------ chat history
+
+/** Deletes a production (and, when signed in, its copy in Supabase). */
+async function removeRecord(record) {
+  if (busy && busy.recordId === record.id) return;
+  const where = cloud ? 'from your account' : 'from this browser';
+  if (!window.confirm(`Delete “${recordTitle(record)}” and its conversation ${where}? Saved films are kept.`)) return;
+  if (cloud) {
+    try {
+      await cloud.remove('projects', `id=eq.${encodeURIComponent(record.id)}`);
+      syncedJson.delete(record.id);
+    } catch (error) {
+      window.alert(`Couldn’t delete it from Supabase: ${error.message}`);
+      return;
+    }
+  }
+  delete store.records[record.id];
+  nodeCache.clear();
+  if (store.activeId === record.id) {
+    store.activeId = null;
+    thread.dataset.recordId = '';
+    fillDetails(activeRecord());
+  }
+  persist();
+  render();
+}
+
+function openRecord(record) {
+  store.activeId = record.id;
+  persist();
+  fillDetails(record);
+  closeHistory();
+  showView('studio');
+}
+
+function historyGroup(iso) {
+  const then = new Date(iso);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.floor((today - new Date(then.getFullYear(), then.getMonth(), then.getDate())) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return 'Previous 7 days';
+  return 'Older';
+}
+
+function renderHistory() {
+  const list = $('history-list');
+  if (!list) return;
+  const records = listedRecords();
+  if (records.length === 0) {
+    list.replaceChildren(h('p', { class: 'history-empty', text: 'Your chats appear here.' }));
+    return;
+  }
+  const groups = new Map();
+  for (const record of records) {
+    const group = historyGroup(record.updatedAt);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(record);
+  }
+  list.replaceChildren(...[...groups].map(([group, items]) => h('section', { class: 'history-group' },
+    h('h2', { class: 'history-heading', text: group }),
+    h('ul', {}, ...items.map((record) => {
+      const state = record.project.state;
+      const tone = WAITING_STATES.has(state) ? 'waiting' : state === 'DELIVERED' ? 'done' : 'progress';
+      const active = record.id === store.activeId && currentView === 'studio';
+      const remove = h('button', { class: 'history-remove', type: 'button', 'aria-label': `Delete ${recordTitle(record)}`, title: 'Delete chat', text: '×' });
+      remove.addEventListener('click', (event) => { event.stopPropagation(); removeRecord(record); });
+      const open = h('button', { class: 'history-open', type: 'button', ...(active ? { 'aria-current': 'page' } : {}) },
+        h('span', { class: `history-dot is-${tone}`, 'aria-hidden': 'true' }),
+        h('span', { class: 'history-title', text: recordTitle(record) }));
+      open.addEventListener('click', () => openRecord(record));
+      return h('li', { class: `history-item${active ? ' is-active' : ''}` }, open, remove);
+    })))));
+}
+
+function closeHistory() {
+  $('view-studio').classList.remove('history-open');
+  $('history-toggle').setAttribute('aria-expanded', 'false');
+  $('history-scrim').hidden = true;
+}
+
+$('history-new').addEventListener('click', () => {
+  closeHistory();
+  startNewProduction();
+});
+$('history-toggle').addEventListener('click', () => {
+  const open = !$('view-studio').classList.contains('history-open');
+  $('view-studio').classList.toggle('history-open', open);
+  $('history-toggle').setAttribute('aria-expanded', String(open));
+  $('history-scrim').hidden = !open;
+});
+$('history-scrim').addEventListener('click', closeHistory);
+
+// ------------------------------------------------------------------ attach (logo and product photos)
+
+function closeAttachMenu() {
+  $('attach-menu').hidden = true;
+  $('attach-button').setAttribute('aria-expanded', 'false');
+}
+
+$('attach-button').addEventListener('click', (event) => {
+  event.stopPropagation();
+  const open = $('attach-menu').hidden;
+  $('attach-menu').hidden = !open;
+  $('attach-button').setAttribute('aria-expanded', String(open));
+  if (open) $('attach-menu').querySelector('button')?.focus();
+});
+$('attach-menu').addEventListener('click', (event) => {
+  const choice = event.target.closest('[data-attach]')?.dataset.attach;
+  if (!choice) return;
+  closeAttachMenu();
+  $(choice === 'logo' ? 'logo-input' : 'product-input').click();
+});
+document.addEventListener('click', (event) => {
+  if (!$('attach-menu').hidden && !event.target.closest('.attach')) closeAttachMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!$('attach-menu').hidden) { closeAttachMenu(); $('attach-button').focus(); }
+  if ($('view-studio').classList.contains('history-open')) closeHistory();
+});
+
+/** Small thumbnails above the message box: what goes with every brief. */
+function renderComposerAttachments() {
+  const strip = $('composer-attachments');
+  if (!strip) return;
+  const items = [];
+  if (brandKit.logo) {
+    const src = brandKit.logo.kind === 'svg' ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(brandKit.logo.svg)}` : brandKit.logo.dataUri;
+    items.push({ src, label: 'Logo', name: brandKit.logo.name, remove: async () => {
+      const path = brandKit.logo?.path;
+      brandKit.logo = null;
+      await saveBrandKit();
+      if (cloud && path) cloud.removeObject('brand-assets', path).catch(() => {});
+    } });
+  }
+  brandKit.products.forEach((product, index) => items.push({ src: product.dataUri, label: `Product ${index + 1}`, name: product.name, remove: async () => {
+    brandKit.products = brandKit.products.filter((item) => item.id !== product.id);
+    await saveBrandKit();
+    if (cloud && product.path) cloud.removeObject('brand-assets', product.path).catch(() => {});
+  } }));
+  strip.hidden = items.length === 0;
+  strip.replaceChildren(...items.map((item) => {
+    const remove = h('button', { class: 'attachment-remove', type: 'button', 'aria-label': `Remove ${item.label.toLowerCase()}`, text: '×' });
+    remove.addEventListener('click', item.remove);
+    return h('span', { class: 'attachment', title: item.name || item.label },
+      h('img', { src: item.src, alt: item.name || item.label }),
+      h('span', { class: 'attachment-label', text: item.label }),
+      remove);
+  }));
+}
 
 // ------------------------------------------------------------------ sign-in (Supabase)
 
