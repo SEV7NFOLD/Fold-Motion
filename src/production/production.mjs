@@ -2,9 +2,9 @@ import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
-import { expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
-import { normalizeLogoMeta } from './brand-assets.mjs';
+import { normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 
 export { durationFromBrief };
 
@@ -50,6 +50,13 @@ function isRenderableElement(element, context) {
       && element.y >= 0
       && element.x <= context.width
       && element.y <= context.height;
+  }
+  if (element.type === 'image') {
+    return Number.isInteger(element.product) && element.product >= 1
+      && [element.x, element.y, element.width, element.height].every(Number.isFinite)
+      && element.width > 0 && element.height > 0
+      && element.x >= -0.5 && element.y >= -0.5
+      && element.x + element.width <= context.width + 0.5 && element.y + element.height <= context.height + 0.5;
   }
   if (element.type === 'logo') {
     return (element.kind === 'svg' || element.kind === 'png')
@@ -107,6 +114,9 @@ export function normalizeProductionContext(context = {}) {
   const logo = normalizeLogoMeta(normalized.logo);
   if (logo) normalized.logo = logo;
   else delete normalized.logo;
+  const products = normalizeProductsMeta(normalized.products);
+  if (products) normalized.products = products;
+  else delete normalized.products;
   return normalized;
 }
 
@@ -339,7 +349,7 @@ function makeShotSpec(storyboardShot, index, context, seed = '', count = 1) {
     durationInSeconds: storyboardShot.durationSeconds,
     promptSource: storyboardShot.purpose,
     motion: fallbackMotion(seed, index),
-    ...fallbackDirection(seed, index, count, storyboardShot.onScreenCopy),
+    ...fallbackDirection(seed, index, count, storyboardShot.onScreenCopy, context.products?.length || 0),
     elements: [],
   };
 }
@@ -371,7 +381,7 @@ function isLegacyScene(raw) {
 function directedShotSpec(raw, shot, index, count, context, seed) {
   const label = shot.id;
   const repairs = [];
-  const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed, hasLogo: Boolean(context.logo) });
+  const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed, hasLogo: Boolean(context.logo), productCount: context.products?.length || 0 });
   repairs.push(...changes.map((change) => `${label}: ${change}.`));
   let motion;
   if (raw?.motion === undefined) {
@@ -416,9 +426,10 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
         ? normalizedContext.subheadline : (sourceSpec.supportExact || '');
       const recipe = support && !RECIPES_WITH_SUPPORT.includes(sourceSpec.recipe) ? 'lockup' : sourceSpec.recipe;
       const expanded = { ...sourceSpec, recipe, durationInSeconds: shot.durationSeconds };
+      const productOrdinal = shotSpecs.slice(0, index).filter((spec) => spec?.recipe === 'product-hero').length;
       sourceSpec = {
         ...expanded,
-        elements: expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support }),
+        elements: expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }),
       };
     }
     const validation = validateSceneSpec(sourceSpec);
@@ -685,6 +696,16 @@ function markOutputError(error) {
   return error;
 }
 
+/** Ids of shots before the last that reuse the brief's On-Screen Text (equal or contained). */
+function earlierShotsReusing(storyboard, onScreenText) {
+  if (!onScreenText.length || !Array.isArray(storyboard?.shots)) return [];
+  const norm = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const lines = onScreenText.flatMap((line) => line.split(/(?<=[.!?])\s+/)).map(norm).filter((line) => line.length >= 3);
+  return storyboard.shots.slice(0, -1)
+    .filter((shot) => { const copy = norm(shot.onScreenCopy); return copy && lines.some((line) => copy === line || copy.includes(line) || line.includes(copy)); })
+    .map((shot) => shot.id);
+}
+
 /**
  * Drops middle shots whose line repeats another shot's, sharing their time between
  * the shots on either side. The first and last shots (headline and subheadline) always stay,
@@ -696,9 +717,15 @@ function removeRepeatedLines(storyboard) {
   const removed = [];
   const kept = [];
   shots.forEach((shot, index) => {
-    const isEdge = index === 0 || index === shots.length - 1;
+    // The last shot always stays; the first stays unless it repeats the end card.
+    const isEdge = index === shots.length - 1 || (index === 0 && key(shot) !== key(shots.at(-1)));
     const repeats = kept.some((other) => key(other) === key(shot)) || key(shot) === key(shots.at(-1));
     if (!isEdge && repeats && shots.length - removed.length > 2) {
+      if (index === 0) {
+        removed.push(shot);
+        shots[1].durationSeconds += shot.durationSeconds;
+        return;
+      }
       // Its time is shared between the shots on either side, keeping the pacing even.
       removed.push(shot);
       kept.at(-1).durationSeconds += shot.durationSeconds / 2;
@@ -711,18 +738,74 @@ function removeRepeatedLines(storyboard) {
   return removed;
 }
 
+/**
+ * Fits shots into timecoded beats: each beat is a section holding one or more
+ * consecutive shots. The cut nearest each beat boundary moves onto it, then each
+ * section's shots are scaled to fill it exactly, in whole frames (each shot at
+ * least half a second).
+ */
+function fitShotsToBeats(storyboard, beats, fps) {
+  const shots = storyboard.shots;
+  const total = shots.reduce((sum, shot) => sum + shot.durationSeconds, 0);
+  const target = beats.reduce((sum, seconds) => sum + seconds, 0);
+  const cuts = [];
+  let elapsed = 0;
+  for (const shot of shots.slice(0, -1)) { elapsed += (shot.durationSeconds / total) * target; cuts.push(elapsed); }
+  // Choose which cut ends each beat (in order, leaving at least one shot per beat).
+  const ends = [];
+  let boundary = 0;
+  let from = 0;
+  for (let beat = 0; beat < beats.length - 1; beat += 1) {
+    boundary += beats[beat];
+    const last = cuts.length - (beats.length - 2 - beat) - 1;
+    let best = from;
+    for (let index = from; index <= last; index += 1) {
+      if (Math.abs(cuts[index] - boundary) < Math.abs(cuts[best] - boundary)) best = index;
+    }
+    ends.push(best);
+    from = best + 1;
+  }
+  const minimum = Math.round(fps / 2);
+  let start = 0;
+  beats.forEach((seconds, beat) => {
+    const end = beat < beats.length - 1 ? ends[beat] : shots.length - 1;
+    const section = shots.slice(start, end + 1);
+    const sectionTotal = section.reduce((sum, shot) => sum + shot.durationSeconds, 0);
+    const targetFrames = Math.round(seconds * fps);
+    const frames = section.map((shot) => Math.max(minimum, Math.round((shot.durationSeconds / sectionTotal) * targetFrames)));
+    frames[frames.length - 1] += targetFrames - frames.reduce((sum, value) => sum + value, 0);
+    section.forEach((shot, index) => { shot.durationSeconds = Math.max(minimum, frames[index]) / fps; });
+    start = end + 1;
+  });
+}
+
 export async function createCreativePlan(prompt, context = {}, provider = null) {
   // A length in the brief wins over the default, unless the caller set one explicitly.
   const briefSeconds = context.durationInSeconds === undefined ? durationFromBrief(prompt) : undefined;
   const normalizedContext = normalizeProductionContext(briefSeconds ? { ...context, durationInSeconds: briefSeconds } : context);
-  const generatedStoryboard = provider?.generateStoryboard
+  const onScreenText = provider && !normalizedContext.headline && !normalizedContext.subheadline ? onScreenTextFromBrief(prompt) : [];
+  let generatedStoryboard = provider?.generateStoryboard
     ? await provider.generateStoryboard(prompt, normalizedContext)
     : buildMockStoryboard(prompt, normalizedContext);
+  // The end card's text belongs on the end card. If the model reused it earlier in
+  // the film, it gets one rewrite with a note saying exactly what to change.
+  let rewriteNote = '';
+  const reused = earlierShotsReusing(generatedStoryboard, onScreenText);
+  if (reused.length && provider?.generateStoryboard) {
+    const note = `Revision: shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`;
+    try {
+      generatedStoryboard = await provider.generateStoryboard(`${prompt}\n\n${note}`, normalizedContext);
+      rewriteNote = `Earlier shots reused the end card's text, so the storyboard was rewritten once.`;
+    } catch {
+      // Keep the first storyboard; repeated lines are still removed below.
+    }
+  }
   let repairs = [];
   let storyboard = generatedStoryboard && Array.isArray(generatedStoryboard.shots)
     ? { ...generatedStoryboard, shots: generatedStoryboard.shots.map((shot) => ({ ...shot })) }
     : generatedStoryboard;
   if (provider) ({ storyboard, repairs } = repairStoryboard(storyboard, normalizedContext));
+  if (rewriteNote) repairs.unshift(rewriteNote);
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
     if (normalizedContext.subheadline && storyboard.shots.length > 1) {
@@ -730,7 +813,7 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     }
     // A brief's On-Screen Text is the end card, exactly: its first line on the final
     // shot and the rest as that shot's kicker (when no copy fields are set).
-    const onScreen = provider && !normalizedContext.headline && !normalizedContext.subheadline ? onScreenTextFromBrief(prompt) : [];
+    const onScreen = onScreenText;
     if (onScreen.length) {
       const last = storyboard.shots.at(-1);
       const rest = onScreen.slice(1).join(' ').trim();
@@ -760,12 +843,9 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   // Beats written as timecodes ("0:00 - 0:03 ... 0:07 - 0:10") set each shot's length
   // exactly, when they match the shots one to one.
   const beats = briefSeconds !== undefined && context.durationInSeconds === undefined ? beatsFromBrief(prompt) : undefined;
-  if (beats && beats.beats.length === storyboard.shots.length && Math.abs(beats.total - normalizedContext.durationInSeconds) < 0.05) {
-    const fps = normalizedContext.fps;
-    const frames = beats.beats.map((seconds) => Math.max(fps, Math.round(seconds * fps)));
-    frames[frames.length - 1] += Math.round(beats.total * fps) - frames.reduce((sum, value) => sum + value, 0);
-    storyboard.shots.forEach((shot, index) => { shot.durationSeconds = frames[index] / fps; });
-    if (provider) repairs.push(`Shot durations follow the brief's beats: ${storyboard.shots.map((shot) => `${Number(shot.durationSeconds.toFixed(2))}s`).join(', ')}.`);
+  if (beats && storyboard.shots.length >= beats.beats.length && Math.abs(beats.total - normalizedContext.durationInSeconds) < 0.05) {
+    fitShotsToBeats(storyboard, beats.beats, normalizedContext.fps);
+    if (provider) repairs.push(`Cuts land on the brief's beats (${beats.beats.map((seconds) => `${Number(seconds.toFixed(2))}s`).join(', ')}): ${storyboard.shots.map((shot) => `${Number(shot.durationSeconds.toFixed(2))}s`).join(', ')}.`);
   }
   return {
     storyboard,
@@ -775,6 +855,34 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   };
 }
 
+/**
+ * Makes sure a film uses FOLD Motion's signature moves when the direction left
+ * them out: one emphasis word on the hero line, and The Fold once in films of
+ * three or more shots. Returns what it changed.
+ */
+function strengthenDirection(specs, storyboard) {
+  const changes = [];
+  const v2 = specs.filter((spec) => spec?.version === 2);
+  if (v2.length !== specs.length || specs.length === 0) return changes;
+  if (!specs.some((spec) => spec.emphasis)) {
+    const index = specs.findIndex((spec, i) => ['title-reveal', 'statement', 'kicker-title', 'type-stack', 'type-window', 'product-hero'].includes(spec.recipe)
+      && storyboard.shots[i].onScreenCopy.trim().split(/\s+/).length >= 2);
+    if (index >= 0) {
+      const word = storyboard.shots[index].onScreenCopy.split(/\s+/).map((w) => w.replace(/[^\p{L}\p{N}'-]/gu, '')).filter((w) => w.length >= 3)
+        .reduce((best, w) => (w.length > best.length ? w : best), '');
+      if (word) {
+        specs[index].emphasis = word;
+        changes.push(`${storyboard.shots[index].id}: emphasized "${word}" on the hero line.`);
+      }
+    }
+  }
+  if (specs.length >= 3 && !specs.some((spec) => spec.transitionOut === 'fold')) {
+    specs[0].transitionOut = 'fold';
+    changes.push(`${storyboard.shots[0].id}: The Fold carries the film out of its opening shot.`);
+  }
+  return changes;
+}
+
 export async function compileCreativePlan(storyboard, context = {}, provider = null) {
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
@@ -782,6 +890,8 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
     const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed, storyboard.shots.length));
+    ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
+    strengthenDirection(shotSpecs, storyboard);
     return { timeline: buildTimeline(storyboard, shotSpecs, normalizedContext), provider: 'mock-provider' };
   }
 
@@ -803,6 +913,8 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     return result.spec;
   });
   repairs.push(...limitFolds(shotSpecs, storyboard.shots.map((shot) => shot.id)));
+  repairs.push(...ensureProductShot(shotSpecs, normalizedContext.products?.length || 0, storyboard.shots.map((shot) => shot.id)));
+  repairs.push(...strengthenDirection(shotSpecs, storyboard));
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };

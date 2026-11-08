@@ -64,6 +64,8 @@ function renderText(element, t, ctx) {
 
   let wordIndex = 0;
   let letterIndex = 0;
+  const windowGlyphs = [];
+  const windowOutlines = [];
   element.lines.forEach((line, lineIndex) => {
     const size = sizes[lineIndex];
     const baseline = baselines[lineIndex];
@@ -94,6 +96,38 @@ function renderText(element, t, ctx) {
           out.push(text);
         }
       });
+    } else if (reveal.style === 'window') {
+      // Each letter is a window onto the graded product photo, landing in turn.
+      const product = ctx.brand?.products?.[element.window.product - 1];
+      if (!product?.graded) {
+        throw new Error('This film shows a product photo, but no product photo came with the render request. Add it again and re-render.');
+      }
+      const top = baselines[0] - capHeight(element.font, sizes[0]) - sizes[0] * 0.12;
+      const bottom = baselines.at(-1) + sizes.at(-1) * 0.08;
+      const underId = `${element.id}-under`;
+      if (lineIndex === 0) defs.push(`<linearGradient id="${underId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${element.window.under[0]}"/><stop offset="1" stop-color="${element.window.under[1]}"/></linearGradient>`);
+      for (const { character, x } of layoutCharacters(element.font, line, size, tracking, x0)) {
+        if (character === ' ') continue;
+        const begin = reveal.start + letterIndex * reveal.stagger;
+        letterIndex += 1;
+        const p = ease.outExpo(span(t, begin, begin + reveal.duration));
+        if (p <= 0) continue;
+        const y = baseline + (1 - p) * size * 0.22;
+        const scale = lerp(1.18, 1, p);
+        const cx = x + measure(element.font, character, size) / 2;
+        const move = `transform="translate(${f(cx)} ${f(baseline - cap / 2)}) scale(${scale.toFixed(5)}) translate(${f(-cx)} ${f(-(baseline - cap / 2))})"`;
+        // One mask holds every letter (each with its own landing and fade), so the
+        // photo is drawn once per frame, not once per letter.
+        windowGlyphs.push(`<text x="${f(x)}" y="${f(y)}" ${fontAttrs(element.font, size)} fill="#FFFFFF" fill-opacity="${f(clamp(p * 1.4))}" ${move}>${esc(character)}</text>`);
+        windowOutlines.push(`<text x="${f(x)}" y="${f(y)}" ${fontAttrs(element.font, size)} fill="none" stroke="${element.window.outline}" stroke-width="${f(Math.max(1.2, size * 0.006))}" opacity="${f(0.6 * clamp(p * 1.4))}" ${move}>${esc(character)}</text>`);
+      }
+      if (lineIndex === element.lines.length - 1 && windowGlyphs.length) {
+        const drift = lerp(-0.04, 0.04, ease.inOutSine(clamp(t / ctx.duration))) * (bottom - top);
+        defs.push(`<mask id="${element.id}-letters">${windowGlyphs.join('')}</mask>`);
+        out.push(`<g mask="url(#${element.id}-letters)"><rect x="${f(minX - size * 0.1)}" y="${f(top)}" width="${f(maxX - minX + size * 0.2)}" height="${f(bottom - top)}" fill="url(#${underId})"/>`
+          + `<image href="${product.graded}" x="${f(minX - size * 0.2)}" y="${f(top - (bottom - top) * 0.1 + drift)}" width="${f(maxX - minX + size * 0.4)}" height="${f((bottom - top) * 1.2)}" preserveAspectRatio="xMidYMid slice"/></g>`
+          + windowOutlines.join(''));
+      }
     } else if (reveal.style === 'cascade' || reveal.style === 'type-on') {
       const characters = layoutCharacters(element.font, line, size, tracking, x0);
       let localWord = wordIndex;
@@ -149,6 +183,58 @@ function renderLine(element, t) {
   return `<rect x="${f(x)}" y="${f(element.y - element.height / 2)}" width="${f(width)}" height="${f(element.height)}" fill="${element.fill}" opacity="0.85"/>`;
 }
 
+
+
+// ---------------------------------------------------------------- product photos
+
+/**
+ * A product photo panel: graded into the palette (before rendering), feathered on
+ * all four sides, emerging with a settle and a slow push, with a pass of light.
+ */
+function renderProduct(element, t, brand, duration) {
+  const product = brand.products?.[element.product - 1];
+  if (!product?.graded) {
+    throw new Error('This film shows a product photo, but no product photo came with the render request. Add it again and re-render.');
+  }
+  const defs = [];
+  const { x, y, width, height, feather, reveal, glint } = element;
+  const p = ease.outCubic(span(t, reveal.start, reveal.start + reveal.duration));
+  if (p <= 0) return { defs, body: '' };
+  const prefix = `${element.id}-`;
+  const stop = (offset, opacity) => `<stop offset="${f(offset)}" stop-color="#FFFFFF" stop-opacity="${opacity}"/>`;
+  defs.push(`<linearGradient id="${prefix}fx" gradientUnits="userSpaceOnUse" x1="${f(x)}" y1="0" x2="${f(x + width)}" y2="0">${stop(0, 0)}${stop(feather.left, 1)}${stop(1 - feather.right, 1)}${stop(1, 0)}</linearGradient>`);
+  defs.push(`<linearGradient id="${prefix}fy" gradientUnits="userSpaceOnUse" x1="0" y1="${f(y)}" x2="0" y2="${f(y + height)}">${stop(0, 0)}${stop(feather.top, 1)}${stop(1 - feather.bottom, 1)}${stop(1, 0)}</linearGradient>`);
+  defs.push(`<mask id="${prefix}mx"><rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#${prefix}fx)"/></mask>`);
+  defs.push(`<mask id="${prefix}my"><rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#${prefix}fy)"/></mask>`);
+  const scale = lerp(1.08, 1, p) * (1 + (element.push || 0) * ease.inOutSine(clamp(t / duration)));
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const baked = brand.panels?.[element.id];
+  if (baked) {
+    // Feathering baked into a transparent image once per render: one plain image per frame.
+    const g = glint ? span(t, glint.start, glint.start + glint.duration) : 0;
+    const move = `transform="translate(${f(cx)} ${f(cy)}) scale(${scale.toFixed(5)}) translate(${f(-cx)} ${f(-cy)})"`;
+    let lightLayer = '';
+    if (g > 0 && g < 1) {
+      const center = lerp(x - width * 0.4, x + width * 1.4, g);
+      defs.push(`<linearGradient id="${prefix}light" gradientUnits="userSpaceOnUse" x1="${f(center - width * 0.18)}" y1="${f(y)}" x2="${f(center + width * 0.18)}" y2="${f(y + height * 0.35)}"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`);
+      defs.push(`<mask id="${prefix}lightmask" mask-type="alpha"><image href="${baked}" x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}"/></mask>`);
+      lightLayer = `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#${prefix}light)" mask="url(#${prefix}lightmask)" opacity="${f(Math.sin(Math.PI * g) * 0.22)}"/>`;
+    }
+    return { defs, body: `<g opacity="${f(p)}" ${move}><image href="${baked}" x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}"/>${lightLayer}</g>` };
+  }
+  let light = '';
+  const g = glint ? span(t, glint.start, glint.start + glint.duration) : 0;
+  if (g > 0 && g < 1) {
+    const center = lerp(x - width * 0.4, x + width * 1.4, g);
+    defs.push(`<linearGradient id="${prefix}light" gradientUnits="userSpaceOnUse" x1="${f(center - width * 0.18)}" y1="${f(y)}" x2="${f(center + width * 0.18)}" y2="${f(y + height * 0.35)}"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`);
+    light = `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#${prefix}light)" opacity="${f(Math.sin(Math.PI * g) * 0.22)}"/>`;
+  }
+  return {
+    defs,
+    body: `<g mask="url(#${prefix}mx)"><g mask="url(#${prefix}my)"><g opacity="${f(p)}" transform="translate(${f(cx)} ${f(cy)}) scale(${scale.toFixed(5)}) translate(${f(-cx)} ${f(-cy)})"><image href="${product.graded}" x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" preserveAspectRatio="xMidYMid slice"/>${light}</g></g></g>`,
+  };
+}
 
 // ---------------------------------------------------------------- logo
 
@@ -406,7 +492,7 @@ function shotLayers(timeline, index, t, extraScale = 1, brand = {}) {
   const primary = shot.palette?.primary || shot.spec.elements[0]?.fill || '#0E0E11';
   const accent = shot.palette?.accent || '#7C3AED';
   const settled = timeline.shots[index - 1]?.spec?.transitionOut === 'fold';
-  const ctx = { width: W, height: H, primary, accent, prefix: `s${index}`, settled };
+  const ctx = { width: W, height: H, primary, accent, prefix: `s${index}`, settled, brand, duration };
   const { motion } = normalizeMotion(shot.spec.motion);
   const defs = [];
   const background = shot.spec.elements.find((element) => element.type === 'rect' && element.x === 0 && element.y === 0 && element.width === W && element.height === H);
@@ -425,6 +511,10 @@ function shotLayers(timeline, index, t, extraScale = 1, brand = {}) {
       layers.push(rendered.body);
     } else if (element.type === 'line') {
       layers.push(renderLine(element, t));
+    } else if (element.type === 'image') {
+      const rendered = renderProduct(element, t, brand, duration);
+      defs.push(...rendered.defs);
+      layers.push(rendered.body);
     } else if (element.type === 'logo') {
       const rendered = renderLogo(element, t, brand.logo, ctx);
       defs.push(...rendered.defs);

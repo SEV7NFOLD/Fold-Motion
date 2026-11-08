@@ -31,8 +31,9 @@ ${list(MOTION_DESCRIPTIONS.camera)}
 How to direct:
 - Open strong: "title-reveal" or "kicker-title" for the first shot. Use "type-stack" for a punchy line of two to four words.
 - Vary recipes so consecutive shots are staged differently, and end on "lockup" when there is a brand or product name to sign off with.
+- When product photos are uploaded, the product is the star: give it a "product-hero" early, and a "type-window" when a one- or two-word line (often the product's name) can carry it.
 - Kickers add a specific fact the line doesn't say: who presents it, the product's name or category, a date, a place or a call to action, taken from the brief or the storyboard. A generic label that could caption any film doesn't earn a place, and neither does anything not in the brief. Leave the kicker empty rather than fill it.
-- Emphasis is the one word that carries the idea, copied exactly from the line. Never emphasize most of the line.
+- Emphasis is the one word that carries the idea, copied exactly from the line. Give the hero line an emphasis word; never emphasize most of a line.
 - Never repeat in the kicker anything the line already says, even in part.
 - Use transitions for rhythm: "wipe" for energy, "fade" for calm, "push" for momentum, "cut" for punch. Don't use the same one every time.
 - "fold" is FOLD Motion's signature. Use it once, or twice at most, on the film's most important change of scene, such as the move from the opening into the hero line or the product. Never use it on every cut.

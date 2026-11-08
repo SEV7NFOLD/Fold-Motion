@@ -9,6 +9,7 @@
 import { sanitizeSvg } from '../../public/svg-sanitize.mjs';
 
 export const LOGO_LIMITS = Object.freeze({ maxPngBytes: 1_500_000, maxDimension: 10_000 });
+export const PRODUCT_LIMITS = Object.freeze({ maxBytes: 3_000_000, count: 3 });
 
 /** Logo metadata from a planning context: { kind, width, height } or undefined. */
 export function normalizeLogoMeta(logo) {
@@ -18,6 +19,46 @@ export function normalizeLogoMeta(logo) {
   const height = Number(logo.height);
   const valid = (value) => Number.isFinite(value) && value > 0 && value <= LOGO_LIMITS.maxDimension;
   return kind && valid(width) && valid(height) ? { kind, width, height } : undefined;
+}
+
+/** Width and height from a JPEG's start-of-frame marker. */
+function jpegDimensions(buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return undefined;
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) { offset += 1; continue; }
+    const marker = buffer[offset + 1];
+    const length = buffer.readUInt16BE(offset + 2);
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  return undefined;
+}
+
+/** Product photo metadata from a planning context: [{ width, height }], at most three. */
+export function normalizeProductsMeta(products) {
+  if (!Array.isArray(products)) return undefined;
+  const valid = (value) => Number.isFinite(value) && value > 0 && value <= LOGO_LIMITS.maxDimension;
+  const list = products.slice(0, PRODUCT_LIMITS.count)
+    .map((item) => ({ width: Number(item?.width), height: Number(item?.height) }))
+    .filter((item) => valid(item.width) && valid(item.height));
+  return list.length ? list : undefined;
+}
+
+/** Turns product photos from a render request ({ dataUri }) into checked images. */
+export function resolveProducts(list) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  return list.slice(0, PRODUCT_LIMITS.count).map((item, index) => {
+    const match = /^data:image\/(jpeg|png);base64,/.exec(item?.dataUri || '');
+    if (!match) throw new Error(`Product photo ${index + 1} must be a JPEG or PNG image.`);
+    const buffer = Buffer.from(item.dataUri.slice(match[0].length), 'base64');
+    if (buffer.length > PRODUCT_LIMITS.maxBytes) throw new Error(`Product photo ${index + 1} is larger than ${PRODUCT_LIMITS.maxBytes / 1_000_000} MB.`);
+    const size = match[1] === 'png' ? pngDimensions(buffer) : jpegDimensions(buffer);
+    if (!size?.width || !size?.height) throw new Error(`Product photo ${index + 1} could not be read.`);
+    return { dataUri: item.dataUri, width: size.width, height: size.height };
+  });
 }
 
 function pngDimensions(buffer) {
@@ -53,7 +94,7 @@ export function resolveLogo(asset) {
   throw new Error('The logo must be an SVG or a PNG.');
 }
 
-/** Resolves every brand asset in a render request ({ logo }). */
+/** Resolves every brand asset in a render request ({ logo, products }). */
 export function resolveBrandAssets(assets = {}) {
-  return { logo: resolveLogo(assets?.logo) };
+  return { logo: resolveLogo(assets?.logo), products: resolveProducts(assets?.products) };
 }

@@ -87,7 +87,7 @@ test('OpenRouter retries without response_format and uses the 35-second timeout'
     assert.deepEqual(timeoutValues, [35_000, 35_000]);
     assert.match(requests[0].body.messages[0].content, /3 to 25 characters/);
     assert.match(requests[0].body.messages[0].content, /5 to 40 characters/);
-    assert.match(requests[0].body.messages[0].content, /exactly 2 to 4 shots/);
+    assert.match(requests[0].body.messages[0].content, /4 to 8 shots/);
   } finally {
     AbortSignal.timeout = originalTimeout;
   }

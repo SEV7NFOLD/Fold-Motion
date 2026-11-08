@@ -133,6 +133,10 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    context.products?.length
+      ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.`
+      : '- No product photos are uploaded: don\'t use "product-hero" or "type-window".',
+    context.logo ? '- A logo is uploaded: the end card carries it, and "logo-reveal" can open or close the film.' : '- No logo is uploaded: don\'t use "logo-reveal".',
     `- Do not output elements, coordinates or sizes: the engine lays out the copy itself on a ${width} × ${height} canvas.`,
   ].join('\n');
 }
@@ -224,7 +228,7 @@ const OPENAI_COMPATIBLE_SYSTEM_PROMPT = [
   'Return only valid raw JSON matching the requested schema. Use only schema-defined keys.',
   'Every headline must contain 3 to 25 characters, inclusive.',
   'Every subheadline must contain 5 to 40 characters, inclusive.',
-  'Include exactly 2 to 4 shots in every storyboard.',
+  'Include 4 to 8 shots in every storyboard (3 for films under 6 seconds).',
   'Do not include markdown, conversational preambles, safety tags, or text outside the JSON value.',
   'Preserve explicit user-provided copy and constraints exactly.',
 ].join('\n');
@@ -271,7 +275,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
       'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
-      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, beam and sweep.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -473,7 +477,7 @@ export class GeminiAIProvider extends BaseAIProvider {
       [
         'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         STORYBOARD_DIRECTOR,
-        'Include 2 to 4 purposeful shots. Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
+        'Include 4 to 8 purposeful shots (3 for films under 6 seconds). Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         `Creative brief:\n${prompt}`,
@@ -503,6 +507,7 @@ export class GeminiAIProvider extends BaseAIProvider {
           required: ['camera', 'atmosphere'],
         },
         transitionOut: { type: 'STRING', enum: [...TRANSITION_OPTIONS] },
+        product: { type: 'INTEGER' },
         beam: { type: 'BOOLEAN' },
         sweep: { type: 'BOOLEAN' },
       },

@@ -2,6 +2,7 @@ import { PROJECT_STATES } from './workflow-states.mjs';
 import { durationFromBrief } from './brief-length.mjs';
 import { sanitizeSvg, serializeSvgTree } from './svg-sanitize.mjs';
 import { createSupabaseClient } from './supabase-client.mjs';
+import { analyzeLogoPixels, removePlainBackground } from './logo-check.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -92,7 +93,7 @@ const MOTION_LABELS = {
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
-const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal' };
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window' };
 const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
@@ -611,6 +612,44 @@ async function rasterToDataUri(file, maxSide, type, quality) {
   }
 }
 
+
+/**
+ * A raster logo, resized, with a plain background removed. A photo background
+ * can't be removed reliably, so it's kept with a warning: it will show as a box.
+ */
+async function prepareRasterLogo(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('That image couldn’t be opened.'));
+      img.src = url;
+    });
+    const scale = Math.min(1, 1000 / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(image, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height);
+    const check = analyzeLogoPixels(pixels.data, width, height);
+    let notice = '';
+    if (!check.transparent && check.uniformEdges) {
+      const cleared = removePlainBackground(pixels.data, width, height, { edgeColor: check.edgeColor });
+      context.putImageData(pixels, 0, 0);
+      notice = cleared > 0.05 ? 'Removed the plain background from your logo. If it looks wrong, upload an SVG or a PNG with a transparent background.' : '';
+    } else if (!check.transparent) {
+      notice = 'This logo has a photo background, so it will show as a box in films. For the best result, upload an SVG or a PNG with a transparent background.';
+    }
+    return { dataUri: canvas.toDataURL('image/png'), width, height, notice };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 const dataUriBytes = (uri) => Math.round((uri.length - uri.indexOf(',') - 1) * 0.75);
 
 async function uploadLogo(file) {
@@ -623,9 +662,10 @@ async function uploadLogo(file) {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${result.viewBox.join(' ')}">${serializeSvgTree(result.tree)}</svg>`;
       brandKit.logo = { kind: 'svg', name: file.name, svg, width: result.width, height: result.height };
     } else {
-      const { dataUri, width, height } = await rasterToDataUri(file, 1000, 'image/png');
+      const { dataUri, width, height, notice } = await prepareRasterLogo(file);
       if (dataUriBytes(dataUri) > BRAND_LIMITS.logoPngBytes) throw new Error('That logo is too large. Try a smaller PNG or an SVG.');
       brandKit.logo = { kind: 'png', name: file.name, dataUri, width, height };
+      if (notice) showAssetError(notice);
     }
     await saveBrandKit();
   } catch (error) {
@@ -687,14 +727,23 @@ function renderBrandTray() {
 /** Planning requests carry logo metadata only (so recipes can lay it out). */
 function withBrand(context) {
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
-  return { ...context, ...(logo ? { logo } : { logo: undefined }) };
+  const products = brandKit.products.length ? brandKit.products.map((product) => ({ width: product.width, height: product.height })) : undefined;
+  return { ...context, logo, products };
 }
 
 /** Render requests carry the logo itself. */
 function brandAssets() {
-  if (!brandKit.logo) return undefined;
-  if (cloud && brandKit.logo.path) return { logo: { kind: brandKit.logo.kind, path: brandKit.logo.path } };
-  return { logo: brandKit.logo.kind === 'svg' ? { kind: 'svg', svg: brandKit.logo.svg } : { kind: 'png', dataUri: brandKit.logo.dataUri } };
+  if (!brandKit.logo && brandKit.products.length === 0) return undefined;
+  const assets = {};
+  if (brandKit.logo) {
+    assets.logo = cloud && brandKit.logo.path
+      ? { kind: brandKit.logo.kind, path: brandKit.logo.path }
+      : brandKit.logo.kind === 'svg' ? { kind: 'svg', svg: brandKit.logo.svg } : { kind: 'png', dataUri: brandKit.logo.dataUri };
+  }
+  if (brandKit.products.length) {
+    assets.products = brandKit.products.map((product) => (cloud && product.path ? { path: product.path } : { dataUri: product.dataUri }));
+  }
+  return assets;
 }
 
 function writeStoryboard(record) {
@@ -1055,6 +1104,10 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
     } else if (element.type === 'logo') {
       stage.append(logoPreview(element, primary));
+    } else if (element.type === 'image') {
+      const product = brandKit.products[element.product - 1];
+      if (product) stage.append(svgEl('image', { href: product.dataUri, x: element.x, y: element.y, width: element.width, height: element.height, preserveAspectRatio: 'xMidYMid slice', opacity: 0.9 }));
+      else stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill: 'none', stroke: '#9D86F0', 'stroke-dasharray': '6 6' }));
     } else if (element.type === 'line') {
       const x = element.reveal?.from === 'left' ? element.x : element.x - element.width / 2;
       stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
@@ -1062,6 +1115,16 @@ function specToSvg(spec, label, palette = {}) {
       // v2 text: the recipe already measured and wrapped it; draw its final state.
       const [family, weight] = PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
       const emphasis = new Set(element.emphasis?.words ?? []);
+      // Type windows: the letters are filled with the product photo.
+      const windowProduct = element.window ? brandKit.products[element.window.product - 1] : null;
+      let windowFill = null;
+      if (windowProduct) {
+        const patternId = `${element.id}-photo-${Math.random().toString(36).slice(2, 7)}`;
+        const pattern = svgEl('pattern', { id: patternId, patternUnits: 'userSpaceOnUse', x: 0, y: element.y - element.fontSize, width, height: element.fontSize * 1.3 });
+        pattern.append(svgEl('image', { href: windowProduct.dataUri, x: 0, y: 0, width, height: element.fontSize * 1.3, preserveAspectRatio: 'xMidYMid slice' }));
+        defs.append(pattern);
+        windowFill = `url(#${patternId})`;
+      }
       let wordIndex = 0;
       let baseline = element.y;
       element.lines.forEach((line, index) => {
@@ -1071,7 +1134,8 @@ function specToSvg(spec, label, palette = {}) {
           x: element.x,
           y: baseline,
           'text-anchor': element.anchor === 'start' ? 'start' : element.anchor === 'end' ? 'end' : 'middle',
-          fill,
+          fill: windowFill || fill,
+          ...(windowFill ? { stroke: element.window.outline, 'stroke-width': Math.max(1.2, size * 0.006) } : {}),
           'font-family': family,
           'font-weight': weight,
           'font-size': size,
@@ -1637,7 +1701,7 @@ function syncComposer() {
     : 'Add headline and colors';
   $('details-note').textContent = record.briefs.length && state !== 'BRIEF'
     ? 'Changes here apply to the next storyboard you ask for.'
-    : 'Exact copy, brand colors and logo. The AI can’t change these. Product photos appear in films from the next update.';
+    : 'Exact copy, brand colors, logo and product photos. The AI can’t change these.';
 }
 
 function fillDetails(record) {

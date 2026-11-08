@@ -131,12 +131,24 @@ export async function insertRow(config, table, row, fetchImpl = fetch) {
  * checks ({ kind: 'svg', svg } or { kind: 'png', dataUri }).
  */
 export async function loadStoredAssets(config, user, assets, fetchImpl = fetch) {
-  if (!assets?.logo?.path) return assets;
-  const { kind, path } = assets.logo;
-  if (!ownsPath(user, path)) throw new Error('That logo belongs to another account.');
-  const buffer = await downloadObject(config, BRAND_BUCKET, path, fetchImpl);
-  const logo = kind === 'svg' ? { kind: 'svg', svg: buffer.toString('utf8') } : { kind: 'png', dataUri: `data:image/png;base64,${buffer.toString('base64')}` };
-  return { ...assets, logo };
+  if (!assets) return assets;
+  let { logo, products } = assets;
+  if (logo?.path) {
+    const { kind, path } = logo;
+    if (!ownsPath(user, path)) throw new Error('That logo belongs to another account.');
+    const buffer = await downloadObject(config, BRAND_BUCKET, path, fetchImpl);
+    logo = kind === 'svg' ? { kind: 'svg', svg: buffer.toString('utf8') } : { kind: 'png', dataUri: `data:image/png;base64,${buffer.toString('base64')}` };
+  }
+  if (Array.isArray(products)) {
+    products = await Promise.all(products.map(async (product) => {
+      if (!product?.path) return product;
+      if (!ownsPath(user, product.path)) throw new Error('That product photo belongs to another account.');
+      const buffer = await downloadObject(config, BRAND_BUCKET, product.path, fetchImpl);
+      const type = buffer[0] === 0x89 ? 'png' : 'jpeg';
+      return { dataUri: `data:image/${type};base64,${buffer.toString('base64')}` };
+    }));
+  }
+  return { ...assets, ...(logo ? { logo } : {}), ...(products ? { products } : {}) };
 }
 
 /**

@@ -23,6 +23,8 @@ and this file disagree about current behavior, this file and the code win.
 | `kicker-title` | Opening card: tracked kicker first, then the line rises under a beam of light |
 | `type-stack` | Two to four words stacked, each line scaled to the same width, sliding in from alternating sides |
 | `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep; the uploaded logo, if any, sits above the line |
+| `product-hero` | An uploaded product photo, graded into the palette, as a feathered panel on one side (alternating sides from one product shot to the next) with a settle, a slow push-in and a pass of light; the line rises huge in the display face beside it. Only with product photos |
+| `type-window` | Giant display letters filled with the graded product photo, landing one by one, outlined for legibility; one or two short words (longer lines become a product hero). Only with product photos |
 | `logo-reveal` | The uploaded logo as the hero: an SVG strokes itself on along each shape's measured length and fills with its own colors, a PNG wipes in; a glint crosses its exact silhouette; the line sits small beneath. Only with an uploaded logo (`normalizeDirection` swaps it out otherwise) |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
@@ -54,8 +56,15 @@ the draw-on. Scripts, event handlers, external links, embedded HTML, images,
 logo again (`src/production/brand-assets.mjs`) before rendering; PNGs are
 checked for format, size and real dimensions. Shapes with no fill of their own
 take the film's text color. The Fold's paper carries the logo debossed in one
-tint. Product photos are stored and sent nowhere yet; product shots arrive in
-Phase 3.
+tint. Product photos (up to three, JPEG or PNG, checked for size and real
+dimensions) come with the render request, or by path from the user's
+`brand-assets` folder. Once per render, `gradeProduct` maps each photo's
+luminance through the palette (shadows from the primary, muted mid-tones toward
+the accent, warm paper highlights) and `bakeProductPanels` bakes each panel's
+feathered edges into a transparent image, so frames draw one plain image. A type
+window draws the photo once per frame through a mask of all its letters. With
+product photos uploaded, `ensureProductShot` makes sure the film shows the
+product at least once.
 
 ### Accounts and storage
 
@@ -74,7 +83,7 @@ Without those variables nothing changes: the studio saves to the browser.
 
 | Area | Today | Not yet |
 | --- | --- | --- |
-| Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps, the uploaded logo (SVG or PNG). v1: `rect`, `circle`, `text` | product photos (Phase 3), video footage, 3D |
+| Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps, the uploaded logo (SVG or PNG), graded product photos and photo-filled letters. v1: `rect`, `circle`, `text` | video footage, 3D |
 | Motion | Per-shot `motion` in the scene spec: a camera move, a copy entrance and an atmosphere, from a fixed vocabulary (below) | Per-element keyframes, custom easing, orbiting or 3D camera moves |
 | Transitions | v2: `cut`, `wipe`, `fade`, `push`, `fold`. v1: hard cuts | Zoom through a letter, match cuts |
 | Format | 1280 × 720 at 24 fps by default (`context.width`, `height`, `fps`); the studio always sends the defaults | Vertical or square presets in the studio |
