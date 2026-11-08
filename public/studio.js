@@ -1,5 +1,7 @@
 import { PROJECT_STATES } from './workflow-states.mjs';
 import { durationFromBrief } from './brief-length.mjs';
+import { sanitizeSvg, serializeSvgTree } from './svg-sanitize.mjs';
+import { createSupabaseClient } from './supabase-client.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -90,7 +92,7 @@ const MOTION_LABELS = {
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
-const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card' };
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal' };
 const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
@@ -134,7 +136,24 @@ const $ = (id) => document.getElementById(id);
 const nowIso = () => new Date().toISOString();
 const clockTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 const seconds = (value) => `${Number(value).toFixed(Number.isInteger(Number(value)) ? 0 : 1)}s`;
-const safeOutputUrl = (url) => typeof url === 'string' && url.startsWith('/output/') && !url.includes('..');
+const safeOutputUrl = (url) => typeof url === 'string' && !url.includes('..') && (url.startsWith('/output/')
+  || Boolean(authInfo?.url && url.startsWith(`${authInfo.url}/storage/v1/object/sign/films/`)));
+
+// Film links from Supabase expire after a week; reopened films get a fresh one.
+const freshFilmLinks = new Map();
+async function refreshFilmLinks() {
+  if (!cloud) return;
+  for (const node of document.querySelectorAll('[data-film-path]')) {
+    const path = node.dataset.filmPath;
+    if (node.dataset.fresh === 'true') continue;
+    node.dataset.fresh = 'true';
+    try {
+      if (!freshFilmLinks.has(path)) freshFilmLinks.set(path, await cloud.signedUrl('films', path));
+      const url = freshFilmLinks.get(path);
+      if (node.tagName === 'A') node.href = url; else node.src = url;
+    } catch { /* the stored link still works until it expires */ }
+  }
+}
 const isHex = (value) => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
 
 function relativeTime(iso) {
@@ -256,7 +275,40 @@ function migrateLegacy() {
 let store = loadStore();
 let saveWarningShown = false;
 
+// Signed in with Supabase, projects live in the database: the browser keeps only a
+// small bookmark, and records that changed are uploaded a moment after the change.
+let cloud = null;
+let authInfo = null;
+const syncedJson = new Map();
+let syncTimer = null;
+
+function scheduleCloudSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncToCloud, 900);
+}
+
+async function syncToCloud() {
+  if (!cloud) return;
+  const changed = Object.values(store.records).filter((record) => record.messages.length > 0 && syncedJson.get(record.id) !== JSON.stringify(record));
+  if (changed.length === 0) return;
+  try {
+    await cloud.upsert('projects', changed.map((record) => ({ id: record.id, owner: cloud.user.id, title: recordTitle(record), data: record, updated_at: new Date().toISOString() })));
+    for (const record of changed) syncedJson.set(record.id, JSON.stringify(record));
+  } catch (error) {
+    if (error.status === 401) return showSignIn('Your session ended. Sign in again to keep saving.');
+    logEvent('Save failed', `Couldn’t save to Supabase: ${error.message}. Retrying.`, 'fault');
+    setTimeout(scheduleCloudSync, 5000);
+  }
+}
+
 function persist() {
+  if (cloud) {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 3, records: {}, activeId: store.activeId, log: store.log.slice(-40), cloud: true }));
+    } catch { /* the bookmark is optional */ }
+    scheduleCloudSync();
+    return;
+  }
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(store));
   } catch (error) {
@@ -305,11 +357,16 @@ function absorbTelemetry(events) {
 // ------------------------------------------------------------------ server
 
 async function postJson(url, body) {
+  const token = cloud ? await cloud.accessToken() : '';
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
   });
+  if (response.status === 401 && authInfo) {
+    showSignIn('Your session ended. Sign in again, then retry.');
+    throw new Error('Sign in to FOLD Motion to continue.');
+  }
   const text = await response.text();
   let result;
   try {
@@ -353,6 +410,8 @@ function usedContext(record, fullBrief) {
     context: { headline, subheadline, primaryColor, accentColor },
     seconds: durationFromBrief(fullBrief) ?? null,
     briefHasOnScreenText: /on[-\s]?screen\s+text\s*:/i.test(fullBrief),
+    logo: brandKit.logo?.kind || null,
+    products: brandKit.products.length,
   };
 }
 
@@ -393,13 +452,254 @@ function composeBrief(briefs) {
   return `${briefs[0]}\n\nRevision notes from the director:\n${notes}`;
 }
 
+
+// ---------------------------------------------------------------- brand kit (logo, product photos)
+// Stored in IndexedDB (images are too big for localStorage). Like the colors, the
+// brand kit carries over to every new production.
+const BRAND_DB = 'fold-motion-brand';
+const BRAND_LIMITS = { logoPngBytes: 1_500_000, productBytes: 2_000_000, products: 3 };
+let brandKit = { logo: null, products: [] };
+let logoTree = null;
+
+function openBrandDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BRAND_DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('kit');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadLocalBrandKit() {
+  try {
+    const db = await openBrandDb();
+    const kit = await new Promise((resolve) => {
+      const request = db.transaction('kit').objectStore('kit').get('brand');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+    brandKit = { logo: kit?.logo || null, products: Array.isArray(kit?.products) ? kit.products : [] };
+  } catch {
+    brandKit = { logo: null, products: [] };
+  }
+  logoTree = brandKit.logo?.kind === 'svg' ? sanitizeSvg(brandKit.logo.svg) : null;
+  renderBrandTray();
+}
+
+async function loadBrandKit() {
+  if (!cloud) return loadLocalBrandKit();
+  try {
+    await loadBrandKitFromCloud();
+  } catch (error) {
+    showAssetError(`Couldn’t load your brand kit from Supabase: ${error.message}`);
+  }
+}
+
+async function saveBrandKit() {
+  logoTree = brandKit.logo?.kind === 'svg' ? sanitizeSvg(brandKit.logo.svg) : null;
+  renderBrandTray();
+  if (cloud) return saveBrandKitToCloud();
+  try {
+    const db = await openBrandDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kit', 'readwrite');
+      tx.objectStore('kit').put(brandKit, 'brand');
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    showAssetError('Your browser couldn’t save the brand kit. It will be used until you reload.');
+  }
+}
+
+
+// ---- brand kit in Supabase: files in the user's brand-assets folder, metadata in brand_kits
+const brandMeta = (item) => item && Object.fromEntries(Object.entries(item).filter(([key]) => !['svg', 'dataUri'].includes(key)));
+
+async function dataUriToBlob(uri) {
+  return (await fetch(uri)).blob();
+}
+
+async function uploadBrandFile(item, path, contentType) {
+  const body = item.kind === 'svg' ? new Blob([item.svg], { type: 'image/svg+xml' }) : await dataUriToBlob(item.dataUri);
+  await cloud.upload('brand-assets', path, body, contentType);
+  return { ...item, path };
+}
+
+async function saveBrandKitToCloud() {
+  try {
+    const uid = cloud.user.id;
+    if (brandKit.logo && !brandKit.logo.path) {
+      const extension = brandKit.logo.kind === 'svg' ? 'svg' : 'png';
+      brandKit.logo = await uploadBrandFile(brandKit.logo, `${uid}/logo.${extension}`, brandKit.logo.kind === 'svg' ? 'image/svg+xml' : 'image/png');
+      const other = `${uid}/logo.${extension === 'svg' ? 'png' : 'svg'}`;
+      cloud.removeObject('brand-assets', other).catch(() => {});
+    }
+    for (const [index, product] of brandKit.products.entries()) {
+      if (!product.path) brandKit.products[index] = await uploadBrandFile(product, `${uid}/products/${product.id}.jpg`, 'image/jpeg');
+    }
+    await cloud.upsert('brand_kits', [{ owner: uid, logo: brandMeta(brandKit.logo) || null, products: brandKit.products.map(brandMeta), updated_at: new Date().toISOString() }]);
+  } catch (error) {
+    showAssetError(error.status === 401 ? 'Your session ended. Sign in again.' : `Couldn’t save to Supabase: ${error.message}`);
+  }
+}
+
+async function blobToDataUri(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Loads the brand kit from Supabase; on first sign-in, imports this browser's kit. */
+async function loadBrandKitFromCloud() {
+  const rows = await cloud.select('brand_kits', 'select=logo,products');
+  const row = rows?.[0];
+  if (!row) {
+    await loadLocalBrandKit();
+    if (brandKit.logo || brandKit.products.length) await saveBrandKitToCloud();
+    return;
+  }
+  const logo = row.logo?.path ? { ...row.logo } : null;
+  if (logo) {
+    const blob = await cloud.download('brand-assets', logo.path);
+    if (logo.kind === 'svg') logo.svg = await blob.text();
+    else logo.dataUri = await blobToDataUri(blob);
+  }
+  const products = [];
+  for (const product of Array.isArray(row.products) ? row.products : []) {
+    try {
+      products.push({ ...product, dataUri: await blobToDataUri(await cloud.download('brand-assets', product.path)) });
+    } catch { /* a missing file just drops out of the tray */ }
+  }
+  brandKit = { logo, products };
+  logoTree = logo?.kind === 'svg' ? sanitizeSvg(logo.svg) : null;
+  renderBrandTray();
+}
+
+function showAssetError(message) {
+  const node = $('asset-error');
+  node.textContent = message || '';
+  node.hidden = !message;
+}
+
+/** Downscales an image file on a canvas and returns it as a data URI. */
+async function rasterToDataUri(file, maxSide, type, quality) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('That image couldn’t be opened.'));
+      img.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+    return { dataUri: canvas.toDataURL(type, quality), width, height };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const dataUriBytes = (uri) => Math.round((uri.length - uri.indexOf(',') - 1) * 0.75);
+
+async function uploadLogo(file) {
+  showAssetError('');
+  try {
+    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+      const result = sanitizeSvg(await file.text());
+      if (!result.ok) throw new Error(result.error);
+      // Store the rebuilt, safe version; the server checks it again before rendering.
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${result.viewBox.join(' ')}">${serializeSvgTree(result.tree)}</svg>`;
+      brandKit.logo = { kind: 'svg', name: file.name, svg, width: result.width, height: result.height };
+    } else {
+      const { dataUri, width, height } = await rasterToDataUri(file, 1000, 'image/png');
+      if (dataUriBytes(dataUri) > BRAND_LIMITS.logoPngBytes) throw new Error('That logo is too large. Try a smaller PNG or an SVG.');
+      brandKit.logo = { kind: 'png', name: file.name, dataUri, width, height };
+    }
+    await saveBrandKit();
+  } catch (error) {
+    showAssetError(error.message);
+  }
+}
+
+async function addProducts(files) {
+  showAssetError('');
+  for (const file of files) {
+    if (brandKit.products.length >= BRAND_LIMITS.products) {
+      showAssetError(`Up to ${BRAND_LIMITS.products} product photos.`);
+      break;
+    }
+    try {
+      const { dataUri, width, height } = await rasterToDataUri(file, 1600, 'image/jpeg', 0.88);
+      if (dataUriBytes(dataUri) > BRAND_LIMITS.productBytes) throw new Error(`${file.name} is too large even after resizing.`);
+      brandKit.products.push({ id: `product-${Date.now().toString(36)}-${brandKit.products.length}`, name: file.name, dataUri, width, height });
+    } catch (error) {
+      showAssetError(error.message);
+    }
+  }
+  await saveBrandKit();
+}
+
+function assetThumb({ src, name, onRemove, label }) {
+  const image = h('img', { class: 'asset-thumb', alt: name || label, src });
+  const remove = h('button', { class: 'asset-remove', type: 'button', 'aria-label': `Remove ${label}`, text: '×' });
+  remove.addEventListener('click', onRemove);
+  return h('span', { class: 'asset-item', title: name || label }, image, remove);
+}
+
+function renderBrandTray() {
+  const logoSlot = $('logo-slot');
+  const productSlots = $('product-slots');
+  if (!logoSlot || !productSlots) return;
+  logoSlot.replaceChildren();
+  if (brandKit.logo) {
+    const src = brandKit.logo.kind === 'svg' ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(brandKit.logo.svg)}` : brandKit.logo.dataUri;
+    logoSlot.append(assetThumb({ src, name: brandKit.logo.name, label: 'logo', onRemove: async () => {
+      const path = brandKit.logo?.path;
+      brandKit.logo = null;
+      await saveBrandKit();
+      if (cloud && path) cloud.removeObject('brand-assets', path).catch(() => {});
+    } }));
+  }
+  productSlots.replaceChildren(...brandKit.products.map((product, index) => assetThumb({
+    src: product.dataUri, name: product.name, label: `product photo ${index + 1}`,
+    onRemove: async () => {
+      brandKit.products = brandKit.products.filter((item) => item.id !== product.id);
+      await saveBrandKit();
+      if (cloud && product.path) cloud.removeObject('brand-assets', product.path).catch(() => {});
+    },
+  })));
+  $('product-button').hidden = brandKit.products.length >= BRAND_LIMITS.products;
+}
+
+/** Planning requests carry logo metadata only (so recipes can lay it out). */
+function withBrand(context) {
+  const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
+  return { ...context, ...(logo ? { logo } : { logo: undefined }) };
+}
+
+/** Render requests carry the logo itself. */
+function brandAssets() {
+  if (!brandKit.logo) return undefined;
+  if (cloud && brandKit.logo.path) return { logo: { kind: brandKit.logo.kind, path: brandKit.logo.path } };
+  return { logo: brandKit.logo.kind === 'svg' ? { kind: 'svg', svg: brandKit.logo.svg } : { kind: 'png', dataUri: brandKit.logo.dataUri } };
+}
+
 function writeStoryboard(record) {
   return work(record, 'Writing the storyboard', 'Couldn’t write the storyboard', 'storyboard', async () => {
     if (record.project.state === 'BRIEF') await transition(record, 'PLANNING');
     const result = await postJson('/api/generate', {
       action: 'storyboard',
       prompt: record.project.brief,
-      context: record.project.context,
+      context: withBrand(record.project.context),
     });
     record.project = {
       ...record.project,
@@ -437,7 +737,7 @@ function buildShots(record) {
     const result = await postJson('/api/generate', {
       action: 'compile',
       storyboard: record.project.storyboard,
-      context: record.project.context,
+      context: withBrand(record.project.context),
     });
     record.project = { ...record.project, timeline: result.timeline, compileProvider: result.provider };
     await transition(record, 'RENDERING');
@@ -452,7 +752,8 @@ function renderFilm(record) {
       timeline: record.project.timeline,
       storyboard: record.project.storyboard,
       acceptance: record.project.acceptance,
-      context: record.project.context,
+      context: withBrand(record.project.context),
+      ...(brandAssets() ? { assets: brandAssets() } : {}),
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -634,6 +935,22 @@ let svgCounter = 0;
  * background, then the renderer's atmosphere (glow, grid, rings, accent lines),
  * then the foreground elements and glowing copy.
  */
+/** The uploaded logo in a preview frame (or an outlined box if it was removed). */
+function logoPreview(element, primary) {
+  const x = element.x - element.width / 2;
+  const y = element.y - element.height / 2;
+  if (brandKit.logo?.kind === 'png') {
+    return svgEl('image', { href: brandKit.logo.dataUri, x, y, width: element.width, height: element.height, preserveAspectRatio: 'xMidYMid meet' });
+  }
+  if (brandKit.logo?.kind === 'svg' && logoTree?.ok) {
+    const text = readableText(primary);
+    const markup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${logoTree.viewBox.join(' ')}" x="${x}" y="${y}" width="${element.width}" height="${element.height}"><g fill="${text}" color="${text}">${serializeSvgTree(logoTree.tree, { idPrefix: `${element.id}-` })}</g></svg>`;
+    const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    return document.importNode(parsed, true);
+  }
+  return svgEl('rect', { x, y, width: element.width, height: element.height, fill: 'none', stroke: '#9D86F0', 'stroke-dasharray': '6 6' });
+}
+
 function specToSvg(spec, label, palette = {}) {
   const width = spec.width || DEFAULT_CONTEXT.width;
   const height = spec.height || DEFAULT_CONTEXT.height;
@@ -732,6 +1049,8 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
     } else if (element.type === 'circle') {
       stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
+    } else if (element.type === 'logo') {
+      stage.append(logoPreview(element, primary));
     } else if (element.type === 'line') {
       const x = element.reveal?.from === 'left' ? element.x : element.x - element.width / 2;
       stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
@@ -1100,7 +1419,7 @@ function renderView(message) {
       ? 'Your cut is ready. Watch it, then approve the final cut.'
       : `Your cut rendered, but ${failed} check${failed === 1 ? '' : 's'} failed. Ask for changes and I’ll fix them.` }),
     h('div', { class: 'block' },
-      safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true }) : null,
+      safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true, ...(report?.artifacts?.film?.path ? { 'data-film-path': report.artifacts.film.path } : {}) }) : null,
       h('p', { class: `qa-summary${failed ? ' is-fail' : ''}` },
         h('span', { class: 'qa-summary-dot', 'aria-hidden': 'true', text: failed ? String(failed) : '✓' }),
         failed ? `${failed} of ${checks.length} QA checks failed` : `All ${checks.length} QA checks passed`),
@@ -1140,6 +1459,8 @@ function briefChips(data) {
     subheadline ? chip([`Subheadline “${subheadline}”`], 'Exact line for the final shot') : null,
     chip([swatch(primaryColor), primaryColor, swatch(accentColor), accentColor], 'Primary and accent colors'),
     chip([data.seconds ? `${data.seconds}s from your brief` : '8s default length'], data.seconds ? 'Length read from the brief' : 'Say a length in the brief, like "10-second"'),
+    data.logo ? chip([`Logo (${data.logo.toUpperCase()})`], 'Your logo appears on the end card and The Fold') : null,
+    data.products ? chip([`${data.products} product photo${data.products === 1 ? '' : 's'}`], 'Stored with your brand kit') : null,
     data.briefHasOnScreenText && (headline || subheadline)
       ? chip(['Copy fields override your brief’s on-screen text'], 'Clear the headline and subheadline to use the brief’s own text', ' is-missing')
       : null);
@@ -1312,7 +1633,7 @@ function syncComposer() {
     : 'Add headline and colors';
   $('details-note').textContent = record.briefs.length && state !== 'BRIEF'
     ? 'Changes here apply to the next storyboard you ask for.'
-    : 'Exact copy and brand colors. The AI can’t change these.';
+    : 'Exact copy, brand colors and logo. The AI can’t change these. Product photos appear in films from the next update.';
 }
 
 function fillDetails(record) {
@@ -1461,7 +1782,7 @@ function renderLibrary() {
     const duration = record.project.timeline?.durationInSeconds;
     return h('article', { class: 'film' },
       safeOutputUrl(artifacts?.video)
-        ? h('video', { class: 'player', src: artifacts.video, controls: true, preload: 'metadata', playsinline: true })
+        ? h('video', { class: 'player', src: artifacts.video, controls: true, preload: 'metadata', playsinline: true, ...(artifacts?.film?.path ? { 'data-film-path': artifacts.film.path } : {}) })
         : h('span', { class: 'poster' }, posterFor(record)),
       h('h2', { text: recordTitle(record) }),
       h('p', { text: `${Number.isFinite(duration) ? `${seconds(duration)}, ` : ''}delivered ${relativeTime(delivered)}` }),
@@ -1485,6 +1806,7 @@ async function loadEngine() {
     if (!response.ok || !result.success) throw new Error('unavailable');
     engine = result.engine;
     renderInfo = result.render ?? null;
+    authInfo = result.auth?.provider === 'supabase' ? result.auth : null;
     engineError = false;
   } catch {
     engineError = true;
@@ -1569,7 +1891,9 @@ function showView(view) {
     if (tab.dataset.view === currentView) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   }
-  if (location.hash.slice(1) !== currentView) history.replaceState(null, '', currentView === 'studio' ? location.pathname : `#${currentView}`);
+  // A sign-in link carries the session after "#": leave it for sign-in to read and clean.
+  const signInHash = /(^|[#&])(access_token|error_description|error)=/.test(location.hash);
+  if (!signInHash && location.hash.slice(1) !== currentView) history.replaceState(null, '', currentView === 'studio' ? location.pathname : `#${currentView}`);
   render({ stick: currentView === 'studio' });
 }
 
@@ -1590,6 +1914,7 @@ function render(options = {}) {
   else if (currentView === 'library') renderLibrary();
   else if (currentView === 'system') renderSystem();
   renderDock(record);
+  refreshFilmLinks();
 }
 
 // ------------------------------------------------------------------ events
@@ -1669,6 +1994,9 @@ for (const [field, picker, key] of [['primary-hex', 'primary-color-input', 'prim
   });
 }
 
+$('logo-input').addEventListener('change', (event) => { const [file] = event.target.files; if (file) uploadLogo(file); event.target.value = ''; });
+$('product-input').addEventListener('change', (event) => { addProducts([...event.target.files]); event.target.value = ''; });
+
 $('new-production').addEventListener('click', () => startNewProduction());
 
 $('clear-log').addEventListener('click', () => {
@@ -1677,9 +2005,21 @@ $('clear-log').addEventListener('click', () => {
   render();
 });
 
-$('clear-data').addEventListener('click', () => {
+$('clear-data').addEventListener('click', async () => {
   if (busy) return;
-  if (!window.confirm('Delete every production, conversation and activity entry saved in this browser? Rendered files on the server are not affected.')) return;
+  const question = cloud
+    ? 'Delete every production in your account? Your brand kit and saved films are kept.'
+    : 'Delete every production, conversation and activity entry saved in this browser? Rendered files on the server are not affected.';
+  if (!window.confirm(question)) return;
+  if (cloud) {
+    try {
+      await cloud.remove('projects', `owner=eq.${cloud.user.id}`);
+      syncedJson.clear();
+    } catch (error) {
+      window.alert(`Couldn’t delete from Supabase: ${error.message}`);
+      return;
+    }
+  }
   store = emptyStore();
   nodeCache.clear();
   thread.dataset.recordId = '';
@@ -1692,10 +2032,122 @@ window.addEventListener('beforeunload', (event) => {
   if (busy) event.preventDefault();
 });
 
+
+// ------------------------------------------------------------------ sign-in (Supabase)
+
+function showSignIn(message = '') {
+  $('signin').hidden = false;
+  document.querySelector('.app').hidden = true;
+  $('signin-status').textContent = message;
+  $('signin-status').dataset.tone = message ? 'warn' : '';
+  setTimeout(() => $('signin-email').focus(), 0);
+}
+
+function hideSignIn() {
+  $('signin').hidden = true;
+  document.querySelector('.app').hidden = false;
+}
+
+$('signin-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const email = $('signin-email').value.trim();
+  const status = $('signin-status');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    status.textContent = 'Enter a valid email address.';
+    status.dataset.tone = 'warn';
+    return;
+  }
+  $('signin-submit').disabled = true;
+  status.dataset.tone = '';
+  status.textContent = 'Sending your link…';
+  try {
+    const client = cloud || createSupabaseClient({ url: authInfo.url, publishableKey: authInfo.publishableKey });
+    await client.sendSignInLink(email, `${location.origin}${location.pathname}`);
+    status.textContent = `Check ${email} for your sign-in link. You can close this tab.`;
+  } catch (error) {
+    status.textContent = `Couldn’t send the link: ${error.message}`;
+    status.dataset.tone = 'warn';
+  } finally {
+    $('signin-submit').disabled = false;
+  }
+});
+
+$('sign-out').addEventListener('click', async () => {
+  if (busy || !cloud) return;
+  await syncToCloud();
+  await cloud.signOut();
+  cloud = null;
+  localStorage.removeItem(STORE_KEY);
+  location.reload();
+});
+
+/** Loads the signed-in user's projects; on first sign-in, imports this browser's. */
+async function enterCloud(client) {
+  cloud = client;
+  hideSignIn();
+  $('account-panel').hidden = false;
+  $('account-email').textContent = cloud.user.email;
+  const local = loadStore();
+  let rows = await cloud.select('projects', 'select=id,data&order=updated_at.desc&limit=200');
+  const importedKey = `fold-motion.imported.${cloud.user.id}`;
+  const localRecords = Object.values(local.records || {}).filter((record) => record.messages?.length > 0);
+  if (rows.length === 0 && localRecords.length > 0 && !localStorage.getItem(importedKey)) {
+    await cloud.upsert('projects', localRecords.map((record) => ({ id: record.id, owner: cloud.user.id, title: recordTitle(record), data: record, updated_at: record.updatedAt || new Date().toISOString() })));
+    localStorage.setItem(importedKey, new Date().toISOString());
+    logEvent('Imported', `Moved ${localRecords.length} production${localRecords.length === 1 ? '' : 's'} from this browser to your account.`);
+    rows = await cloud.select('projects', 'select=id,data&order=updated_at.desc&limit=200');
+  }
+  const records = {};
+  for (const row of rows) {
+    if (row?.data && PROJECT_STATES.includes(row.data?.project?.state)) {
+      records[row.id] = row.data;
+      syncedJson.set(row.id, JSON.stringify(row.data));
+    }
+  }
+  store = { ...emptyStore(), records, activeId: records[local.activeId] ? local.activeId : rows[0]?.id || null, log: Array.isArray(local.log) ? local.log.slice(-LOG_LIMIT) : [] };
+  nodeCache.clear();
+  thread.dataset.recordId = '';
+  await loadBrandKit();
+  fillDetails(activeRecord());
+  persist();
+  render();
+}
+
+// A sign-in link opened in a tab that already shows the studio only changes the
+// address after "#", which doesn't reload the page: pick the session up then too.
+window.addEventListener('hashchange', () => {
+  if (/(^|[#&])(access_token|error_description)=/.test(location.hash)) start();
+});
+
+async function start() {
+  await loadEngine();
+  if (!authInfo) {
+    hideSignIn();
+    await loadBrandKit();
+    return;
+  }
+  const client = createSupabaseClient({ url: authInfo.url, publishableKey: authInfo.publishableKey });
+  const redirect = await client.consumeRedirect();
+  if (!client.user) {
+    showSignIn(redirect.error || '');
+    return;
+  }
+  try {
+    await enterCloud(client);
+  } catch (error) {
+    if (error.status === 401) {
+      await client.signOut();
+      showSignIn('Your session ended. Sign in again.');
+    } else {
+      showSignIn(`Signed in, but couldn’t load your projects: ${error.message}`);
+    }
+  }
+}
+
 // ------------------------------------------------------------------ start
 
 renderStarters();
 fillDetails(activeRecord());
-showView(location.hash.slice(1));
+showView(location.hash.replace(/^#/, '').split('&')[0].split('=')[0] === 'access_token' ? '' : location.hash.slice(1));
 autosize();
-loadEngine();
+start();

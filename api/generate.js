@@ -1,3 +1,4 @@
+import { requireUser } from '../src/runtime/supabase-server.mjs';
 import { generateProductionAction } from '../src/runtime/creative-api.mjs';
 import { validateStoryboard } from '../src/production/production.mjs';
 import { getGeminiKeyPool } from '../src/ai/provider.mjs';
@@ -13,7 +14,7 @@ const defaultContext = {
 export default async function generate(request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (request.method === 'OPTIONS') {
     return response.status(204).end();
@@ -22,6 +23,8 @@ export default async function generate(request, response) {
     response.setHeader('Allow', 'POST');
     return response.status(405).json({ success: false, error: 'Method not allowed.' });
   }
+  const auth = await requireUser(request.headers);
+  if (auth.error) return response.status(auth.status || 401).json({ success: false, error: auth.error, signIn: true });
 
   const body = request.body;
   if (!body || typeof body !== 'object' || Array.isArray(body)) {

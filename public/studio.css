@@ -1506,6 +1506,93 @@ button.tool:hover,
   align-items: flex-end;
 }
 
+.brand-assets {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.25rem;
+}
+
+.asset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.asset-label {
+  min-width: 7.5rem;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.asset-slots {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.asset-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.asset-thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface-2, #1b1c20);
+  object-fit: contain;
+}
+
+.asset-remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  background: var(--bg, #0e0e11);
+  color: var(--text-2);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.asset-remove:hover,
+.asset-remove:focus-visible {
+  border-color: var(--indigo-line);
+  color: var(--text);
+}
+
+.asset-button {
+  padding: 0.3rem 0.7rem;
+  border: 1px dashed var(--indigo-line);
+  border-radius: 999px;
+  color: var(--lavender);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.asset-button:hover,
+.asset-button:focus-within {
+  border-style: solid;
+}
+
+.asset-button[hidden] {
+  display: none;
+}
+
+.asset-error {
+  margin: 0;
+  color: #ff8a8f;
+  font-size: 0.75rem;
+}
+
 .details-note {
   grid-column: 1 / -1;
   margin: 0;
@@ -1932,4 +2019,101 @@ button.tool:hover,
   .send {
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------------ sign-in */
+.signin {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(60% 50% at 50% 40%, rgb(124 58 237 / 0.18), transparent 70%),
+    var(--bg, #0e0e11);
+}
+
+.signin[hidden] {
+  display: none;
+}
+
+.signin-card {
+  display: grid;
+  gap: 0.9rem;
+  width: min(25rem, 100%);
+  padding: 2rem;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--surface, #141518);
+  text-align: left;
+}
+
+.signin-mark {
+  width: 2.75rem;
+  height: auto;
+  filter: invert(1);
+}
+
+.signin-card h1 {
+  margin: 0;
+  font-family: Anton, Impact, sans-serif;
+  font-size: 1.9rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.signin-lede {
+  margin: -0.4rem 0 0.2rem;
+  color: var(--text-2);
+}
+
+.signin-field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.signin-field input {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg, #0e0e11);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.signin-field input:focus {
+  border-color: var(--indigo, #7c3aed);
+  outline: none;
+}
+
+.signin-submit {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--indigo, #7c3aed);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.signin-submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.signin-status {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+
+.signin-status[data-tone="warn"] {
+  color: #ff8a8f;
 }

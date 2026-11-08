@@ -3,7 +3,8 @@
  * (expanded by src/production/recipes.mjs). Everything is a pure function of the
  * frame index, so renders are deterministic.
  */
-import { mix } from '../production/color.mjs';
+import { mix, readableTextColor } from '../production/color.mjs';
+import { isDrawable, serializeSvgTree } from '../../public/svg-sanitize.mjs';
 import { normalizeMotion } from '../production/motion.mjs';
 import { capHeight, FONTS, layoutCharacters, layoutWords, measure } from './typography.mjs';
 
@@ -148,6 +149,67 @@ function renderLine(element, t) {
   return `<rect x="${f(x)}" y="${f(element.y - element.height / 2)}" width="${f(width)}" height="${f(element.height)}" fill="${element.fill}" opacity="0.85"/>`;
 }
 
+
+// ---------------------------------------------------------------- logo
+
+/** The logo as an inline vector or image, fitted to its box. */
+function logoMarkup(logo, x, y, width, height, { idPrefix, override, wrapper = '' } = {}) {
+  if (logo.kind === 'svg') {
+    return `<svg x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" viewBox="${logo.viewBox.join(' ')}" preserveAspectRatio="xMidYMid meet"><g${wrapper}>${serializeSvgTree(logo.tree, { idPrefix, override })}</g></svg>`;
+  }
+  return `<image href="${logo.dataUri}" x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" preserveAspectRatio="xMidYMid meet"/>`;
+}
+
+/**
+ * Draws a logo element: an SVG strokes itself on along each shape's measured
+ * length, then its own colors fill in; a PNG wipes in. Then a glint crosses the
+ * logo's exact silhouette.
+ */
+function renderLogo(element, t, logo, ctx) {
+  if (!logo) {
+    throw new Error('This film includes the logo, but no logo came with the render request. Upload the logo again and re-render.');
+  }
+  const defs = [];
+  const parts = [];
+  const prefix = `${element.id}-`;
+  const x0 = element.x - element.width / 2;
+  const y0 = element.y - element.height / 2;
+  const { reveal, glint } = element;
+  // Shapes with no fill of their own default to black; give them the film's text color instead.
+  const textColor = readableTextColor(ctx.primary);
+  const wrapper = ` fill="${textColor}" color="${textColor}"`;
+  if (logo.kind === 'svg') {
+    const draw = ease.inOutCubic(span(t, reveal.start, reveal.start + reveal.duration));
+    if (draw <= 0) return { defs, body: '' };
+    const fill = ease.outCubic(span(t, reveal.start + reveal.duration * 0.7, reveal.start + reveal.duration + 0.35));
+    const scale = Math.min(element.width / logo.viewBox[2], element.height / logo.viewBox[3]);
+    const outline = mix(ctx.accent, '#FFFFFF', 0.45);
+    if (fill > 0) parts.push(`<g opacity="${f(fill)}">${logoMarkup(logo, x0, y0, element.width, element.height, { idPrefix: `${prefix}f-`, wrapper })}</g>`);
+    if (fill < 1) {
+      parts.push(`<g opacity="${f(1 - fill * 0.9)}">${logoMarkup(logo, x0, y0, element.width, element.height, {
+        idPrefix: `${prefix}s-`,
+        override: (node) => (isDrawable(node) ? {
+          fill: 'none', stroke: outline, 'stroke-width': f(2.2 / scale), 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+          'stroke-dasharray': f(Math.max(1, node.length || 1)), 'stroke-dashoffset': f(Math.max(1, node.length || 1) * (1 - draw)),
+        } : null),
+      })}</g>`);
+    }
+  } else {
+    const wipe = ease.inOutCubic(span(t, reveal.start, reveal.start + reveal.duration));
+    if (wipe <= 0) return { defs, body: '' };
+    defs.push(`<clipPath id="${prefix}wipe"><rect x="${f(x0)}" y="${f(y0 - 2)}" width="${f(element.width * wipe)}" height="${f(element.height + 4)}"/></clipPath>`);
+    parts.push(`<g clip-path="url(#${prefix}wipe)">${logoMarkup(logo, x0, y0, element.width, element.height)}</g>`);
+  }
+  const g = glint ? span(t, glint.start, glint.start + glint.duration) : 0;
+  if (g > 0 && g < 1) {
+    defs.push(`<mask id="${prefix}glint-mask" mask-type="alpha">${logoMarkup(logo, x0, y0, element.width, element.height, { idPrefix: `${prefix}m-`, wrapper })}</mask>`);
+    const center = lerp(x0 - element.width * 0.3, x0 + element.width * 1.3, g);
+    defs.push(`<linearGradient id="${prefix}glint" gradientUnits="userSpaceOnUse" x1="${f(center - element.width * 0.16)}" y1="${f(y0)}" x2="${f(center + element.width * 0.16)}" y2="${f(y0 + element.height * 0.6)}"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`);
+    parts.push(`<rect x="${f(x0)}" y="${f(y0)}" width="${f(element.width)}" height="${f(element.height)}" fill="url(#${prefix}glint)" mask="url(#${prefix}glint-mask)" opacity="${f(Math.sin(Math.PI * g) * 0.8)}"/>`);
+  }
+  return { defs, body: parts.join('') };
+}
+
 // ---------------------------------------------------------------- atmosphere
 
 function gridPath(width, height) {
@@ -268,7 +330,7 @@ function cameraTransform(camera, progress, extraScale, ctx) {
 export const TRANSITION_SECONDS = Object.freeze({ wipe: [0.3, 0.34], fade: [0.3, 0.3], push: [0.35, 0.35], fold: [0.3, 0.3] });
 
 /** Draws frame `frameIndex` of a timeline made of v2 shots, including transitions. */
-export function renderTimelineFrame(timeline, frameIndex) {
+export function renderTimelineFrame(timeline, frameIndex, brand = {}) {
   const W = timeline.width;
   const H = timeline.height;
   const fps = timeline.fps;
@@ -314,18 +376,18 @@ export function renderTimelineFrame(timeline, frameIndex) {
     if (stripe > 0.5) overlays.push(`<rect x="${f(Math.max(0, left - stripe))}" y="0" width="${f(Math.min(stripe, left))}" height="${H}" fill="${stripeColor}"/>`);
   }
 
-  const layer = shotLayers(timeline, index, t, extraScale);
+  const layer = shotLayers(timeline, index, t, extraScale, brand);
   const defs = [...filmDefs(primary, accent, W, H), ...layer.defs];
   let content = layer.content;
   if (outgoing === 'fold' && tail < TRANSITION_SECONDS.fold[0]) {
     // The next shot waits underneath at its first frame while this one folds over it.
-    const next = shotLayers(timeline, index + 1, 0, 1);
+    const next = shotLayers(timeline, index + 1, 0, 1, brand);
     defs.push(...next.defs);
     const p = 1 - clamp(tail / TRANSITION_SECONDS.fold[0]);
-    content = foldOver({ under: next.content, folding: content, p, axis: foldAxis(timeline, index), W, H, accent });
+    content = foldOver({ under: next.content, folding: content, p, axis: foldAxis(timeline, index), W, H, accent, logo: brand.logo });
   } else if (incoming === 'fold' && t < TRANSITION_SECONDS.fold[1]) {
     const p = clamp(t / TRANSITION_SECONDS.fold[1]);
-    content = foldAway({ under: content, p, axis: foldAxis(timeline, index - 1), W, H, accent });
+    content = foldAway({ under: content, p, axis: foldAxis(timeline, index - 1), W, H, accent, logo: brand.logo });
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <defs>${defs.join('')}</defs>
@@ -336,7 +398,7 @@ ${overlays.join('')}
 }
 
 /** Everything one shot draws at time t: its background, atmosphere, beam, elements and camera. */
-function shotLayers(timeline, index, t, extraScale = 1) {
+function shotLayers(timeline, index, t, extraScale = 1, brand = {}) {
   const W = timeline.width;
   const H = timeline.height;
   const shot = timeline.shots[index];
@@ -363,6 +425,10 @@ function shotLayers(timeline, index, t, extraScale = 1) {
       layers.push(rendered.body);
     } else if (element.type === 'line') {
       layers.push(renderLine(element, t));
+    } else if (element.type === 'logo') {
+      const rendered = renderLogo(element, t, brand.logo, ctx);
+      defs.push(...rendered.defs);
+      layers.push(rendered.body);
     } else if (element.type === 'rect') {
       layers.push(`<rect x="${f(element.x)}" y="${f(element.y)}" width="${f(element.width)}" height="${f(element.height)}" fill="${element.fill}"/>`);
     } else if (element.type === 'circle') {
@@ -387,6 +453,7 @@ function filmDefs(primary, accent, W, H) {
     `<linearGradient id="foldPaper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${paperLight}"/><stop offset="1" stop-color="${paperDark}"/></linearGradient>`,
     `<linearGradient id="foldShadowX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.6"/></linearGradient>`,
     `<linearGradient id="foldShadowY" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.6"/></linearGradient>`,
+    `<filter id="logoTint" x="0" y="0" width="1" height="1"><feFlood flood-color="${mix(paperLight, '#FFFFFF', 0.2)}"/><feComposite in2="SourceAlpha" operator="in"/></filter>`,
     `<clipPath id="foldFirstX"><rect x="0" y="0" width="${W / 2}" height="${H}"/></clipPath>`,
     `<clipPath id="foldSecondX"><rect x="${W / 2}" y="0" width="${W / 2}" height="${H}"/></clipPath>`,
     `<clipPath id="foldFirstY"><rect x="0" y="0" width="${W}" height="${H / 2}"/></clipPath>`,
@@ -403,11 +470,21 @@ function foldAxis(timeline, boundaryIndex) {
 }
 
 /** The back of the paper: brand-tinted stock with two faint creases. */
-function paperFace(x, y, width, height, shade, accent) {
+function paperFace(x, y, width, height, shade, accent, { logo, full } = {}) {
   if (width < 0.5 || height < 0.5) return '';
   const crease = mix(accent, '#FFFFFF', 0.35);
+  let mark = '';
+  if (logo && full) {
+    // Printed at the face's full size, then squashed with the paper as it turns.
+    const box = Math.min(full.width * 0.42, full.height * 0.42);
+    const ratio = logo.width / logo.height;
+    const w = ratio >= 1 ? box : box * ratio;
+    const h = ratio >= 1 ? box / ratio : box;
+    mark = `<g transform="translate(${f(x + width / 2)} ${f(y + height / 2)}) scale(${(width / full.width).toFixed(4)} ${(height / full.height).toFixed(4)})" opacity="0.55" filter="url(#logoTint)">${logoMarkup(logo, -w / 2, -h / 2, w, h, { idPrefix: 'fold-logo-' })}</g>`;
+  }
   return `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#foldPaper)"/>`
     + `<path d="M ${f(x)} ${f(y)} L ${f(x + width)} ${f(y + height)} M ${f(x + width)} ${f(y)} L ${f(x)} ${f(y + height)}" stroke="${crease}" stroke-width="1" opacity="0.14"/>`
+    + mark
     + `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="#000" opacity="${f(clamp(shade))}"/>`;
 }
 
@@ -415,7 +492,7 @@ function paperFace(x, y, width, height, shade, accent) {
  * Stage one: the frame's first half folds over its crease onto the second half,
  * revealing the next shot underneath. `p` runs from 0 to 1.
  */
-function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED' }) {
+function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED', logo }) {
   const theta = Math.PI * ease.inOutCubic(p);
   const c = Math.cos(theta);
   const s = Math.sin(theta);
@@ -428,7 +505,7 @@ function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED' }) {
       parts.push(`<g transform="translate(${W / 2} ${H / 2}) scale(${c.toFixed(5)} ${swell.toFixed(5)}) translate(${-W / 2} ${-H / 2})"><g clip-path="url(#foldFirstX)">${folding}<rect x="0" y="0" width="${W / 2}" height="${H}" fill="#000" opacity="${f(0.6 * (1 - c))}"/></g></g>`);
     } else {
       const height = H * swell;
-      parts.push(paperFace(W / 2, H / 2 - height / 2, (W / 2) * -c, height, 0.4 * (1 + c), accent));
+      parts.push(paperFace(W / 2, H / 2 - height / 2, (W / 2) * -c, height, 0.4 * (1 + c), accent, { logo, full: { width: W / 2, height } }));
     }
     parts.push(`<rect x="${f(W / 2 - 0.75)}" y="0" width="1.5" height="${H}" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="${f(0.8 * s)}"/>`);
   } else {
@@ -438,7 +515,7 @@ function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED' }) {
       parts.push(`<g transform="translate(${W / 2} ${H / 2}) scale(${swell.toFixed(5)} ${c.toFixed(5)}) translate(${-W / 2} ${-H / 2})"><g clip-path="url(#foldFirstY)">${folding}<rect x="0" y="0" width="${W}" height="${H / 2}" fill="#000" opacity="${f(0.6 * (1 - c))}"/></g></g>`);
     } else {
       const width = W * swell;
-      parts.push(paperFace(W / 2 - width / 2, H / 2, width, (H / 2) * -c, 0.4 * (1 + c), accent));
+      parts.push(paperFace(W / 2 - width / 2, H / 2, width, (H / 2) * -c, 0.4 * (1 + c), accent, { logo, full: { width, height: H / 2 } }));
     }
     parts.push(`<rect x="0" y="${f(H / 2 - 0.75)}" width="${W}" height="1.5" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="${f(0.8 * s)}"/>`);
   }
@@ -446,7 +523,7 @@ function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED' }) {
 }
 
 /** Stage two: the folded half folds away off its far edge, uncovering the rest of the shot. */
-function foldAway({ under, p, axis, W, H, accent = '#7C3AED' }) {
+function foldAway({ under, p, axis, W, H, accent = '#7C3AED', logo }) {
   const phi = (Math.PI / 2) * ease.inOutCubic(p);
   const c = Math.cos(phi);
   const swell = 1 + 0.05 * Math.sin(phi);
@@ -456,7 +533,7 @@ function foldAway({ under, p, axis, W, H, accent = '#7C3AED' }) {
     if (width > 0.5) {
       const height = H * swell;
       parts.push(`<rect x="${f(W - width - 160)}" y="0" width="160" height="${H}" fill="url(#foldShadowX)" opacity="${f(0.9 * c)}"/>`);
-      parts.push(paperFace(W - width, H / 2 - height / 2, width, height, 0.65 * (1 - c), accent));
+      parts.push(paperFace(W - width, H / 2 - height / 2, width, height, 0.65 * (1 - c), accent, { logo, full: { width: W / 2, height } }));
       parts.push(`<rect x="${f(W - width - 0.75)}" y="0" width="1.5" height="${H}" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="0.8"/>`);
     }
   } else {
@@ -464,7 +541,7 @@ function foldAway({ under, p, axis, W, H, accent = '#7C3AED' }) {
     if (height > 0.5) {
       const width = W * swell;
       parts.push(`<rect x="0" y="${f(H - height - 120)}" width="${W}" height="120" fill="url(#foldShadowY)" opacity="${f(0.9 * c)}"/>`);
-      parts.push(paperFace(W / 2 - width / 2, H - height, width, height, 0.65 * (1 - c), accent));
+      parts.push(paperFace(W / 2 - width / 2, H - height, width, height, 0.65 * (1 - c), accent, { logo, full: { width, height: H / 2 } }));
       parts.push(`<rect x="0" y="${f(H - height - 0.75)}" width="${W}" height="1.5" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="0.8"/>`);
     }
   }

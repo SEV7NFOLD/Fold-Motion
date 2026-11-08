@@ -12,5 +12,13 @@ services:
         value: production
       - key: GEMINI_API_KEY
         sync: false
+      # Accounts and storage (email sign-in, projects, brand kit, films). Leave the
+      # keys unset to run without sign-in. Never commit the secret key.
+      - key: SUPABASE_URL
+        value: https://cipkgsyvvgmfalfazije.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite

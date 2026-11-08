@@ -22,7 +22,8 @@ and this file disagree about current behavior, this file and the code win.
 | `statement` | Bold sans, letters cascade in, optional kicker above and supporting line below |
 | `kicker-title` | Opening card: tracked kicker first, then the line rises under a beam of light |
 | `type-stack` | Two to four words stacked, each line scaled to the same width, sliding in from alternating sides |
-| `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep |
+| `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep; the uploaded logo, if any, sits above the line |
+| `logo-reveal` | The uploaded logo as the hero: an SVG strokes itself on along each shape's measured length and fills with its own colors, a PNG wipes in; a glint crosses its exact silhouette; the line sits small beneath. Only with an uploaded logo (`normalizeDirection` swaps it out otherwise) |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
 `fade` (through the background), `push` (the camera pushes through) and
@@ -37,11 +38,43 @@ to fit 84% of the width at its widest moment, and colored to pass 4.5:1
 contrast, including the emphasis gradient. v2 films get subtle film grain at
 encode (`RENDER_GRAIN`, default 3; 0 turns it off).
 
+### Brand assets
+
+The studio keeps a brand kit (one logo, up to three product photos) in the
+browser's IndexedDB; like the colors, it carries over to new productions.
+Planning requests carry only logo metadata (`context.logo`: kind, width,
+height), so recipes can lay the logo out; render requests carry the logo itself
+(`assets.logo`: `{ kind: 'svg', svg }` or `{ kind: 'png', dataUri }`).
+
+SVG logos are rebuilt by `public/svg-sanitize.mjs`, shared by the studio and the
+server: only whitelisted shapes, attributes and local references survive, simple
+`<style>` class rules become attributes, and each shape's length is measured for
+the draw-on. Scripts, event handlers, external links, embedded HTML, images,
+`<use>`, animation and custom entities never survive. The server checks every
+logo again (`src/production/brand-assets.mjs`) before rendering; PNGs are
+checked for format, size and real dimensions. Shapes with no fill of their own
+take the film's text color. The Fold's paper carries the logo debossed in one
+tint. Product photos are stored and sent nowhere yet; product shots arrive in
+Phase 3.
+
+### Accounts and storage
+
+When `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` are
+set, the studio requires email sign-in and keeps projects, the brand kit and
+films in Supabase (`supabase/migrations/20261108000000_fold_motion.sql`; row
+level security keeps every row and file private to its owner). The server
+(`src/runtime/supabase-server.mjs`) refuses unsigned requests to the generate,
+storyboard, state and render endpoints with 401, verifies tokens with Supabase
+Auth, loads logos only from the user's own `brand-assets/<user id>/` folder, and
+stores each film at `films/<user id>/<project>/<run>.mp4` with a signed link.
+The browser client (`public/supabase-client.mjs`) uses only the publishable key.
+Without those variables nothing changes: the studio saves to the browser.
+
 ## Capabilities
 
 | Area | Today | Not yet |
 | --- | --- | --- |
-| Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps. v1: `rect`, `circle`, `text` | images, logos as images, video footage, 3D |
+| Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps, the uploaded logo (SVG or PNG). v1: `rect`, `circle`, `text` | product photos (Phase 3), video footage, 3D |
 | Motion | Per-shot `motion` in the scene spec: a camera move, a copy entrance and an atmosphere, from a fixed vocabulary (below) | Per-element keyframes, custom easing, orbiting or 3D camera moves |
 | Transitions | v2: `cut`, `wipe`, `fade`, `push`, `fold`. v1: hard cuts | Zoom through a letter, match cuts |
 | Format | 1280 × 720 at 24 fps by default (`context.width`, `height`, `fps`); the studio always sends the defaults | Vertical or square presets in the studio |

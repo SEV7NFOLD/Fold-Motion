@@ -1,4 +1,5 @@
 import { getEngineConfig } from '../src/runtime/creative-api.mjs';
+import { publicAuthConfig } from '../src/runtime/supabase-server.mjs';
 
 export const VERCEL_RENDER_REASON = 'This deployment runs on Vercel, which can’t render video (no FFmpeg, and functions can’t run a full encode). Render from the Render deployment, or run npm start on a machine with FFmpeg.';
 
@@ -12,5 +13,6 @@ export default function engine(request, response) {
     success: true,
     engine: getEngineConfig(),
     render: { available: false, reason: VERCEL_RENDER_REASON },
+    auth: publicAuthConfig(),
   });
 }
