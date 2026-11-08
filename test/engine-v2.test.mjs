@@ -214,3 +214,82 @@ test('kickers that repeat part of the line and emphasis covering most of it are 
   assert.equal(fine.direction.kicker, 'Launching December 2026');
   assert.equal(fine.direction.emphasis, 'motion');
 });
+
+function foldTimeline() {
+  const plan = [
+    { copy: 'Ideas into motion', recipe: 'kicker-title', transitionOut: 'fold', motion: { camera: 'push-in', atmosphere: 'spotlight' } },
+    { copy: 'AI plans the film.', recipe: 'title-reveal', transitionOut: 'wipe', motion: { camera: 'static', atmosphere: 'planes' } },
+    { copy: 'Code renders it.', recipe: 'statement', transitionOut: 'fold', motion: { camera: 'static', atmosphere: 'grid' } },
+    { copy: 'Creativity at scale', recipe: 'lockup', transitionOut: 'cut', motion: { camera: 'pull-out', atmosphere: 'dots' } },
+  ];
+  let start = 0;
+  const shots = plan.map((item, index) => {
+    const spec = { version: 2, ...item, durationInSeconds: 2 };
+    spec.elements = expandRecipe(spec, { copy: item.copy, context: DARK, shotIndex: index });
+    const shot = { shotId: `shot-${index + 1}`, startFrame: start, endFrame: start + 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec };
+    start += 48;
+    return shot;
+  });
+  return { width: 1280, height: 720, fps: 24, totalFrames: start, shots };
+}
+
+test('The Fold folds the outgoing shot over the incoming one, alternating its crease', () => {
+  const timeline = foldTimeline();
+  const firstFold = renderTimelineFrame(timeline, 44);    // end of shot 1
+  assert.match(firstFold, /clip-path="url\(#foldSecondX\)"/, 'the first fold uses a vertical crease');
+  assert.match(firstFold, /id="s1-atm-glow"/, 'the incoming shot is drawn underneath');
+  assert.match(firstFold, /id="s0-atm-glow"/, 'the outgoing shot is drawn on the folding paper');
+  assert.match(renderTimelineFrame(timeline, 50), /fill="url\(#foldPaper\)"/, 'the folded half folds away at the start of shot 2');
+  assert.match(renderTimelineFrame(timeline, 140), /clip-path="url\(#foldSecondY\)"/, 'the second fold uses a horizontal crease');
+  assert.doesNotMatch(renderTimelineFrame(timeline, 24), /url\(#foldPaper\)|url\(#foldSecond/, 'no fold mid-shot');
+  assert.equal(renderTimelineFrame(timeline, 45), renderTimelineFrame(timeline, 45));
+});
+
+test('a shot entering through The Fold starts with its atmosphere already lit', () => {
+  const timeline = foldTimeline();
+  const entering = renderTimelineFrame(timeline, 48);   // first frame of shot 2 (after a fold)
+  assert.match(entering, /fill="url\(#s1-atm-glow\)" opacity="1"/);
+  const afterWipe = renderTimelineFrame(timeline, 96);  // first frame of shot 3 (after a wipe)
+  assert.match(afterWipe, /fill="url\(#s2-atm-glow\)" opacity="0"/);
+});
+
+test('every frame through both folds rasterizes', () => {
+  const timeline = foldTimeline();
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const frame of [40, 42, 44, 46, 47, 48, 50, 52, 54, 136, 138, 140, 142, 143, 144, 146, 148, 150]) {
+    assert.ok(new Resvg(renderTimelineFrame(timeline, frame), { fitTo: { mode: 'width', value: 320 }, font }).render().asPng().length > 1000, `frame ${frame}`);
+  }
+});
+
+test('The Fold stays special: at most two per film, aliases map to it, the fallback uses it', async () => {
+  const { limitFolds, MAX_FOLDS } = await import('../src/production/recipes.mjs');
+  const specs = [1, 2, 3, 4].map(() => ({ version: 2, transitionOut: 'fold' }));
+  const changes = limitFolds(specs, ['a', 'b', 'c', 'd']);
+  assert.equal(MAX_FOLDS, 2);
+  assert.deepEqual(specs.map((spec) => spec.transitionOut), ['fold', 'fold', 'wipe', 'wipe']);
+  assert.equal(changes.length, 2);
+  assert.equal(normalizeDirection({ recipe: 'statement', transitionOut: 'Paper fold' }, { copy: 'A line', index: 0, count: 3, seed: 's' }).direction.transitionOut, 'fold');
+
+  let filmsWithFold = 0;
+  for (const brief of ['A perfume called Nocturne', 'A fintech app launch', 'A coffee shop opening', 'A sneaker drop', 'A jazz festival', 'A hotel spa', 'A bakery', 'A law firm']) {
+    const { storyboard } = await createCreativePlan(brief, DARK, null);
+    const { timeline } = await compileCreativePlan(storyboard, DARK, null);
+    const folds = timeline.shots.filter((shot) => shot.spec.transitionOut === 'fold').length;
+    assert.ok(folds <= MAX_FOLDS);
+    if (folds > 0) filmsWithFold += 1;
+  }
+  assert.ok(filmsWithFold >= 3, `only ${filmsWithFold} of 8 offline films used The Fold`);
+});
+
+test('Gemini asking for three folds gets two, and the repairs say so', async () => {
+  const { storyboard } = await createCreativePlan('A launch teaser', DARK, null);
+  storyboard.shots.push({ ...storyboard.shots.at(-1), id: 'shot-04', onScreenCopy: 'One more line' });
+  storyboard.shots.push({ ...storyboard.shots.at(-1), id: 'shot-05', onScreenCopy: 'And the last' });
+  const directions = storyboard.shots.map((shot) => ({ id: `${shot.id}-scene`, recipe: 'statement', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'fold' }));
+  const result = await generateProductionAction({
+    action: 'compile', storyboard, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }),
+  });
+  assert.deepEqual(result.timeline.shots.map((shot) => shot.spec.transitionOut), ['fold', 'fold', 'wipe', 'wipe', 'cut']);
+  assert.ok(result.repairs.some((message) => message.includes('more than 2 folds')));
+});
