@@ -25,7 +25,12 @@ and this file disagree about current behavior, this file and the code win.
 | `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
-`fade` (through the background) and `push` (the camera pushes through). Shots
+`fade` (through the background), `push` (the camera pushes through) and
+`fold`, FOLD Motion's signature: the frame folds in half like paper, revealing
+the next shot, then the folded half folds away. A film's folds alternate
+between a vertical and a horizontal crease; the paper's back is stock tinted
+with the brand's colors. `limitFolds` keeps at most two folds per film (extras
+become wipes). Shots
 can also open with a `beam` of light and finish with a `sweep` across the line.
 All text is measured from the bundled fonts (`assets/fonts/metrics.json`), sized
 to fit 84% of the width at its widest moment, and colored to pass 4.5:1
@@ -38,7 +43,7 @@ encode (`RENDER_GRAIN`, default 3; 0 turns it off).
 | --- | --- | --- |
 | Elements | v2: recipe-built type, hairlines, kickers, emphasis gradients, light sweeps. v1: `rect`, `circle`, `text` | images, logos as images, video footage, 3D |
 | Motion | Per-shot `motion` in the scene spec: a camera move, a copy entrance and an atmosphere, from a fixed vocabulary (below) | Per-element keyframes, custom easing, orbiting or 3D camera moves |
-| Transitions | v2: `cut`, `wipe`, `fade`, `push`. v1: hard cuts | Zoom through a letter, match cuts |
+| Transitions | v2: `cut`, `wipe`, `fade`, `push`, `fold`. v1: hard cuts | Zoom through a letter, match cuts |
 | Format | 1280 × 720 at 24 fps by default (`context.width`, `height`, `fps`); the studio always sends the defaults | Vertical or square presets in the studio |
 | Duration | Shot durations from the storyboard, frame-accurate | Global duration control in the studio (the model aims for about 8 seconds) |
 | Audio | `src/audio/audio-track.mjs` models tracks and cues | Audio in the render. Nothing muxes audio into the MP4. |

@@ -19,7 +19,7 @@ What the engine can make (plan only within this):
 - Every shot picks its own camera, atmosphere and transition:
   Camera: ${vocabulary('camera')}.
   Atmosphere: ${vocabulary('atmosphere')}.
-  Shots change with a cut, a wipe, a fade or a push-through.
+  Shots change with a cut, a wipe, a fade, a push-through or The Fold, FOLD Motion's signature, where the frame folds in half like paper to reveal the next shot.
 - There is no photography, video footage, 3D, logos as images, or audio, and no other camera moves (no orbits around objects, dolly shots or handheld moves).
 So describe cameraBehavior, motionBehavior and transitions in these terms, as the viewer will see them (for example "Slow push-in; the words rise in one by one, then a light sweep"). Never promise footage, product shots or sound.
 

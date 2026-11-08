@@ -160,10 +160,12 @@ function gridPath(width, height) {
 function atmosphere(kind, t, duration, ctx) {
   const { width: W, height: H, accent, primary } = ctx;
   const progress = clamp(t / duration);
-  const reveal = ease.outCubic(span(t, 0, 0.9));
+  // A shot that enters through The Fold is already lit, so the fold reveals a living frame.
+  const reveal = ctx.settled ? 1 : ease.outCubic(span(t, 0, 0.9));
   const defs = [];
   const parts = [];
-  const glow = (id, cx, cy, r, opacity) => {
+  const glow = (name, cx, cy, r, opacity) => {
+    const id = `${ctx.prefix || 's'}-${name}`;
     defs.push(`<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}"><stop offset="0" stop-color="${accent}" stop-opacity="${opacity}"/><stop offset="0.6" stop-color="${accent}" stop-opacity="${f(opacity * 0.2)}"/><stop offset="1" stop-color="${primary}" stop-opacity="0"/></radialGradient>`);
     parts.push(`<rect width="${W}" height="${H}" fill="url(#${id})" opacity="${f(reveal)}"/>`);
   };
@@ -262,7 +264,7 @@ function cameraTransform(camera, progress, extraScale, ctx) {
 
 // ---------------------------------------------------------------- timeline frame
 
-export const TRANSITION_SECONDS = Object.freeze({ wipe: [0.3, 0.34], fade: [0.3, 0.3], push: [0.35, 0.35] });
+export const TRANSITION_SECONDS = Object.freeze({ wipe: [0.3, 0.34], fade: [0.3, 0.3], push: [0.35, 0.35], fold: [0.3, 0.3] });
 
 /** Draws frame `frameIndex` of a timeline made of v2 shots, including transitions. */
 export function renderTimelineFrame(timeline, frameIndex) {
@@ -311,11 +313,39 @@ export function renderTimelineFrame(timeline, frameIndex) {
     if (stripe > 0.5) overlays.push(`<rect x="${f(Math.max(0, left - stripe))}" y="0" width="${f(Math.min(stripe, left))}" height="${H}" fill="${stripeColor}"/>`);
   }
 
-  const defs = [
-    `<radialGradient id="vignette" cx="50%" cy="50%" r="72%"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>`,
-    `<linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${accent}" stop-opacity="0"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient>`,
-    `<radialGradient id="beamGlow"><stop offset="0" stop-color="${accent}" stop-opacity="0.55"/><stop offset="1" stop-color="${accent}" stop-opacity="0"/></radialGradient>`,
-  ];
+  const layer = shotLayers(timeline, index, t, extraScale);
+  const defs = [...filmDefs(primary, accent, W, H), ...layer.defs];
+  let content = layer.content;
+  if (outgoing === 'fold' && tail < TRANSITION_SECONDS.fold[0]) {
+    // The next shot waits underneath at its first frame while this one folds over it.
+    const next = shotLayers(timeline, index + 1, 0, 1);
+    defs.push(...next.defs);
+    const p = 1 - clamp(tail / TRANSITION_SECONDS.fold[0]);
+    content = foldOver({ under: next.content, folding: content, p, axis: foldAxis(timeline, index), W, H, accent });
+  } else if (incoming === 'fold' && t < TRANSITION_SECONDS.fold[1]) {
+    const p = clamp(t / TRANSITION_SECONDS.fold[1]);
+    content = foldAway({ under: content, p, axis: foldAxis(timeline, index - 1), W, H, accent });
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<defs>${defs.join('')}</defs>
+${content}
+${overlays.join('')}
+<rect width="${W}" height="${H}" fill="url(#vignette)"/>
+</svg>`;
+}
+
+/** Everything one shot draws at time t: its background, atmosphere, beam, elements and camera. */
+function shotLayers(timeline, index, t, extraScale = 1) {
+  const W = timeline.width;
+  const H = timeline.height;
+  const shot = timeline.shots[index];
+  const duration = shot.durationFrames / timeline.fps;
+  const primary = shot.palette?.primary || shot.spec.elements[0]?.fill || '#0E0E11';
+  const accent = shot.palette?.accent || '#7C3AED';
+  const settled = timeline.shots[index - 1]?.spec?.transitionOut === 'fold';
+  const ctx = { width: W, height: H, primary, accent, prefix: `s${index}`, settled };
+  const { motion } = normalizeMotion(shot.spec.motion);
+  const defs = [];
   const background = shot.spec.elements.find((element) => element.type === 'rect' && element.x === 0 && element.y === 0 && element.width === W && element.height === H);
   const atm = atmosphere(motion.atmosphere, t, duration, ctx);
   defs.push(...atm.defs);
@@ -340,11 +370,100 @@ export function renderTimelineFrame(timeline, frameIndex) {
   }
   const transform = cameraTransform(motion.camera, clamp(t / duration), extraScale, ctx);
   const scene = transform ? `<g transform="${transform}">${layers.join('\n')}</g>` : layers.join('\n');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-<defs>${defs.join('')}</defs>
-<rect width="${W}" height="${H}" fill="${background?.fill || primary}"/>
-${scene}
-${overlays.join('')}
-<rect width="${W}" height="${H}" fill="url(#vignette)"/>
-</svg>`;
+  return { defs, content: `<rect width="${W}" height="${H}" fill="${background?.fill || primary}"/>\n${scene}` };
+}
+
+/** Gradients and clips shared by every shot in a frame, including The Fold's paper. */
+function filmDefs(primary, accent, W, H) {
+  const paperLight = mix(primary, accent, 0.3);
+  const paperDark = mix(primary, accent, 0.12);
+  return [
+    `<radialGradient id="vignette" cx="50%" cy="50%" r="72%"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>`,
+    `<linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${accent}" stop-opacity="0"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient>`,
+    `<radialGradient id="beamGlow"><stop offset="0" stop-color="${accent}" stop-opacity="0.55"/><stop offset="1" stop-color="${accent}" stop-opacity="0"/></radialGradient>`,
+    `<linearGradient id="foldPaper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${paperLight}"/><stop offset="1" stop-color="${paperDark}"/></linearGradient>`,
+    `<linearGradient id="foldShadowX" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.6"/></linearGradient>`,
+    `<linearGradient id="foldShadowY" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.6"/></linearGradient>`,
+    `<clipPath id="foldFirstX"><rect x="0" y="0" width="${W / 2}" height="${H}"/></clipPath>`,
+    `<clipPath id="foldSecondX"><rect x="${W / 2}" y="0" width="${W / 2}" height="${H}"/></clipPath>`,
+    `<clipPath id="foldFirstY"><rect x="0" y="0" width="${W}" height="${H / 2}"/></clipPath>`,
+    `<clipPath id="foldSecondY"><rect x="0" y="${H / 2}" width="${W}" height="${H / 2}"/></clipPath>`,
+  ];
+}
+
+// ---------------------------------------------------------------- The Fold
+
+/** A film's folds alternate: the first folds along a vertical crease, the next along a horizontal one. */
+function foldAxis(timeline, boundaryIndex) {
+  const before = timeline.shots.slice(0, boundaryIndex).filter((shot) => shot.spec.transitionOut === 'fold').length;
+  return before % 2 === 0 ? 'x' : 'y';
+}
+
+/** The back of the paper: brand-tinted stock with two faint creases. */
+function paperFace(x, y, width, height, shade, accent) {
+  if (width < 0.5 || height < 0.5) return '';
+  const crease = mix(accent, '#FFFFFF', 0.35);
+  return `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="url(#foldPaper)"/>`
+    + `<path d="M ${f(x)} ${f(y)} L ${f(x + width)} ${f(y + height)} M ${f(x + width)} ${f(y)} L ${f(x)} ${f(y + height)}" stroke="${crease}" stroke-width="1" opacity="0.14"/>`
+    + `<rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${f(height)}" fill="#000" opacity="${f(clamp(shade))}"/>`;
+}
+
+/**
+ * Stage one: the frame's first half folds over its crease onto the second half,
+ * revealing the next shot underneath. `p` runs from 0 to 1.
+ */
+function foldOver({ under, folding, p, axis, W, H, accent = '#7C3AED' }) {
+  const theta = Math.PI * ease.inOutCubic(p);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const swell = 1 + 0.05 * s;
+  const parts = [under];
+  if (axis === 'x') {
+    parts.push(`<g clip-path="url(#foldSecondX)">${folding}</g>`);
+    parts.push(`<rect x="${f(W / 2 - 180)}" y="0" width="180" height="${H}" fill="url(#foldShadowX)" opacity="${f(s)}"/>`);
+    if (c > 0) {
+      parts.push(`<g transform="translate(${W / 2} ${H / 2}) scale(${c.toFixed(5)} ${swell.toFixed(5)}) translate(${-W / 2} ${-H / 2})"><g clip-path="url(#foldFirstX)">${folding}<rect x="0" y="0" width="${W / 2}" height="${H}" fill="#000" opacity="${f(0.6 * (1 - c))}"/></g></g>`);
+    } else {
+      const height = H * swell;
+      parts.push(paperFace(W / 2, H / 2 - height / 2, (W / 2) * -c, height, 0.4 * (1 + c), accent));
+    }
+    parts.push(`<rect x="${f(W / 2 - 0.75)}" y="0" width="1.5" height="${H}" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="${f(0.8 * s)}"/>`);
+  } else {
+    parts.push(`<g clip-path="url(#foldSecondY)">${folding}</g>`);
+    parts.push(`<rect x="0" y="${f(H / 2 - 120)}" width="${W}" height="120" fill="url(#foldShadowY)" opacity="${f(s)}"/>`);
+    if (c > 0) {
+      parts.push(`<g transform="translate(${W / 2} ${H / 2}) scale(${swell.toFixed(5)} ${c.toFixed(5)}) translate(${-W / 2} ${-H / 2})"><g clip-path="url(#foldFirstY)">${folding}<rect x="0" y="0" width="${W}" height="${H / 2}" fill="#000" opacity="${f(0.6 * (1 - c))}"/></g></g>`);
+    } else {
+      const width = W * swell;
+      parts.push(paperFace(W / 2 - width / 2, H / 2, width, (H / 2) * -c, 0.4 * (1 + c), accent));
+    }
+    parts.push(`<rect x="0" y="${f(H / 2 - 0.75)}" width="${W}" height="1.5" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="${f(0.8 * s)}"/>`);
+  }
+  return parts.join('\n');
+}
+
+/** Stage two: the folded half folds away off its far edge, uncovering the rest of the shot. */
+function foldAway({ under, p, axis, W, H, accent = '#7C3AED' }) {
+  const phi = (Math.PI / 2) * ease.inOutCubic(p);
+  const c = Math.cos(phi);
+  const swell = 1 + 0.05 * Math.sin(phi);
+  const parts = [under];
+  if (axis === 'x') {
+    const width = (W / 2) * c;
+    if (width > 0.5) {
+      const height = H * swell;
+      parts.push(`<rect x="${f(W - width - 160)}" y="0" width="160" height="${H}" fill="url(#foldShadowX)" opacity="${f(0.9 * c)}"/>`);
+      parts.push(paperFace(W - width, H / 2 - height / 2, width, height, 0.65 * (1 - c), accent));
+      parts.push(`<rect x="${f(W - width - 0.75)}" y="0" width="1.5" height="${H}" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="0.8"/>`);
+    }
+  } else {
+    const height = (H / 2) * c;
+    if (height > 0.5) {
+      const width = W * swell;
+      parts.push(`<rect x="0" y="${f(H - height - 120)}" width="${W}" height="120" fill="url(#foldShadowY)" opacity="${f(0.9 * c)}"/>`);
+      parts.push(paperFace(W / 2 - width / 2, H - height, width, height, 0.65 * (1 - c), accent));
+      parts.push(`<rect x="0" y="${f(H - height - 0.75)}" width="${W}" height="1.5" fill="${mix(accent, '#FFFFFF', 0.5)}" opacity="0.8"/>`);
+    }
+  }
+  return parts.join('\n');
 }

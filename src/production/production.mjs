@@ -2,7 +2,7 @@ import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
-import { expandRecipe, fallbackDirection, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { durationFromBrief } from '../../public/brief-length.mjs';
 
 export { durationFromBrief };
@@ -681,6 +681,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     repairs.push(...result.repairs);
     return result.spec;
   });
+  repairs.push(...limitFolds(shotSpecs, storyboard.shots.map((shot) => shot.id)));
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };

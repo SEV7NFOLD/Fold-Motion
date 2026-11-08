@@ -91,7 +91,7 @@ const MOTION_LABELS = {
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
 const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card' };
-const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through' };
+const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
   bold: ['Montserrat, Arial, sans-serif', 700],
@@ -817,7 +817,7 @@ function filmstrip(items, palette) {
         h('span', { class: 'shot-tag', title: 'staging', text: RECIPE_LABELS[item.recipe] || item.recipe }),
         h('span', { class: 'shot-tag', title: 'atmosphere', text: MOTION_LABELS.atmosphere[{ ...DEFAULT_MOTION, ...item.motion }.atmosphere] || '' }),
         h('span', { class: 'shot-tag', title: 'camera', text: MOTION_LABELS.camera[{ ...DEFAULT_MOTION, ...item.motion }.camera] || '' }),
-        item.transitionOut && item.transitionOut !== 'cut' && !item.last ? h('span', { class: 'shot-tag', title: 'transition to the next shot', text: `then ${(TRANSITION_LABELS[item.transitionOut] || item.transitionOut).toLowerCase()}` }) : null)
+        item.transitionOut && item.transitionOut !== 'cut' && !item.last ? h('span', { class: 'shot-tag', title: 'transition to the next shot', text: `then ${item.transitionOut === 'fold' ? 'The Fold' : (TRANSITION_LABELS[item.transitionOut] || item.transitionOut).toLowerCase()}` }) : null)
         : item.motion ? h('p', { class: 'shot-tags' }, ['camera', 'entrance', 'atmosphere'].map((field) => h('span', {
           class: 'shot-tag',
           title: field,

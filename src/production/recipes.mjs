@@ -11,7 +11,7 @@ import { capHeight, fitBlock, measure } from '../render/typography.mjs';
 import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
 export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup']);
-export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push']);
+export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold']);
 export const TEXT_CASE_OPTIONS = Object.freeze(['upper', 'as-written']);
 
 export const RECIPE_DESCRIPTIONS = Object.freeze({
@@ -27,7 +27,11 @@ export const TRANSITION_DESCRIPTIONS = Object.freeze({
   wipe: 'an accent-colored panel wipes across with a lighter stripe riding its edge',
   fade: 'fades through the background color',
   push: 'the camera pushes through the frame into the next shot',
+  fold: "FOLD Motion's signature: the frame folds in half like paper, revealing the next shot, then the folded half folds away; at most twice per film, for the most important change of scene",
 });
+
+/** The Fold is a signature, not a habit: at most this many per film. */
+export const MAX_FOLDS = 2;
 
 const KICKER_MAX = 32;
 
@@ -280,6 +284,7 @@ const TRANSITION_ALIASES = Object.freeze({
   crossfade: 'fade', dissolve: 'fade', 'fade-through': 'fade', 'dip-to-black': 'fade',
   slide: 'wipe', swipe: 'wipe', 'wipe-left': 'wipe', 'wipe-right': 'wipe', panel: 'wipe',
   zoom: 'push', 'zoom-through': 'push', 'push-in': 'push', 'push-through': 'push',
+  'paper-fold': 'fold', 'the-fold': 'fold', origami: 'fold', crease: 'fold', 'fold-over': 'fold', 'page-fold': 'fold',
 });
 
 function slug(value) {
@@ -300,9 +305,9 @@ function hashSeed(text) {
 }
 
 const DIRECTIONS = Object.freeze([
-  { openers: ['kicker-title', 'title-reveal'], middle: 'title-reveal', transitions: ['wipe', 'push', 'fade'], beam: true },
-  { openers: ['type-stack', 'title-reveal'], middle: 'statement', transitions: ['push', 'wipe', 'push'], beam: false },
-  { openers: ['title-reveal', 'title-reveal'], middle: 'statement', transitions: ['fade', 'wipe', 'fade'], beam: true },
+  { openers: ['kicker-title', 'title-reveal'], middle: 'title-reveal', transitions: ['fold', 'push', 'fade'], beam: true },
+  { openers: ['type-stack', 'title-reveal'], middle: 'statement', transitions: ['push', 'fold', 'push'], beam: false },
+  { openers: ['title-reveal', 'title-reveal'], middle: 'statement', transitions: ['fold', 'wipe', 'fade'], beam: true },
   { openers: ['type-stack', 'title-reveal'], middle: 'title-reveal', transitions: ['wipe', 'wipe', 'push'], beam: false },
 ]);
 
@@ -407,4 +412,22 @@ export function normalizeDirection(raw, { copy, index, count, seed }) {
     },
     changes,
   };
+}
+
+/**
+ * Keeps The Fold special: after MAX_FOLDS folds in a film, further folds become
+ * wipes. Returns the list of changes made (specs are edited in place).
+ */
+export function limitFolds(specs, labels = []) {
+  const changes = [];
+  let folds = 0;
+  specs.forEach((spec, index) => {
+    if (spec?.version !== 2 || spec.transitionOut !== 'fold') return;
+    folds += 1;
+    if (folds > MAX_FOLDS) {
+      spec.transitionOut = 'wipe';
+      changes.push(`${labels[index] || `shot ${index + 1}`}: more than ${MAX_FOLDS} folds in the film; this one became a wipe.`);
+    }
+  });
+  return changes;
 }

@@ -143,7 +143,7 @@ test('Gemini prompts describe the renderer as it actually behaves', async () => 
   // v2 prompts direct recipes; the v1 renderer facts above stay true for legacy scenes.
   const { RECIPE_OPTIONS, TRANSITION_OPTIONS } = await import('../src/production/recipes.mjs');
   for (const option of [...RECIPE_OPTIONS, ...TRANSITION_OPTIONS]) assert.ok(SHOT_COMPILER.includes(`"${option}"`), `compile prompt is missing ${option}`);
-  assert.match(STORYBOARD_DIRECTOR, /a cut, a wipe, a fade or a push-through/);
+  assert.match(STORYBOARD_DIRECTOR, /a cut, a wipe, a fade, a push-through or The Fold/);
   assert.match(STORYBOARD_DIRECTOR, /character for character/);
 });
 
