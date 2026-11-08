@@ -36,8 +36,11 @@ export const MAX_FOLDS = 2;
 const KICKER_MAX = 32;
 
 function timeScale(duration) {
-  return Math.min(1.15, Math.max(0.6, duration / 3));
+  return Math.min(1.6, Math.max(0.6, duration / 3));
 }
+
+/** Long shots shouldn't sit still: their line gets a light sweep in the back half. */
+const LONG_SHOT_SECONDS = 3.5;
 
 /** Text and decoration colors that read on this background and pass creative QA. */
 export function recipePalette(primary, accent) {
@@ -256,6 +259,13 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' 
         }));
       }
       break;
+    }
+  }
+  if (spec.durationInSeconds >= LONG_SHOT_SECONDS) {
+    const title = elements.find((element) => element.role === 'title');
+    const late = spec.durationInSeconds * 0.58;
+    if (title && (!title.sweep || title.sweep.start + title.sweep.duration < spec.durationInSeconds * 0.45)) {
+      title.sweep = { start: late, duration: 0.9 };
     }
   }
   return elements;
