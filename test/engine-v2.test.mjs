@@ -326,7 +326,7 @@ test('timecoded beats set the film length and each shot length', async () => {
     fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(eight) }] } }] }; } }),
   });
   assert.deepEqual(result.storyboard.shots.map((shot) => shot.durationSeconds), [3, 4, 3]);
-  assert.ok(result.repairs.some((message) => message.includes("follow the brief's beats: 3s, 4s, 3s")));
+  assert.ok(result.repairs.some((message) => message.includes("Cuts land on the brief's beats (3s, 4s, 3s): 3s, 4s, 3s")));
 });
 
 test('a middle shot that repeats a line is dropped and its time shared', async () => {
@@ -452,4 +452,142 @@ test('logo-reveal is refused without a logo, and bad logos are rejected with a r
   assert.throws(() => resolveLogo({ kind: 'png', dataUri: 'data:image/png;base64,AAAA' }), /could not be read/);
   assert.equal(normalizeLogoMeta({ kind: 'gif', width: 10, height: 10 }), undefined);
   assert.deepEqual(normalizeLogoMeta({ kind: 'png', width: '400', height: 200 }), { kind: 'png', width: 400, height: 200 });
+});
+
+async function productBrand() {
+  const { Resvg: R } = await import('@resvg/resvg-js');
+  const png = Buffer.from(new R('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="300" height="450" fill="#333"/><rect x="110" y="120" width="80" height="220" fill="#111"/><rect x="125" y="200" width="50" height="8" fill="#eee"/></svg>').render().asPng());
+  const { resolveBrandAssets } = await import('../src/production/brand-assets.mjs');
+  const { gradeProduct, bakeProductPanels } = await import('../scripts/render-production.mjs');
+  const brand = resolveBrandAssets({ products: [{ dataUri: `data:image/png;base64,${png.toString('base64')}` }] });
+  brand.products = brand.products.map((product) => ({ ...product, graded: gradeProduct(product, { primary: DARK.primaryColor, accent: DARK.accentColor }) }));
+  return { brand, bakeProductPanels };
+}
+const PRODUCT_CONTEXT = { ...DARK, products: [{ width: 300, height: 450 }] };
+
+test('product heroes alternate sides and type windows hold short lines', async () => {
+  const { storyboard } = await createCreativePlan('A launch', PRODUCT_CONTEXT, null);
+  const lines = ['Precision in silence', 'Alpha', 'Every drop decided', 'Built to last', 'Alpha', 'Creativity at scale'];
+  const six = { ...storyboard, shots: lines.map((line, i) => ({ ...storyboard.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 10 / 6 })) };
+  const directions = lines.map((line, i) => ({ id: `s${i}`, recipe: ['kicker-title', 'product-hero', 'statement', 'product-hero', 'type-window', 'lockup'][i], product: 1, motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'cut' }));
+  const built = await generateProductionAction({
+    action: 'compile', storyboard: six, context: PRODUCT_CONTEXT, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }),
+  });
+  const sides = built.timeline.shots.map((shot) => shot.spec.elements.find((element) => element.type === 'image')).filter(Boolean).map((image) => (image.x > 640 ? 'right' : 'left'));
+  assert.deepEqual(sides, ['right', 'left']);
+  const window = built.timeline.shots[4].spec.elements.find((element) => element.role === 'title');
+  assert.equal(window.reveal.style, 'window');
+  assert.equal(window.shown, 'ALPHA');
+  const { direction } = normalizeDirection({ recipe: 'type-window', transitionOut: 'cut' }, { copy: 'A line far too long for letters', index: 1, count: 3, seed: 's', productCount: 1 });
+  assert.equal(direction.recipe, 'product-hero');
+  assert.notEqual(normalizeDirection({ recipe: 'product-hero', transitionOut: 'cut' }, { copy: 'Alpha', index: 1, count: 3, seed: 's' }).direction.recipe, 'product-hero', 'no photos, no product shot');
+});
+
+test('with product photos uploaded, the film shows the product at least once', async () => {
+  const { ensureProductShot } = await import('../src/production/recipes.mjs');
+  const specs = [{ version: 2, recipe: 'title-reveal' }, { version: 2, recipe: 'statement' }, { version: 2, recipe: 'lockup' }];
+  assert.equal(ensureProductShot(specs, 1, ['a', 'b', 'c']).length, 1);
+  assert.equal(specs[1].recipe, 'product-hero');
+  assert.deepEqual(ensureProductShot(specs, 1), [], 'already has one');
+  const { storyboard } = await createCreativePlan('A launch film for Alpha', PRODUCT_CONTEXT, null);
+  const { timeline } = await compileCreativePlan(storyboard, PRODUCT_CONTEXT, null);
+  assert.ok(timeline.shots.some((shot) => shot.spec.elements.some((element) => element.type === 'image' || element.window)), 'the offline fallback shows the product');
+});
+
+test('product photos are graded, panels are baked, and type windows draw the photo once per frame', async () => {
+  const { brand, bakeProductPanels } = await productBrand();
+  assert.match(brand.products[0].graded, /^data:image\/png;base64,/);
+  const plan = [{ copy: 'Alpha', recipe: 'product-hero' }, { copy: 'Alpha', recipe: 'type-window' }];
+  let start = 0;
+  const shots = plan.map((item, index) => {
+    const spec = { version: 2, ...item, product: 1, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+    spec.elements = expandRecipe(spec, { copy: item.copy, context: PRODUCT_CONTEXT, shotIndex: index, productOrdinal: 0 });
+    const shot = { shotId: `s${index}`, startFrame: start, endFrame: start + 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec };
+    start += 48;
+    return shot;
+  });
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: start, shots };
+  brand.panels = bakeProductPanels(timeline, brand);
+  assert.equal(Object.keys(brand.panels).length, 1);
+  const hero = renderTimelineFrame(timeline, 30, brand);
+  assert.doesNotMatch(hero, /mask="url\(#shot-1-product-mx\)"/, 'baked panels need no masks');
+  const windowFrame = renderTimelineFrame(timeline, 80, brand);
+  assert.equal((windowFrame.match(/<image /g) || []).length, 1, 'one image for all the letters');
+  assert.match(windowFrame, /<mask id="shot-2-copy-letters">/);
+  assert.throws(() => renderTimelineFrame(timeline, 30, {}), /no product photo came with the render request/);
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const frame of [0, 10, 30, 47, 48, 52, 80, 95]) assert.ok(new Resvg(renderTimelineFrame(timeline, frame, brand), { fitTo: { mode: 'width', value: 320 }, font }).render().asPng().length > 1000, `frame ${frame}`);
+});
+
+test('product photos are validated and loaded only from the user’s own folder', async () => {
+  const { resolveProducts, normalizeProductsMeta } = await import('../src/production/brand-assets.mjs');
+  const { loadStoredAssets } = await import('../src/runtime/supabase-server.mjs');
+  assert.throws(() => resolveProducts([{ dataUri: 'data:image/gif;base64,AAAA' }]), /JPEG or PNG/);
+  assert.throws(() => resolveProducts([{ dataUri: 'data:image/jpeg;base64,AAAA' }]), /could not be read/);
+  assert.deepEqual(normalizeProductsMeta([{ width: '300', height: 450 }, { width: 0, height: 1 }]), [{ width: 300, height: 450 }]);
+  const config = { url: 'https://x.supabase.co', publishableKey: 'p', secretKey: 'sb_secret_x' };
+  const user = { id: 'u1' };
+  await assert.rejects(loadStoredAssets(config, user, { products: [{ path: 'someone-else/products/a.jpg' }] }), /another account/);
+});
+
+test('a logo on a plain background has it removed; a photo background is flagged', async () => {
+  const { analyzeLogoPixels, removePlainBackground } = await import('../public/logo-check.mjs');
+  const W = 40;
+  const H = 30;
+  const make = (background) => {
+    const data = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) data.set([...(x > 12 && x < 28 && y > 8 && y < 22 ? [20, 20, 20] : background(x, y)), 255], (y * W + x) * 4);
+    return data;
+  };
+  const plain = make(() => [255, 255, 255]);
+  const check = analyzeLogoPixels(plain, W, H);
+  assert.deepEqual([check.transparent, check.uniformEdges], [false, true]);
+  assert.ok(removePlainBackground(plain, W, H, { edgeColor: check.edgeColor }) > 0.5);
+  assert.equal(plain[3], 0, 'corner is now transparent');
+  assert.equal(plain[(15 * W + 20) * 4 + 3], 255, 'the mark stays opaque');
+  assert.equal(analyzeLogoPixels(make((x, y) => [30 + (x * 37 + y * 53) % 140, 80, 160]), W, H).uniformEdges, false);
+});
+
+test('more shots than beats: cuts snap to the beat boundaries', async () => {
+  const brief = '0:00 - 0:03 | Opening. 0:03 - 0:07 | Build. 0:07 - 0:10 | Reveal';
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  base.shots = [1.5, 1.5, 1.2, 1.4, 1.6, 1.8].map((seconds, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: `Line ${i + 1}`, durationSeconds: seconds }));
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: brief, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(base) }] } }] }; } }),
+  });
+  let elapsed = 0;
+  const cuts = result.storyboard.shots.map((shot) => { elapsed += shot.durationSeconds; return Math.round(elapsed * 1000) / 1000; });
+  assert.ok(cuts.includes(3) && cuts.includes(7) && cuts.at(-1) === 10, `cuts at ${cuts.join(', ')}`);
+  assert.equal(result.storyboard.shots.length, 6);
+});
+
+test('a storyboard that reuses the end card is rewritten once, and direction gains emphasis and The Fold', async () => {
+  const brief = '0:00 - 0:03 | Opening\n0:03 - 0:10 | Reveal\n• On-Screen Text:\nFOLD Motion\nAI-Directed Studio. Dec 2026.';
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  const first = { ...base, shots: ['FOLD Motion', 'AI-Directed Studio', 'Something'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 3 })) };
+  const second = { ...base, shots: ['Precision in silence', 'Every frame decided', 'Something'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 3 })) };
+  const prompts = [];
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: brief, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => {
+      prompts.push(JSON.parse(options.body).contents[0].parts[0].text);
+      const reply = prompts.length === 1 ? first : second;
+      return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] } }] }; } };
+    },
+  });
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /reused the end card's text/);
+  assert.deepEqual(result.storyboard.shots.map((shot) => shot.onScreenCopy), ['Precision in silence', 'Every frame decided', 'FOLD Motion']);
+  assert.ok(result.repairs.some((message) => message.includes('rewritten once')));
+
+  const directions = result.storyboard.shots.map((shot) => ({ id: shot.id, recipe: 'statement', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'cut' }));
+  const built = await generateProductionAction({
+    action: 'compile', storyboard: result.storyboard, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }),
+  });
+  assert.equal(built.timeline.shots[0].spec.transitionOut, 'fold');
+  assert.ok(built.timeline.shots.some((shot) => shot.spec.emphasis));
+  assert.ok(built.repairs.some((message) => message.includes('The Fold carries the film')));
 });

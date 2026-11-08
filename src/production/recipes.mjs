@@ -10,7 +10,10 @@
 import { capHeight, fitBlock, measure } from '../render/typography.mjs';
 import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
-export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal']);
+export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window']);
+
+/** Recipes that put an uploaded product photo on screen. */
+export const PRODUCT_RECIPES = Object.freeze(['product-hero', 'type-window']);
 export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold']);
 export const TEXT_CASE_OPTIONS = Object.freeze(['upper', 'as-written']);
 
@@ -21,6 +24,8 @@ export const RECIPE_DESCRIPTIONS = Object.freeze({
   'type-stack': 'each word stacked on its own line, every line scaled to the same width and sliding in from alternating sides; energetic, for two to four short words',
   lockup: 'an end card: the line, a hairline, and the kicker set as a brand name in the display face, with light passing across (the uploaded logo, if any, sits above the line); for the final shot',
   'logo-reveal': 'the uploaded logo as the hero: it draws itself on and fills (an SVG) or wipes in (a PNG), a glint crosses it, and the line sits small beneath; only when a logo is uploaded',
+  'product-hero': 'an uploaded product photo, graded into the brand palette, emerges from darkness as a feathered panel on one side with a slow push-in and a pass of light, while the line rises huge in the display face on the other side; only when product photos are uploaded',
+  'type-window': 'giant display letters filled with an uploaded product photo, landing one by one; for one or two short words; only when product photos are uploaded',
 });
 
 export const TRANSITION_DESCRIPTIONS = Object.freeze({
@@ -119,6 +124,14 @@ function logoElement({ id, meta, cx, cy, maxWidth, maxHeight, start, duration, g
   };
 }
 
+/** The product photo a shot uses: { index (1-based), meta } or undefined. */
+function productFor(spec, context) {
+  const products = context.products || [];
+  if (!products.length) return undefined;
+  const index = Number.isInteger(spec.product) && spec.product >= 1 && spec.product <= products.length ? spec.product : 1;
+  return { index, meta: products[index - 1] };
+}
+
 function blockBaseline(centerY, size, lineCount, lineHeight, font) {
   const cap = capHeight(font, size);
   const total = cap + (lineCount - 1) * lineHeight;
@@ -131,13 +144,13 @@ function blockBaseline(centerY, size, lineCount, lineHeight, font) {
  * `context`: { width, height, primaryColor, accentColor }
  * `support`: optional supporting line (the subheadline on the final shot).
  */
-export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' }) {
+export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '', productOrdinal }) {
   const W = context.width;
   const H = context.height;
   const palette = recipePalette(context.primaryColor, context.accentColor);
   const k = timeScale(spec.durationInSeconds);
   const n = shotIndex + 1;
-  const displayRecipe = ['title-reveal', 'kicker-title', 'type-stack'].includes(spec.recipe);
+  const displayRecipe = ['title-reveal', 'kicker-title', 'type-stack', 'product-hero', 'type-window'].includes(spec.recipe);
   const textCase = TEXT_CASE_OPTIONS.includes(spec.textCase) ? spec.textCase : (displayRecipe ? 'upper' : 'as-written');
   const kicker = typeof spec.kicker === 'string' && spec.kicker.trim()
     ? (spec.kickerExact ? spec.kicker.trim() : spec.kicker.trim().slice(0, KICKER_MAX)) : '';
@@ -256,6 +269,62 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' 
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: y + (block.lines.length - 1) * lineHeight + H * 0.045, width: W * 0.06, accent: palette.accent, start: 1.4 * k, duration: 0.5 * k }));
       break;
     }
+    case 'product-hero': {
+      const product = productFor(spec, context);
+      if (!product) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
+      const side = (productOrdinal ?? shotIndex) % 2 === 0 ? 'right' : 'left';
+      const panelWidth = Math.min(W * 0.5, H * (product.meta.width / product.meta.height));
+      const panelX = side === 'right' ? W - panelWidth - W * 0.04 : W * 0.04;
+      elements.push({
+        id: `shot-${n}-product`, type: 'image', role: 'product', product: product.index, x: panelX, y: 0, width: panelWidth, height: H,
+        feather: side === 'right' ? { left: 0.32, right: 0.12, top: 0.12, bottom: 0.18 } : { left: 0.12, right: 0.32, top: 0.12, bottom: 0.18 },
+        reveal: { style: 'emerge', start: 0, duration: 1.1 * k }, push: 0.045,
+        glint: { start: Math.max(1.4 * k, spec.durationInSeconds * 0.5), duration: 0.8 },
+      });
+      const textLeft = side === 'right' ? W * 0.08 : panelX + panelWidth + W * 0.05;
+      const textWidth = side === 'right' ? panelX - W * 0.05 - textLeft : W * 0.92 - textLeft;
+      const shown = display(copy, textCase);
+      const block = fitBlock('display', shown, { maxWidth: textWidth, maxSize: H * 0.3, minSize: H * 0.07, maxLines: 2, tracking: 0.06 });
+      const lineHeight = block.size * 1.02;
+      const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, 'display');
+      const lastBaseline = y + (block.lines.length - 1) * lineHeight;
+      if (kicker) {
+        const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: textLeft + 3, y: y - capHeight('display', block.size) - H * 0.05, height: H, palette, start: 0.35 * k, anchor: 'start' });
+        kickerNode.fill = palette.emphasis.from;
+        elements.push(kickerNode);
+      }
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        lines: block.lines, lineHeight, x: textLeft, y, anchor: 'start', fill: palette.text,
+        reveal: { style: 'mask-rise', unit: 'word', start: 0.6 * k, duration: 0.8 * k, stagger: 0.1 * k },
+        settle: { from: 0.06, start: 0.6 * k, duration: 1.4 * k },
+        sweep: spec.sweep === false ? undefined : { start: Math.max(1.6 * k, spec.durationInSeconds * 0.62), duration: 0.8 },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(hairline({ id: `shot-${n}-accent`, x: textLeft + 3, y: lastBaseline + H * 0.05, width: Math.min(W * 0.14, textWidth * 0.4), accent: palette.accent, start: 1.0 * k, duration: 0.6 * k, from: 'left' }));
+      break;
+    }
+    case 'type-window': {
+      const product = productFor(spec, context);
+      if (!product) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
+      const shown = display(copy, textCase);
+      const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: H * 0.42, minSize: H * 0.12, maxLines: 2, tracking: 0.02 });
+      const lineHeight = block.size * 0.98;
+      const y = blockBaseline(H * 0.47, block.size, block.lines.length, lineHeight, 'display');
+      const lastBaseline = y + (block.lines.length - 1) * lineHeight;
+      const letters = [...shown].filter((character) => character !== ' ').length;
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.02,
+        lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+        reveal: { style: 'window', unit: 'letter', start: 0, duration: 0.35, stagger: Math.min(0.14, (0.9 * k) / Math.max(1, letters)) },
+        sweep: spec.sweep === false ? undefined : { start: Math.max(1.5 * k, spec.durationInSeconds * 0.6), duration: 0.8 },
+      }));
+      elements.at(-1).window = { product: product.index, outline: palette.emphasis.from, under: [mix(context.primaryColor, context.accentColor, 0.38), mix(context.primaryColor, context.accentColor, 0.15)] };
+      const lineY = lastBaseline + H * 0.07;
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.08, accent: palette.accent, start: 1.0 * k, duration: 0.5 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, palette, start: 1.1 * k }));
+      break;
+    }
     case 'lockup':
     default: {
       const shown = display(copy, textCase);
@@ -328,6 +397,8 @@ const RECIPE_ALIASES = Object.freeze({
   stack: 'type-stack', stacked: 'type-stack', 'word-stack': 'type-stack',
   end: 'lockup', 'end-card': 'lockup', endcard: 'lockup', outro: 'lockup', closing: 'lockup',
   logo: 'logo-reveal', 'logo-sting': 'logo-reveal', 'brand-reveal': 'logo-reveal', 'logo-reveal': 'logo-reveal',
+  product: 'product-hero', packshot: 'product-hero', 'pack-shot': 'product-hero', 'hero-product': 'product-hero', 'product-shot': 'product-hero',
+  window: 'type-window', 'letters-window': 'type-window', 'photo-type': 'type-window', 'image-type': 'type-window',
 });
 const TRANSITION_ALIASES = Object.freeze({
   'hard-cut': 'cut', none: 'cut', straight: 'cut',
@@ -366,7 +437,7 @@ const DIRECTIONS = Object.freeze([
  * recipe, transition, beam and sweep, seeded so different storyboards differ.
  * Never invents copy (no kicker); emphasis only reuses a word already in the line.
  */
-export function fallbackDirection(seed, index, count, copy) {
+export function fallbackDirection(seed, index, count, copy, productCount = 0) {
   const direction = DIRECTIONS[hashSeed(seed) % DIRECTIONS.length];
   const words = String(copy).trim().split(/\s+/).filter(Boolean);
   let recipe;
@@ -374,7 +445,10 @@ export function fallbackDirection(seed, index, count, copy) {
   else if (index === 0) recipe = direction.openers[0] === 'type-stack' && (words.length < 2 || words.length > 4) ? 'title-reveal' : direction.openers[0];
   else recipe = direction.middle;
   if (recipe === 'kicker-title') recipe = 'title-reveal';
+  if (productCount && count >= 2 && index === 1) recipe = 'product-hero';
+  else if (productCount && count >= 4 && index === count - 2 && words.length <= 2 && String(copy).length <= 16) recipe = 'type-window';
   return {
+    ...(productCount ? { product: (index % productCount) + 1 } : {}),
     recipe,
     transitionOut: index === count - 1 ? 'cut' : direction.transitions[index % direction.transitions.length],
     beam: index === 0 && direction.beam,
@@ -387,10 +461,10 @@ export function fallbackDirection(seed, index, count, copy) {
  * Cleans the model's direction for one shot. Returns the v2 fields and a list of
  * what changed. The copy itself never comes from here: it is the storyboard's.
  */
-export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = false }) {
+export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = false, productCount = 0 }) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const changes = [];
-  const fallback = fallbackDirection(seed, index, count, copy);
+  const fallback = fallbackDirection(seed, index, count, copy, productCount);
   const words = String(copy).trim().split(/\s+/).filter(Boolean);
 
   let recipe = slug(source.recipe);
@@ -399,6 +473,14 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
     if (mapped) changes.push(`recipe "${source.recipe}" treated as "${mapped}"`);
     else changes.push(source.recipe ? `unknown recipe "${source.recipe}" replaced with "${fallback.recipe}"` : `no recipe chosen; used "${fallback.recipe}"`);
     recipe = mapped || fallback.recipe;
+  }
+  if (PRODUCT_RECIPES.includes(recipe) && !productCount) {
+    changes.push(`${recipe} needs an uploaded product photo; used "${fallback.recipe === recipe ? 'title-reveal' : fallback.recipe}"`);
+    recipe = PRODUCT_RECIPES.includes(fallback.recipe) ? 'title-reveal' : fallback.recipe;
+  }
+  if (recipe === 'type-window' && (words.length > 2 || String(copy).length > 16)) {
+    changes.push('type-window suits one or two short words; used "product-hero"');
+    recipe = 'product-hero';
   }
   if (recipe === 'logo-reveal' && !hasLogo) {
     changes.push('logo-reveal needs an uploaded logo; used "lockup"');
@@ -454,9 +536,12 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
   }
 
   const flag = (value, fallbackValue) => (typeof value === 'boolean' ? value : value === 'true' ? true : value === 'false' ? false : fallbackValue);
+  const requested = Number(source.product);
+  const product = productCount ? (Number.isInteger(requested) && requested >= 1 && requested <= productCount ? requested : (index % productCount) + 1) : undefined;
   return {
     direction: {
       recipe,
+      ...(product ? { product } : {}),
       ...(textCase ? { textCase } : {}),
       kicker,
       emphasis,
@@ -484,4 +569,16 @@ export function limitFolds(specs, labels = []) {
     }
   });
   return changes;
+}
+
+/**
+ * With product photos uploaded, the film shows the product at least once: a
+ * middle shot (or the first, in a two-shot film) becomes a product hero.
+ */
+export function ensureProductShot(specs, productCount, labels = []) {
+  if (!productCount || specs.length === 0 || specs.some((spec) => PRODUCT_RECIPES.includes(spec?.recipe))) return [];
+  const index = specs.length >= 3 ? 1 : 0;
+  specs[index].recipe = 'product-hero';
+  specs[index].product = specs[index].product || 1;
+  return [`${labels[index] || `shot ${index + 1}`}: shows the uploaded product as a product hero.`];
 }

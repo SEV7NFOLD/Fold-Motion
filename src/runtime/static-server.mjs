@@ -14,7 +14,7 @@ import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 import { resolveBrandAssets } from '../production/brand-assets.mjs';
 import { loadStoredAssets, publicAuthConfig, requireUser, storeFilm, FILM_BUCKET } from './supabase-server.mjs';
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
-const MAX_RENDER_BODY_BYTES = 8 * 1024 * 1024;
+const MAX_RENDER_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SCENE_CONTEXT = {
   width: 1280,
   height: 720,
@@ -254,7 +254,7 @@ async function handleRenderRequest(request, response, root) {
 
   // The logo is checked before any work starts, so a bad file fails fast and clearly.
   try {
-    if (request.fold?.config && body.assets?.logo?.path) {
+    if (request.fold?.config && (body.assets?.logo?.path || body.assets?.products?.some((product) => product?.path))) {
       body.assets = await loadStoredAssets(request.fold.config, request.fold.user, body.assets);
     }
     resolveBrandAssets(body.assets);

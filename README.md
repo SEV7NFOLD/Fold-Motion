@@ -133,7 +133,10 @@ Upload a logo (SVG or PNG) and up to three product photos under Add headline
 and colors. The logo appears on the end card, debossed on The Fold's paper,
 and in the `logo-reveal` recipe, where an SVG draws itself on. Every SVG is
 rebuilt from a strict whitelist in the browser and again on the server, so
-nothing executable or external survives. Product photos go on screen in Phase 3.
+nothing executable or external survives. A raster logo with a plain background
+has it removed; a photo background is flagged, since it would show as a box.
+Product photos are graded into the brand palette and staged as product hero
+shots (`product-hero`) and photo-filled letters (`type-window`).
 
 ## Motion
 

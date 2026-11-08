@@ -152,7 +152,9 @@ test('capabilities documented as "not yet" are still missing from the renderer',
   // storyboard-director prompt and this test in the same change.
   assert.doesNotMatch(renderer, /audio/i, 'audio reached the renderer');
   assert.doesNotMatch(renderer, /render-cache/, 'the render cache is now wired in');
-  assert.doesNotMatch(renderer, /<image|<path d="M .* fill="(?!none)/, 'the renderer can now draw images or filled paths');
+  // Uploaded product photos and logos shipped (Phase 3); generated imagery did not.
+  assert.doesNotMatch(renderer, /<path d="M .* fill="(?!none)/, 'the renderer can now draw filled paths');
+  assert.match(engine, /graded product photos/);
   assert.match(engine, /Nothing muxes audio into the MP4/);
 });
 

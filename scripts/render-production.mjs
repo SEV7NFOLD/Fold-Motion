@@ -10,6 +10,7 @@ import { normalizeMotion } from '../src/production/motion.mjs';
 import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
 import { FONT_FILES } from '../src/render/typography.mjs';
 import { resolveBrandAssets } from '../src/production/brand-assets.mjs';
+import { mix } from '../src/production/color.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,6 +41,65 @@ function grainFilter(timeline) {
   if (!timeline.shots.some((shot) => shot.spec.version === 2)) return '';
   const strength = Number(process.env.RENDER_GRAIN ?? 3);
   return Number.isFinite(strength) && strength > 0 ? `noise=alls=${Math.min(20, strength)}:allf=t` : '';
+}
+
+/**
+ * Grades a product photo into the film's palette once per render: luminance mapped
+ * through shadows (the primary, darkened), muted mid-tones toward the accent,
+ * soft lights and warm paper highlights. Returns a PNG data URI whose shorter
+ * side is 720 px, which every frame then reuses.
+ */
+export function gradeProduct(product, { primary, accent }) {
+  const stops = [
+    [0, mix(primary, '#000000', 0.35)],
+    [0.42, mix(mix(primary, accent, 0.35), '#6E6A78', 0.45)],
+    [0.75, mix(mix(accent, '#FFFFFF', 0.62), '#B0ACB8', 0.5)],
+    [1, '#F6F3EE'],
+  ];
+  const channel = (hex, index) => Number.parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16) / 255;
+  const table = (index) => Array.from({ length: 17 }, (_, k) => {
+    const t = k / 16;
+    let i = 0;
+    while (i < stops.length - 2 && t > stops[i + 1][0]) i += 1;
+    const [t0, c0] = stops[i];
+    const [t1, c1] = stops[i + 1];
+    const u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+    return (channel(c0, index) + (channel(c1, index) - channel(c0, index)) * u).toFixed(4);
+  }).join(' ');
+  const scale = 720 / Math.min(product.width, product.height);
+  const width = Math.round(product.width * scale);
+  const height = Math.round(product.height * scale);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="grade" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">`
+    + '<feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0"/>'
+    + `<feComponentTransfer><feFuncR type="table" tableValues="${table(0)}"/><feFuncG type="table" tableValues="${table(1)}"/><feFuncB type="table" tableValues="${table(2)}"/></feComponentTransfer>`
+    + `</filter></defs><image href="${product.dataUri}" width="${width}" height="${height}" filter="url(#grade)"/></svg>`;
+  return `data:image/png;base64,${Buffer.from(new Resvg(svg).render().asPng()).toString('base64')}`;
+}
+
+/**
+ * Bakes each product panel's feathered edges into a transparent PNG once per
+ * render, so frames draw one plain image instead of two gradient masks.
+ */
+export function bakeProductPanels(timeline, brand) {
+  const panels = {};
+  for (const shot of timeline.shots) {
+    for (const element of shot.spec.elements || []) {
+      if (element.type !== 'image' || !element.feather) continue;
+      const product = brand.products?.[element.product - 1];
+      if (!product?.graded) continue;
+      const w = Math.round(element.width);
+      const h = Math.round(element.height);
+      const { left, right, top, bottom } = element.feather;
+      const stop = (offset, opacity) => `<stop offset="${offset}" stop-color="#FFFFFF" stop-opacity="${opacity}"/>`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs>`
+        + `<linearGradient id="fx" x1="0" y1="0" x2="1" y2="0">${stop(0, 0)}${stop(left, 1)}${stop(1 - right, 1)}${stop(1, 0)}</linearGradient>`
+        + `<linearGradient id="fy" x1="0" y1="0" x2="0" y2="1">${stop(0, 0)}${stop(top, 1)}${stop(1 - bottom, 1)}${stop(1, 0)}</linearGradient>`
+        + `<mask id="mx"><rect width="${w}" height="${h}" fill="url(#fx)"/></mask><mask id="my"><rect width="${w}" height="${h}" fill="url(#fy)"/></mask></defs>`
+        + `<g mask="url(#mx)"><g mask="url(#my)"><image href="${product.graded}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice"/></g></g></svg>`;
+      panels[element.id] = `data:image/png;base64,${Buffer.from(new Resvg(svg).render().asPng()).toString('base64')}`;
+    }
+  }
+  return panels;
 }
 
 function positiveNumber(value, fallback) {
@@ -257,6 +317,9 @@ export async function renderProductionProject({
 }) {
   const validation = validateTimeline(timeline);
   const brand = resolveBrandAssets(assets);
+  const palette = timeline.shots[0]?.palette || { primary: '#0E0E11', accent: '#7C3AED' };
+  brand.products = brand.products.map((product) => ({ ...product, graded: gradeProduct(product, palette) }));
+  brand.panels = bakeProductPanels(timeline, brand);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
 
   const projectId = timeline.id.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
