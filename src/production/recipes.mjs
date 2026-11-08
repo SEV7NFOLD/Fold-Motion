@@ -10,7 +10,7 @@
 import { capHeight, fitBlock, measure } from '../render/typography.mjs';
 import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
-export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup']);
+export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal']);
 export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold']);
 export const TEXT_CASE_OPTIONS = Object.freeze(['upper', 'as-written']);
 
@@ -19,7 +19,8 @@ export const RECIPE_DESCRIPTIONS = Object.freeze({
   statement: 'the line in a bold sans, letters cascading in one by one, with an optional kicker above and supporting line below; for a clear message',
   'kicker-title': 'an opening card: a small tracked kicker appears first, then the line rises into place under a beam of light; for quiet openings',
   'type-stack': 'each word stacked on its own line, every line scaled to the same width and sliding in from alternating sides; energetic, for two to four short words',
-  lockup: 'an end card: the line, a hairline, and the kicker set as a brand name in the display face, with light passing across; for the final shot',
+  lockup: 'an end card: the line, a hairline, and the kicker set as a brand name in the display face, with light passing across (the uploaded logo, if any, sits above the line); for the final shot',
+  'logo-reveal': 'the uploaded logo as the hero: it draws itself on and fills (an SVG) or wipes in (a PNG), a glint crosses it, and the line sits small beneath; only when a logo is uploaded',
 });
 
 export const TRANSITION_DESCRIPTIONS = Object.freeze({
@@ -102,6 +103,22 @@ function kickerElement({ id, kicker, x, y, height, palette, start, anchor = 'mid
   });
 }
 
+/** A logo element fitted inside maxWidth x maxHeight, centered on (cx, cy). */
+function logoElement({ id, meta, cx, cy, maxWidth, maxHeight, start, duration, glintAt }) {
+  const scale = Math.min(maxWidth / meta.width, maxHeight / meta.height);
+  return {
+    id,
+    type: 'logo',
+    kind: meta.kind,
+    x: cx,
+    y: cy,
+    width: Math.round(meta.width * scale * 100) / 100,
+    height: Math.round(meta.height * scale * 100) / 100,
+    reveal: { style: meta.kind === 'svg' ? 'draw' : 'wipe', start, duration },
+    glint: { start: glintAt, duration: 0.8 },
+  };
+}
+
 function blockBaseline(centerY, size, lineCount, lineHeight, font) {
   const cap = capHeight(font, size);
   const total = cap + (lineCount - 1) * lineHeight;
@@ -122,7 +139,8 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' 
   const n = shotIndex + 1;
   const displayRecipe = ['title-reveal', 'kicker-title', 'type-stack'].includes(spec.recipe);
   const textCase = TEXT_CASE_OPTIONS.includes(spec.textCase) ? spec.textCase : (displayRecipe ? 'upper' : 'as-written');
-  const kicker = typeof spec.kicker === 'string' && spec.kicker.trim() ? spec.kicker.trim().slice(0, KICKER_MAX) : '';
+  const kicker = typeof spec.kicker === 'string' && spec.kicker.trim()
+    ? (spec.kickerExact ? spec.kicker.trim() : spec.kicker.trim().slice(0, KICKER_MAX)) : '';
   const elements = [{ id: `shot-${n}-background`, type: 'rect', x: 0, y: 0, width: W, height: H, fill: context.primaryColor }];
   const sweepAt = (start) => (spec.sweep ? { start: start * k, duration: 0.9 } : undefined);
   const emphasisFor = (shown) => ({ words: emphasisWords(shown, spec.emphasis), from: palette.emphasis.from, to: palette.emphasis.to });
@@ -221,12 +239,32 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' 
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2 - targetWidth / 2, y: y - caps[0] + total + H * 0.05, width: targetWidth * 0.3, accent: palette.accent, start: 0.9 * k, duration: 0.6 * k, from: 'left' }));
       break;
     }
+    case 'logo-reveal': {
+      if (!context.logo) return expandRecipe({ ...spec, recipe: 'lockup' }, { copy, context, shotIndex, support });
+      const logo = logoElement({ id: `shot-${n}-logo`, meta: context.logo, cx: W / 2, cy: H * 0.42, maxWidth: W * 0.5, maxHeight: H * 0.34, start: 0.15 * k, duration: 1.2 * k, glintAt: 1.6 * k });
+      elements.push(logo);
+      const shown = display(copy, textCase);
+      const block = fitBlock('bold', shown, { maxWidth: W * 0.6, maxSize: H * 0.06, minSize: 16, maxLines: 2, tracking: -0.01 });
+      const lineHeight = block.size * 1.2;
+      const y = logo.y + logo.height / 2 + H * 0.1;
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'bold', size: block.size, tracking: -0.01,
+        lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+        reveal: { style: 'cascade', unit: 'letter', start: 1.1 * k, duration: 0.5 * k, stagger: Math.min(0.025, (0.7 * k) / Math.max(1, shown.length)) },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: y + (block.lines.length - 1) * lineHeight + H * 0.045, width: W * 0.06, accent: palette.accent, start: 1.4 * k, duration: 0.5 * k }));
+      break;
+    }
     case 'lockup':
     default: {
       const shown = display(copy, textCase);
       const block = fitBlock('bold', shown, { maxWidth: W * 0.72, maxSize: H * 0.09, minSize: H * 0.045, maxLines: 2, tracking: -0.015 });
       const lineHeight = block.size * 1.18;
-      const y = blockBaseline(H * 0.43, block.size, block.lines.length, lineHeight, 'bold');
+      if (context.logo) {
+        elements.push(logoElement({ id: `shot-${n}-logo`, meta: context.logo, cx: W / 2, cy: H * 0.3, maxWidth: W * 0.3, maxHeight: H * 0.16, start: 0.05 * k, duration: 0.9 * k, glintAt: 1.5 * k }));
+      }
+      const y = blockBaseline(context.logo ? H * 0.53 : H * 0.43, block.size, block.lines.length, lineHeight, 'bold');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const letters = [...shown].filter((character) => character !== ' ').length;
       elements.push(textElement({
@@ -240,7 +278,8 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '' 
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.12, accent: palette.accent, start: 0.75 * k, duration: 0.6 * k }));
       let nextY = lineY + H * 0.1;
       if (kicker) {
-        const shownKicker = kicker.toUpperCase();
+        // An exact kicker (from the brief) keeps its own capitalization.
+        const shownKicker = spec.kickerExact ? kicker : kicker.toUpperCase();
         const size = fitBlock('display', shownKicker, { maxWidth: W * 0.6, maxSize: H * 0.07, minSize: H * 0.04, maxLines: 1, tracking: 0.04 }).size;
         elements.push(textElement({
           id: `shot-${n}-kicker`, role: 'kicker', content: kicker, shown: shownKicker, font: 'display', size, tracking: 0.04,
@@ -287,7 +326,8 @@ const RECIPE_ALIASES = Object.freeze({
   message: 'statement', sentence: 'statement', line: 'statement', body: 'statement',
   opening: 'kicker-title', intro: 'kicker-title', opener: 'kicker-title', kicker: 'kicker-title',
   stack: 'type-stack', stacked: 'type-stack', 'word-stack': 'type-stack',
-  end: 'lockup', 'end-card': 'lockup', endcard: 'lockup', outro: 'lockup', closing: 'lockup', logo: 'lockup',
+  end: 'lockup', 'end-card': 'lockup', endcard: 'lockup', outro: 'lockup', closing: 'lockup',
+  logo: 'logo-reveal', 'logo-sting': 'logo-reveal', 'brand-reveal': 'logo-reveal', 'logo-reveal': 'logo-reveal',
 });
 const TRANSITION_ALIASES = Object.freeze({
   'hard-cut': 'cut', none: 'cut', straight: 'cut',
@@ -347,7 +387,7 @@ export function fallbackDirection(seed, index, count, copy) {
  * Cleans the model's direction for one shot. Returns the v2 fields and a list of
  * what changed. The copy itself never comes from here: it is the storyboard's.
  */
-export function normalizeDirection(raw, { copy, index, count, seed }) {
+export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = false }) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const changes = [];
   const fallback = fallbackDirection(seed, index, count, copy);
@@ -359,6 +399,10 @@ export function normalizeDirection(raw, { copy, index, count, seed }) {
     if (mapped) changes.push(`recipe "${source.recipe}" treated as "${mapped}"`);
     else changes.push(source.recipe ? `unknown recipe "${source.recipe}" replaced with "${fallback.recipe}"` : `no recipe chosen; used "${fallback.recipe}"`);
     recipe = mapped || fallback.recipe;
+  }
+  if (recipe === 'logo-reveal' && !hasLogo) {
+    changes.push('logo-reveal needs an uploaded logo; used "lockup"');
+    recipe = index === count - 1 ? 'lockup' : fallback.recipe === 'logo-reveal' ? 'title-reveal' : fallback.recipe;
   }
   if (recipe === 'type-stack' && (words.length < 2 || words.length > 4)) {
     changes.push(`type-stack needs two to four words; used "title-reveal" for ${words.length}`);

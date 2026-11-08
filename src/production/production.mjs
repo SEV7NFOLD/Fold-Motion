@@ -4,6 +4,7 @@ import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
+import { normalizeLogoMeta } from './brand-assets.mjs';
 
 export { durationFromBrief };
 
@@ -50,6 +51,13 @@ function isRenderableElement(element, context) {
       && element.x <= context.width
       && element.y <= context.height;
   }
+  if (element.type === 'logo') {
+    return (element.kind === 'svg' || element.kind === 'png')
+      && [element.x, element.y, element.width, element.height].every(Number.isFinite)
+      && element.width > 0 && element.height > 0
+      && element.x - element.width / 2 >= 0 && element.x + element.width / 2 <= context.width
+      && element.y - element.height / 2 >= 0 && element.y + element.height / 2 <= context.height;
+  }
   if (element.type === 'line') {
     return hasColor
       && Number.isFinite(element.x)
@@ -95,6 +103,10 @@ export function normalizeProductionContext(context = {}) {
     if (typeof normalized[key] !== 'string') normalized[key] = '';
     normalized[key] = normalized[key].trim();
   }
+  // Only logo metadata travels with planning; the logo itself comes with the render.
+  const logo = normalizeLogoMeta(normalized.logo);
+  if (logo) normalized.logo = logo;
+  else delete normalized.logo;
   return normalized;
 }
 
@@ -332,6 +344,24 @@ function makeShotSpec(storyboardShot, index, context, seed = '', count = 1) {
   };
 }
 
+/**
+ * A kicker written into the storyboard (from the brief's On-Screen Text) is exact
+ * copy: it replaces the model's kicker, keeps its own capitalization, and the
+ * final shot becomes an end card. Longer text rides as the supporting line.
+ */
+function applyExactKicker(direction, shot, index, count) {
+  const exact = typeof shot.kicker === 'string' ? shot.kicker.trim() : '';
+  if (!exact) return;
+  if (exact.length <= 40) {
+    direction.kicker = exact;
+    direction.kickerExact = true;
+  } else {
+    direction.kicker = '';
+    direction.supportExact = exact;
+  }
+  if (index === count - 1) direction.recipe = 'lockup';
+}
+
 /** A model scene that carries raw elements and no recipe is a legacy (v1) scene. */
 function isLegacyScene(raw) {
   return Boolean(raw) && typeof raw === 'object' && Array.isArray(raw.elements) && raw.elements.length > 0 && raw.recipe === undefined;
@@ -341,7 +371,7 @@ function isLegacyScene(raw) {
 function directedShotSpec(raw, shot, index, count, context, seed) {
   const label = shot.id;
   const repairs = [];
-  const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed });
+  const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed, hasLogo: Boolean(context.logo) });
   repairs.push(...changes.map((change) => `${label}: ${change}.`));
   let motion;
   if (raw?.motion === undefined) {
@@ -352,6 +382,7 @@ function directedShotSpec(raw, shot, index, count, context, seed) {
     motion = normalized.motion;
     repairs.push(...normalized.changes.map((change) => `${label}: motion ${change}.`));
   }
+  applyExactKicker(direction, shot, index, count);
   return {
     spec: {
       version: 2,
@@ -382,7 +413,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
     if (isV2) {
       // v2: the recipe lays the copy out; the subheadline rides on the final shot.
       const support = isLast && normalizedContext.subheadline && shot.onScreenCopy !== normalizedContext.subheadline
-        ? normalizedContext.subheadline : '';
+        ? normalizedContext.subheadline : (sourceSpec.supportExact || '');
       const recipe = support && !RECIPES_WITH_SUPPORT.includes(sourceSpec.recipe) ? 'lockup' : sourceSpec.recipe;
       const expanded = { ...sourceSpec, recipe, durationInSeconds: shot.durationSeconds };
       sourceSpec = {
@@ -696,6 +727,17 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
     if (normalizedContext.subheadline && storyboard.shots.length > 1) {
       storyboard.shots.at(-1).onScreenCopy = normalizedContext.subheadline;
+    }
+    // A brief's On-Screen Text is the end card, exactly: its first line on the final
+    // shot and the rest as that shot's kicker (when no copy fields are set).
+    const onScreen = provider && !normalizedContext.headline && !normalizedContext.subheadline ? onScreenTextFromBrief(prompt) : [];
+    if (onScreen.length) {
+      const last = storyboard.shots.at(-1);
+      const rest = onScreen.slice(1).join(' ').trim();
+      last.onScreenCopy = onScreen[0];
+      if (rest) last.kicker = rest;
+      else delete last.kicker;
+      repairs.push(`The final shot uses the brief's On-Screen Text exactly: "${onScreen[0]}"${rest ? `, with "${rest}" beneath it` : ''}.`);
     }
     // Every shot gets its own line: a middle shot that repeats one is dropped.
     for (const shot of removeRepeatedLines(storyboard)) {

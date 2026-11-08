@@ -372,3 +372,84 @@ test('long shots stay alive: slower reveals, a late light sweep, a breathing cam
   assert.match(renderTimelineFrame(timelineFor(5), 60), /<g transform="translate\(640(?:\.\d+)? 360\) scale\(1\.0\d+\)/, 'a locked-off 5 s shot breathes');
   assert.doesNotMatch(renderTimelineFrame(timelineFor(3), 36), /scale\(1\.0\d+\)/, 'a locked-off 3 s shot stays locked');
 });
+
+test("the brief's On-Screen Text becomes the end card exactly, line and kicker", async () => {
+  const brief = '0:00 - 0:03 | Opening\n0:03 - 0:07 | Build\n0:07 - 0:10 | Reveal\n• On-Screen Text:\nFOLD Motion\nAI-Directed Studio. Dec 2026.\n• Audio: a thud.';
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  base.shots = ['Precision in silence', 'Mathematical form', 'FOLD Motion AI-Directed Studio Dec 2026'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 8 / 3 }));
+  const plan = await generateProductionAction({
+    action: 'storyboard', prompt: brief, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(base) }] } }] }; } }),
+  });
+  const last = plan.storyboard.shots.at(-1);
+  assert.equal(last.onScreenCopy, 'FOLD Motion');
+  assert.equal(last.kicker, 'AI-Directed Studio. Dec 2026.');
+  assert.deepEqual(plan.storyboard.shots.map((shot) => shot.durationSeconds), [3, 4, 3]);
+
+  const directions = plan.storyboard.shots.map((shot) => ({ id: `${shot.id}-scene`, recipe: 'statement', kicker: 'Something else', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'fade' }));
+  const built = await generateProductionAction({
+    action: 'compile', storyboard: plan.storyboard, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }),
+  });
+  const endCard = built.timeline.shots.at(-1).spec;
+  assert.equal(endCard.recipe, 'lockup');
+  const kicker = endCard.elements.find((element) => element.role === 'kicker');
+  assert.equal(kicker.content, 'AI-Directed Studio. Dec 2026.');
+  assert.equal(kicker.shown, 'AI-Directed Studio. Dec 2026.', 'keeps its own capitalization');
+  assert.equal(endCard.elements.find((element) => element.role === 'title').content, 'FOLD Motion');
+});
+
+const MARK = (await import('node:fs')).readFileSync(new URL('../public/brand/sev7n-fold-mark.svg', import.meta.url), 'utf8');
+
+test('an uploaded logo appears on the end card and in logo-reveal, sized to fit', async () => {
+  const { resolveBrandAssets } = await import('../src/production/brand-assets.mjs');
+  const brand = resolveBrandAssets({ logo: { kind: 'svg', svg: MARK } });
+  const context = { ...DARK, logo: { kind: 'svg', width: brand.logo.width, height: brand.logo.height } };
+  for (const recipe of ['lockup', 'logo-reveal']) {
+    const elements = expandRecipe({ recipe, durationInSeconds: 3 }, { copy: 'Creativity at scale', context });
+    const logo = elements.find((element) => element.type === 'logo');
+    assert.ok(logo, `${recipe} has a logo`);
+    assert.ok(Math.abs(logo.width / logo.height - 412 / 512) < 0.01, 'aspect ratio kept');
+    const title = elements.find((element) => element.role === 'title');
+    assert.ok(title.y - title.fontSize > logo.y + logo.height / 2, `${recipe}: the line sits below the logo`);
+  }
+  const noLogo = expandRecipe({ recipe: 'logo-reveal', durationInSeconds: 3 }, { copy: 'Creativity at scale', context: DARK });
+  assert.equal(noLogo.some((element) => element.type === 'logo'), false, 'logo-reveal without a logo becomes an end card');
+});
+
+test('the renderer draws an SVG logo on, glints it, and debosses it on The Fold', async () => {
+  const { resolveBrandAssets } = await import('../src/production/brand-assets.mjs');
+  const brand = resolveBrandAssets({ logo: { kind: 'svg', svg: MARK } });
+  const context = { ...DARK, logo: { kind: 'svg', width: brand.logo.width, height: brand.logo.height } };
+  const plan = [{ recipe: 'logo-reveal', transitionOut: 'fold' }, { recipe: 'lockup', transitionOut: 'cut' }];
+  let start = 0;
+  const shots = plan.map((item, index) => {
+    const spec = { version: 2, ...item, durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' } };
+    spec.elements = expandRecipe(spec, { copy: index ? 'Creativity at scale' : 'SEV7N FOLD presents', context, shotIndex: index });
+    const shot = { shotId: `s${index}`, startFrame: start, endFrame: start + 71, durationFrames: 72, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec };
+    start += 72;
+    return shot;
+  });
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: start, shots };
+  assert.match(renderTimelineFrame(timeline, 14, brand), /stroke-dashoffset="[\d.]+"/, 'the outline draws on');
+  assert.match(renderTimelineFrame(timeline, 44, brand), /mask="url\(#shot-1-logo-glint-mask\)"/, 'a glint follows the silhouette');
+  assert.match(renderTimelineFrame(timeline, 69, brand), /filter="url\(#logoTint\)"/, 'the fold paper carries the logo');
+  assert.throws(() => renderTimelineFrame(timeline, 30, {}), /no logo came with the render request/);
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const frame of [6, 20, 44, 66, 69, 75, 120, 143]) {
+    assert.ok(new Resvg(renderTimelineFrame(timeline, frame, brand), { fitTo: { mode: 'width', value: 320 }, font }).render().asPng().length > 1000, `frame ${frame}`);
+  }
+});
+
+test('logo-reveal is refused without a logo, and bad logos are rejected with a reason', async () => {
+  const { resolveLogo, normalizeLogoMeta } = await import('../src/production/brand-assets.mjs');
+  const { direction, changes } = normalizeDirection({ recipe: 'logo-reveal', transitionOut: 'fade' }, { copy: 'A line here', index: 0, count: 3, seed: 's' });
+  assert.notEqual(direction.recipe, 'logo-reveal');
+  assert.ok(changes.some((change) => change.includes('needs an uploaded logo')));
+  assert.equal(normalizeDirection({ recipe: 'logo-reveal', transitionOut: 'fade' }, { copy: 'A line here', index: 0, count: 3, seed: 's', hasLogo: true }).direction.recipe, 'logo-reveal');
+  assert.throws(() => resolveLogo({ kind: 'svg', svg: '<html>no</html>' }), /isn’t an SVG/);
+  assert.throws(() => resolveLogo({ kind: 'png', dataUri: 'data:image/jpeg;base64,AAAA' }), /must be a PNG/);
+  assert.throws(() => resolveLogo({ kind: 'png', dataUri: 'data:image/png;base64,AAAA' }), /could not be read/);
+  assert.equal(normalizeLogoMeta({ kind: 'gif', width: 10, height: 10 }), undefined);
+  assert.deepEqual(normalizeLogoMeta({ kind: 'png', width: '400', height: 200 }), { kind: 'png', width: 400, height: 200 });
+});

@@ -9,6 +9,7 @@ import { evaluateCreativeQA, validateTimeline } from '../src/production/producti
 import { normalizeMotion } from '../src/production/motion.mjs';
 import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
 import { FONT_FILES } from '../src/render/typography.mjs';
+import { resolveBrandAssets } from '../src/production/brand-assets.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -251,9 +252,11 @@ export async function renderProductionProject({
   storyboard,
   acceptance,
   context,
+  assets,
   outputRoot = path.resolve('output'),
 }) {
   const validation = validateTimeline(timeline);
+  const brand = resolveBrandAssets(assets);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
 
   const projectId = timeline.id.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
@@ -283,7 +286,7 @@ export async function renderProductionProject({
     const shot = timeline.shots[shotIndex];
     const frameProgress = (frameIndex - shot.startFrame) / Math.max(1, shot.durationFrames - 1);
     const svg = shot.spec.version === 2
-      ? renderTimelineFrame(timeline, frameIndex)
+      ? renderTimelineFrame(timeline, frameIndex, brand)
       : renderShotSvg(shot, frameProgress, timeline.width, timeline.height);
     const frameName = `frame-${String(frameIndex).padStart(6, '0')}`;
     const svgPath = path.join(framesDirectory, `${frameName}.svg`);

@@ -11,6 +11,7 @@ import { validateStoryboard, validateTimeline } from '../production/production.m
 import { transitionProject } from '../orchestrator/project-state.mjs';
 import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 
+import { resolveBrandAssets } from '../production/brand-assets.mjs';
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
 const MAX_RENDER_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_SCENE_CONTEXT = {
@@ -250,6 +251,13 @@ async function handleRenderRequest(request, response, root) {
     return;
   }
 
+  // The logo is checked before any work starts, so a bad file fails fast and clearly.
+  try {
+    resolveBrandAssets(body.assets);
+  } catch (error) {
+    sendJson(response, 400, { success: false, error: error.message });
+    return;
+  }
   const projectRoot = path.resolve(root, '..');
   const requestFile = path.join(os.tmpdir(), `fold-render-${process.pid}-${Date.now()}.json`);
   try {
@@ -258,6 +266,7 @@ async function handleRenderRequest(request, response, root) {
       storyboard: body.storyboard,
       acceptance: body.acceptance,
       context: body.context,
+      ...(body.assets ? { assets: body.assets } : {}),
     }));
     const renderResult = await runNodeScript('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
       label: 'Rendering',

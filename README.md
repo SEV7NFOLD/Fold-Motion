@@ -98,6 +98,14 @@ cascades, tracking that settles, gradient emphasis, hairlines, light sweeps,
 beams, depth planes and dot-field ripples, with film grain at encode. See
 `skills/fold-motion/references/engine.md`.
 
+## Brand assets
+
+Upload a logo (SVG or PNG) and up to three product photos under Add headline
+and colors. The logo appears on the end card, debossed on The Fold's paper,
+and in the `logo-reveal` recipe, where an SVG draws itself on. Every SVG is
+rebuilt from a strict whitelist in the browser and again on the server, so
+nothing executable or external survives. Product photos go on screen in Phase 3.
+
 ## Motion
 
 Each shot's scene spec carries `motion: { camera, entrance, atmosphere }`,

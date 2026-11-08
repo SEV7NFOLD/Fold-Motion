@@ -1,5 +1,6 @@
 import { PROJECT_STATES } from './workflow-states.mjs';
 import { durationFromBrief } from './brief-length.mjs';
+import { sanitizeSvg, serializeSvgTree } from './svg-sanitize.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -90,7 +91,7 @@ const MOTION_LABELS = {
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
-const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card' };
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal' };
 const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
@@ -353,6 +354,8 @@ function usedContext(record, fullBrief) {
     context: { headline, subheadline, primaryColor, accentColor },
     seconds: durationFromBrief(fullBrief) ?? null,
     briefHasOnScreenText: /on[-\s]?screen\s+text\s*:/i.test(fullBrief),
+    logo: brandKit.logo?.kind || null,
+    products: brandKit.products.length,
   };
 }
 
@@ -393,13 +396,167 @@ function composeBrief(briefs) {
   return `${briefs[0]}\n\nRevision notes from the director:\n${notes}`;
 }
 
+
+// ---------------------------------------------------------------- brand kit (logo, product photos)
+// Stored in IndexedDB (images are too big for localStorage). Like the colors, the
+// brand kit carries over to every new production.
+const BRAND_DB = 'fold-motion-brand';
+const BRAND_LIMITS = { logoPngBytes: 1_500_000, productBytes: 2_000_000, products: 3 };
+let brandKit = { logo: null, products: [] };
+let logoTree = null;
+
+function openBrandDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BRAND_DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('kit');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function loadBrandKit() {
+  try {
+    const db = await openBrandDb();
+    const kit = await new Promise((resolve) => {
+      const request = db.transaction('kit').objectStore('kit').get('brand');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+    brandKit = { logo: kit?.logo || null, products: Array.isArray(kit?.products) ? kit.products : [] };
+  } catch {
+    brandKit = { logo: null, products: [] };
+  }
+  logoTree = brandKit.logo?.kind === 'svg' ? sanitizeSvg(brandKit.logo.svg) : null;
+  renderBrandTray();
+}
+
+async function saveBrandKit() {
+  logoTree = brandKit.logo?.kind === 'svg' ? sanitizeSvg(brandKit.logo.svg) : null;
+  renderBrandTray();
+  try {
+    const db = await openBrandDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kit', 'readwrite');
+      tx.objectStore('kit').put(brandKit, 'brand');
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    showAssetError('Your browser couldn’t save the brand kit. It will be used until you reload.');
+  }
+}
+
+function showAssetError(message) {
+  const node = $('asset-error');
+  node.textContent = message || '';
+  node.hidden = !message;
+}
+
+/** Downscales an image file on a canvas and returns it as a data URI. */
+async function rasterToDataUri(file, maxSide, type, quality) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('That image couldn’t be opened.'));
+      img.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+    return { dataUri: canvas.toDataURL(type, quality), width, height };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const dataUriBytes = (uri) => Math.round((uri.length - uri.indexOf(',') - 1) * 0.75);
+
+async function uploadLogo(file) {
+  showAssetError('');
+  try {
+    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+      const result = sanitizeSvg(await file.text());
+      if (!result.ok) throw new Error(result.error);
+      // Store the rebuilt, safe version; the server checks it again before rendering.
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${result.viewBox.join(' ')}">${serializeSvgTree(result.tree)}</svg>`;
+      brandKit.logo = { kind: 'svg', name: file.name, svg, width: result.width, height: result.height };
+    } else {
+      const { dataUri, width, height } = await rasterToDataUri(file, 1000, 'image/png');
+      if (dataUriBytes(dataUri) > BRAND_LIMITS.logoPngBytes) throw new Error('That logo is too large. Try a smaller PNG or an SVG.');
+      brandKit.logo = { kind: 'png', name: file.name, dataUri, width, height };
+    }
+    await saveBrandKit();
+  } catch (error) {
+    showAssetError(error.message);
+  }
+}
+
+async function addProducts(files) {
+  showAssetError('');
+  for (const file of files) {
+    if (brandKit.products.length >= BRAND_LIMITS.products) {
+      showAssetError(`Up to ${BRAND_LIMITS.products} product photos.`);
+      break;
+    }
+    try {
+      const { dataUri, width, height } = await rasterToDataUri(file, 1600, 'image/jpeg', 0.88);
+      if (dataUriBytes(dataUri) > BRAND_LIMITS.productBytes) throw new Error(`${file.name} is too large even after resizing.`);
+      brandKit.products.push({ id: `product-${Date.now().toString(36)}-${brandKit.products.length}`, name: file.name, dataUri, width, height });
+    } catch (error) {
+      showAssetError(error.message);
+    }
+  }
+  await saveBrandKit();
+}
+
+function assetThumb({ src, name, onRemove, label }) {
+  const image = h('img', { class: 'asset-thumb', alt: name || label, src });
+  const remove = h('button', { class: 'asset-remove', type: 'button', 'aria-label': `Remove ${label}`, text: '×' });
+  remove.addEventListener('click', onRemove);
+  return h('span', { class: 'asset-item', title: name || label }, image, remove);
+}
+
+function renderBrandTray() {
+  const logoSlot = $('logo-slot');
+  const productSlots = $('product-slots');
+  if (!logoSlot || !productSlots) return;
+  logoSlot.replaceChildren();
+  if (brandKit.logo) {
+    const src = brandKit.logo.kind === 'svg' ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(brandKit.logo.svg)}` : brandKit.logo.dataUri;
+    logoSlot.append(assetThumb({ src, name: brandKit.logo.name, label: 'logo', onRemove: async () => { brandKit.logo = null; await saveBrandKit(); } }));
+  }
+  productSlots.replaceChildren(...brandKit.products.map((product, index) => assetThumb({
+    src: product.dataUri, name: product.name, label: `product photo ${index + 1}`,
+    onRemove: async () => { brandKit.products = brandKit.products.filter((item) => item.id !== product.id); await saveBrandKit(); },
+  })));
+  $('product-button').hidden = brandKit.products.length >= BRAND_LIMITS.products;
+}
+
+/** Planning requests carry logo metadata only (so recipes can lay it out). */
+function withBrand(context) {
+  const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
+  return { ...context, ...(logo ? { logo } : { logo: undefined }) };
+}
+
+/** Render requests carry the logo itself. */
+function brandAssets() {
+  if (!brandKit.logo) return undefined;
+  return { logo: brandKit.logo.kind === 'svg' ? { kind: 'svg', svg: brandKit.logo.svg } : { kind: 'png', dataUri: brandKit.logo.dataUri } };
+}
+
 function writeStoryboard(record) {
   return work(record, 'Writing the storyboard', 'Couldn’t write the storyboard', 'storyboard', async () => {
     if (record.project.state === 'BRIEF') await transition(record, 'PLANNING');
     const result = await postJson('/api/generate', {
       action: 'storyboard',
       prompt: record.project.brief,
-      context: record.project.context,
+      context: withBrand(record.project.context),
     });
     record.project = {
       ...record.project,
@@ -437,7 +594,7 @@ function buildShots(record) {
     const result = await postJson('/api/generate', {
       action: 'compile',
       storyboard: record.project.storyboard,
-      context: record.project.context,
+      context: withBrand(record.project.context),
     });
     record.project = { ...record.project, timeline: result.timeline, compileProvider: result.provider };
     await transition(record, 'RENDERING');
@@ -452,7 +609,8 @@ function renderFilm(record) {
       timeline: record.project.timeline,
       storyboard: record.project.storyboard,
       acceptance: record.project.acceptance,
-      context: record.project.context,
+      context: withBrand(record.project.context),
+      ...(brandAssets() ? { assets: brandAssets() } : {}),
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -634,6 +792,22 @@ let svgCounter = 0;
  * background, then the renderer's atmosphere (glow, grid, rings, accent lines),
  * then the foreground elements and glowing copy.
  */
+/** The uploaded logo in a preview frame (or an outlined box if it was removed). */
+function logoPreview(element, primary) {
+  const x = element.x - element.width / 2;
+  const y = element.y - element.height / 2;
+  if (brandKit.logo?.kind === 'png') {
+    return svgEl('image', { href: brandKit.logo.dataUri, x, y, width: element.width, height: element.height, preserveAspectRatio: 'xMidYMid meet' });
+  }
+  if (brandKit.logo?.kind === 'svg' && logoTree?.ok) {
+    const text = readableText(primary);
+    const markup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${logoTree.viewBox.join(' ')}" x="${x}" y="${y}" width="${element.width}" height="${element.height}"><g fill="${text}" color="${text}">${serializeSvgTree(logoTree.tree, { idPrefix: `${element.id}-` })}</g></svg>`;
+    const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    return document.importNode(parsed, true);
+  }
+  return svgEl('rect', { x, y, width: element.width, height: element.height, fill: 'none', stroke: '#9D86F0', 'stroke-dasharray': '6 6' });
+}
+
 function specToSvg(spec, label, palette = {}) {
   const width = spec.width || DEFAULT_CONTEXT.width;
   const height = spec.height || DEFAULT_CONTEXT.height;
@@ -732,6 +906,8 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
     } else if (element.type === 'circle') {
       stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
+    } else if (element.type === 'logo') {
+      stage.append(logoPreview(element, primary));
     } else if (element.type === 'line') {
       const x = element.reveal?.from === 'left' ? element.x : element.x - element.width / 2;
       stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
@@ -1140,6 +1316,8 @@ function briefChips(data) {
     subheadline ? chip([`Subheadline “${subheadline}”`], 'Exact line for the final shot') : null,
     chip([swatch(primaryColor), primaryColor, swatch(accentColor), accentColor], 'Primary and accent colors'),
     chip([data.seconds ? `${data.seconds}s from your brief` : '8s default length'], data.seconds ? 'Length read from the brief' : 'Say a length in the brief, like "10-second"'),
+    data.logo ? chip([`Logo (${data.logo.toUpperCase()})`], 'Your logo appears on the end card and The Fold') : null,
+    data.products ? chip([`${data.products} product photo${data.products === 1 ? '' : 's'}`], 'Stored with your brand kit') : null,
     data.briefHasOnScreenText && (headline || subheadline)
       ? chip(['Copy fields override your brief’s on-screen text'], 'Clear the headline and subheadline to use the brief’s own text', ' is-missing')
       : null);
@@ -1312,7 +1490,7 @@ function syncComposer() {
     : 'Add headline and colors';
   $('details-note').textContent = record.briefs.length && state !== 'BRIEF'
     ? 'Changes here apply to the next storyboard you ask for.'
-    : 'Exact copy and brand colors. The AI can’t change these.';
+    : 'Exact copy, brand colors and logo. The AI can’t change these. Product photos appear in films from the next update.';
 }
 
 function fillDetails(record) {
@@ -1669,6 +1847,9 @@ for (const [field, picker, key] of [['primary-hex', 'primary-color-input', 'prim
   });
 }
 
+$('logo-input').addEventListener('change', (event) => { const [file] = event.target.files; if (file) uploadLogo(file); event.target.value = ''; });
+$('product-input').addEventListener('change', (event) => { addProducts([...event.target.files]); event.target.value = ''; });
+
 $('new-production').addEventListener('click', () => startNewProduction());
 
 $('clear-log').addEventListener('click', () => {
@@ -1685,6 +1866,7 @@ $('clear-data').addEventListener('click', () => {
   thread.dataset.recordId = '';
   persist();
   fillDetails(activeRecord());
+loadBrandKit();
   render();
 });
 

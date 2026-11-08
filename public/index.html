@@ -71,7 +71,20 @@
                   <label>Subheadline<input id="subheadline-input" type="text" maxlength="100" placeholder="Optional"></label>
                   <label class="color-field">Primary<span class="color-input"><input id="primary-color-input" type="color" value="#0b0f19"><input id="primary-hex" class="hex-input" type="text" inputmode="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Primary color hex code" value="#0B0F19"></span></label>
                   <label class="color-field">Accent<span class="color-input"><input id="accent-color-input" type="color" value="#00f0ff"><input id="accent-hex" class="hex-input" type="text" inputmode="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Accent color hex code" value="#00F0FF"></span></label>
-                  <p class="details-note" id="details-note">Exact copy and brand colors. The AI can’t change these.</p>
+                  <div class="brand-assets" aria-label="Brand assets">
+                    <div class="asset-row">
+                      <span class="asset-label">Logo</span>
+                      <div class="asset-slots" id="logo-slot"></div>
+                      <label class="asset-button">Upload logo<input id="logo-input" type="file" accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp" hidden></label>
+                    </div>
+                    <div class="asset-row">
+                      <span class="asset-label">Product photos</span>
+                      <div class="asset-slots" id="product-slots"></div>
+                      <label class="asset-button" id="product-button">Add photos<input id="product-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></label>
+                    </div>
+                    <p class="asset-error" id="asset-error" role="alert" hidden></p>
+                  </div>
+                  <p class="details-note" id="details-note">Exact copy, brand colors and logo. The AI can’t change these. Product photos appear in films from the next update.</p>
                 </div>
                 <label class="sr-only" for="composer-input">Message</label>
                 <textarea id="composer-input" rows="1" placeholder="Describe the film you want to make"></textarea>
