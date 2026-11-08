@@ -3,7 +3,7 @@ import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
-import { durationFromBrief } from '../../public/brief-length.mjs';
+import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 
 export { durationFromBrief };
 
@@ -102,8 +102,47 @@ export function normalizeProductionContext(context = {}) {
  * Splits a brief into readable on-screen copy for the offline fallback: the first
  * clause becomes the headline, the rest the subheadline, never cutting a word.
  */
+const BRIEF_LABEL = /^\s*(?:[•*\-–]\s*)?(?:visual|visuals|audio|sound|music|sfx|vo|voice-?over|on[-\s]?screen\s+text|text\s+on\s+screen|super|camera)\s*:/i;
+const TIMECODE_RANGE = /\d{1,2}:[0-5]\d(?:\.\d)?\s*(?:-|–|—|to)\s*\d{1,2}:[0-5]\d(?:\.\d)?/g;
+
+/**
+ * The lines under an "On-Screen Text:" heading, if the brief has one, the way
+ * editors write briefs. Stops at the next labelled section, timecode or bullet.
+ */
+export function onScreenTextFromBrief(prompt) {
+  const lines = String(prompt || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => /^\s*(?:[•*\-–]\s*)?(?:on[-\s]?screen\s+text|text\s+on\s+screen|super)\s*:/i.test(line));
+  if (start < 0) return [];
+  const sameLine = lines[start].replace(/^.*?:\s*/, '').trim();
+  const out = sameLine ? [sameLine] : [];
+  for (const line of lines.slice(start + 1)) {
+    const text = line.trim();
+    if (!text) { if (out.length) break; continue; }
+    if (BRIEF_LABEL.test(text) || /^\s*[•*]/.test(text) || TIMECODE_RANGE.test(text)) break;
+    TIMECODE_RANGE.lastIndex = 0;
+    out.push(text.replace(/^["“]|["”]$/g, ''));
+  }
+  TIMECODE_RANGE.lastIndex = 0;
+  return out.slice(0, 3);
+}
+
+/** Brief text without timecodes, section labels, bullets or separators. */
+function cleanBriefText(prompt) {
+  return String(prompt || '')
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:[•*\-–]\s*)?(?:audio|sound|music|sfx)\s*:/i.test(line))
+    .join(' ')
+    .replace(TIMECODE_RANGE, ' ')
+    .replace(/(?:^|\s)[•*|](?=\s)/g, ' ')
+    .replace(/\b(?:visuals?|on[-\s]?screen\s+text|text\s+on\s+screen|camera|super)\s*:/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function splitBriefCopy(prompt, maxHeadline = 54) {
-  const text = String(prompt || '').trim().replace(/\s+/g, ' ');
+  const onScreen = onScreenTextFromBrief(prompt);
+  if (onScreen.length) return { headline: onScreen[0], subheadline: onScreen.slice(1).join(' ') };
+  const text = cleanBriefText(prompt);
   const clause = text.match(/^(.{3,}?)[:.!?;—–]\s+(.+)$/);
   let headline = clause && clause[1].length <= maxHeadline ? clause[1] : '';
   if (!headline) {
@@ -134,7 +173,7 @@ export function buildMockStoryboard(prompt, context = {}) {
       id: 'shot-01',
       purpose: 'Establish the visual world and create anticipation.',
       durationSeconds: 3,
-      onScreenCopy: subheadline || headline,
+      onScreenCopy: headline || subheadline,
       mainVisual: 'The supporting line set large on the brand background, with the accent glow and rings on the right.',
       composition: 'Centered focal point with generous negative space.',
       cameraBehavior: 'Locked off.',
@@ -615,6 +654,32 @@ function markOutputError(error) {
   return error;
 }
 
+/**
+ * Drops middle shots whose line repeats another shot's, sharing their time between
+ * the shots on either side. The first and last shots (headline and subheadline) always stay,
+ * and a film never drops below two shots. Returns the removed shots.
+ */
+function removeRepeatedLines(storyboard) {
+  const key = (shot) => String(shot.onScreenCopy || '').trim().toLowerCase();
+  const shots = storyboard.shots;
+  const removed = [];
+  const kept = [];
+  shots.forEach((shot, index) => {
+    const isEdge = index === 0 || index === shots.length - 1;
+    const repeats = kept.some((other) => key(other) === key(shot)) || key(shot) === key(shots.at(-1));
+    if (!isEdge && repeats && shots.length - removed.length > 2) {
+      // Its time is shared between the shots on either side, keeping the pacing even.
+      removed.push(shot);
+      kept.at(-1).durationSeconds += shot.durationSeconds / 2;
+      shots[index + 1].durationSeconds += shot.durationSeconds / 2;
+    } else {
+      kept.push(shot);
+    }
+  });
+  storyboard.shots = kept;
+  return removed;
+}
+
 export async function createCreativePlan(prompt, context = {}, provider = null) {
   // A length in the brief wins over the default, unless the caller set one explicitly.
   const briefSeconds = context.durationInSeconds === undefined ? durationFromBrief(prompt) : undefined;
@@ -632,6 +697,10 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     if (normalizedContext.subheadline && storyboard.shots.length > 1) {
       storyboard.shots.at(-1).onScreenCopy = normalizedContext.subheadline;
     }
+    // Every shot gets its own line: a middle shot that repeats one is dropped.
+    for (const shot of removeRepeatedLines(storyboard)) {
+      if (provider) repairs.push(`${shot.id} repeated "${shot.onScreenCopy}"; removed, and its time shared with the shots around it.`);
+    }
   }
   const validation = validateStoryboard(storyboard);
   if (!validation.valid) {
@@ -645,6 +714,16 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     : fitStoryboardDuration(storyboard, normalizedContext.durationInSeconds, normalizedContext.fps);
   if (previousTotal !== undefined && provider) {
     repairs.push(`Shot durations scaled from ${Number(previousTotal.toFixed(2))}s to the requested ${normalizedContext.durationInSeconds}s.`);
+  }
+  // Beats written as timecodes ("0:00 - 0:03 ... 0:07 - 0:10") set each shot's length
+  // exactly, when they match the shots one to one.
+  const beats = briefSeconds !== undefined && context.durationInSeconds === undefined ? beatsFromBrief(prompt) : undefined;
+  if (beats && beats.beats.length === storyboard.shots.length && Math.abs(beats.total - normalizedContext.durationInSeconds) < 0.05) {
+    const fps = normalizedContext.fps;
+    const frames = beats.beats.map((seconds) => Math.max(fps, Math.round(seconds * fps)));
+    frames[frames.length - 1] += Math.round(beats.total * fps) - frames.reduce((sum, value) => sum + value, 0);
+    storyboard.shots.forEach((shot, index) => { shot.durationSeconds = frames[index] / fps; });
+    if (provider) repairs.push(`Shot durations follow the brief's beats: ${storyboard.shots.map((shot) => `${Number(shot.durationSeconds.toFixed(2))}s`).join(', ')}.`);
   }
   return {
     storyboard,

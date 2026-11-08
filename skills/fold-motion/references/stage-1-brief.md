@@ -13,13 +13,16 @@ generated from the approved storyboard.
 | `headline` | Copy and colors panel | Exact copy for the first shot; up to 54 characters |
 | `subheadline` | Copy and colors panel | Exact copy for the last shot and every shot's supporting line; up to 100 characters |
 | `primaryColor`, `accentColor` | Copy and colors panel | 6-digit hex; background and accent |
-| `durationInSeconds` | The brief ("10-second", "15 sec", "ten seconds", "10s") | Read by `durationFromBrief` (`public/brief-length.mjs`, shared with the studio), clamped to 3–30 seconds. When a length is asked for, shot durations are scaled to hit it exactly, in whole frames. With none, the storyboard's own pacing stands (it aims for 8 seconds). |
+| `durationInSeconds` | The brief ("10-second", "15 sec", "ten seconds", "10s", or timecoded beats such as "0:00 - 0:03 … 0:07 - 0:10", which also set each shot's length when they match the shots one to one) | Read by `durationFromBrief` (`public/brief-length.mjs`, shared with the studio), clamped to 3–30 seconds. When a length is asked for, shot durations are scaled to hit it exactly, in whole frames. With none, the storyboard's own pacing stands (it aims for 8 seconds). |
 | `width`, `height`, `fps` | Defaults (1280, 720, 24) | Not yet editable in the studio |
 
 Anything else in a brief (audience, platform, references, tone) reaches Gemini
 only as part of the brief text. The studio shows what each brief was sent with
 (headline, subheadline, colors, length) as chips under the message, so a missing
-headline or a mistyped color is visible before anything is built.
+headline or a mistyped color is visible before anything is built. An "On-Screen
+Text:" section in the brief is exact copy (the offline fallback uses it
+directly), and a middle shot that repeats another shot's line is dropped, its
+time shared with the shots around it.
 
 ## Method
 
