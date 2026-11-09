@@ -101,11 +101,16 @@ function hairline({ id, x, y, width, accent, start, duration, from = 'center', t
   return { id, type: 'line', x, y, width, height: thickness, fill: accent, reveal: { style: 'grow', from, start, duration } };
 }
 
-function kickerElement({ id, kicker, x, y, height, palette, start, anchor = 'middle' }) {
-  const size = Math.max(16, height * 0.022);
+function kickerElement({ id, kicker, x, y, height, palette, start, anchor = 'middle', maxWidth = Infinity }) {
   const shown = String(kicker).toUpperCase();
+  // Wide tracking first; a long kicker tightens, then shrinks, to fit the frame.
+  let size = Math.max(16, height * 0.022);
+  let tracking = 0.42;
+  const width = () => measure('semibold', shown, size) + tracking * size * Math.max(0, shown.length - 1);
+  if (width() > maxWidth) tracking = 0.2;
+  if (width() > maxWidth) size = Math.max(12, size * (maxWidth / width()));
   return textElement({
-    id, role: 'kicker', content: kicker, shown, font: 'semibold', size, tracking: 0.42,
+    id, role: 'kicker', content: kicker, shown, font: 'semibold', size, tracking,
     lines: [shown], lineHeight: size * 1.3, x, y, anchor, fill: palette.muted,
     reveal: { style: 'cascade', unit: 'letter', start, duration: 0.45, stagger: Math.min(0.02, 0.6 / Math.max(1, shown.length)) },
   });
@@ -182,7 +187,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const widest = Math.max(...block.lines.map((line) => measure('display', line, block.size, 0.012)));
       const lineY = lastBaseline + H * 0.06;
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: Math.min(W * 0.32, widest * 0.5), accent: palette.accent, start: 0.75 * k, duration: 0.7 * k }));
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.058, height: H, palette, start: 1.2 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.058, height: H, maxWidth: W * 0.88, palette, start: 1.2 * k }));
       break;
     }
     case 'statement': {
@@ -193,7 +198,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const letters = [...shown].filter((character) => character !== ' ').length;
       const start = kicker ? 0.4 * k : 0.2 * k;
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('bold', block.size) - H * 0.07, height: H, palette, start: 0.05 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('bold', block.size) - H * 0.07, height: H, maxWidth: W * 0.88, palette, start: 0.05 * k }));
       elements.push(textElement({
         id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'bold', size: block.size, tracking: -0.015,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
@@ -220,7 +225,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const lineHeight = block.size * 1.04;
       const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, 'display');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('display', block.size) - H * 0.075, height: H, palette, start: 0.35 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('display', block.size) - H * 0.075, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k }));
       elements.push(textElement({
         id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.03,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
@@ -240,7 +245,9 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const per = Math.ceil(words.length / lineCount);
       for (let index = 0; index < words.length; index += per) lines.push(words.slice(index, index + per).join(' '));
       const targetWidth = W * 0.6;
-      const lineSizes = lines.map((line) => Math.max(H * 0.08, Math.min(H * 0.25, targetWidth / measure('display', line, 1, 0.01))));
+      // Each line fills the width, capped at a quarter of the height; the width always
+      // wins, so a long line in a narrow frame shrinks instead of spilling over.
+      const lineSizes = lines.map((line) => Math.min(H * 0.25, targetWidth / measure('display', line, 1, 0.01)));
       const gap = H * 0.025;
       const caps = lineSizes.map((size) => capHeight('display', size));
       const total = caps.reduce((sum, cap) => sum + cap, 0) + gap * (lines.length - 1);
@@ -292,7 +299,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
         const y = top + capHeight('display', block.size) + (kicker ? H * 0.035 : 0);
         const lastBaseline = y + (block.lines.length - 1) * lineHeight;
         if (kicker) {
-          const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: top, height: H, palette, start: 0.35 * k });
+          const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: top, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k });
           kickerNode.fill = palette.emphasis.from;
           elements.push(kickerNode);
         }
@@ -324,7 +331,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, 'display');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       if (kicker) {
-        const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: textLeft + 3, y: y - capHeight('display', block.size) - H * 0.05, height: H, palette, start: 0.35 * k, anchor: 'start' });
+        const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: textLeft + 3, y: y - capHeight('display', block.size) - H * 0.05, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k, anchor: 'start' });
         kickerNode.fill = palette.emphasis.from;
         elements.push(kickerNode);
       }
@@ -357,7 +364,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       elements.at(-1).window = { product: product.index, outline: palette.emphasis.from, under: [mix(context.primaryColor, context.accentColor, 0.38), mix(context.primaryColor, context.accentColor, 0.15)] };
       const lineY = lastBaseline + H * 0.07;
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.08, accent: palette.accent, start: 1.0 * k, duration: 0.5 * k }));
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, palette, start: 1.1 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, maxWidth: W * 0.88, palette, start: 1.1 * k }));
       break;
     }
     case 'lockup':
@@ -384,13 +391,16 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       if (kicker) {
         // An exact kicker (from the brief) keeps its own capitalization.
         const shownKicker = spec.kickerExact ? kicker : kicker.toUpperCase();
-        const size = fitBlock('display', shownKicker, { maxWidth: W * 0.6, maxSize: H * 0.07, minSize: H * 0.04, maxLines: 1, tracking: 0.04 }).size;
+        // Sized from the frame's shorter side: in a tall frame, height-based sizes
+        // are too big for the narrow width. Two lines at most, always inside the frame.
+        const unit = Math.min(W, H);
+        const block = fitBlock('display', shownKicker, { maxWidth: W * (W < H ? 0.86 : 0.6), maxSize: unit * 0.07, minSize: unit * 0.032, maxLines: 2, tracking: 0.04 });
         elements.push(textElement({
-          id: `shot-${n}-kicker`, role: 'kicker', content: kicker, shown: shownKicker, font: 'display', size, tracking: 0.04,
-          lines: [shownKicker], lineHeight: size, x: W / 2, y: nextY, fill: palette.text,
-          reveal: { style: 'mask-rise', unit: 'line', start: 1.0 * k, duration: 0.7 * k, stagger: 0 },
+          id: `shot-${n}-kicker`, role: 'kicker', content: kicker, shown: shownKicker, font: 'display', size: block.size, tracking: 0.04,
+          lines: block.lines, lineHeight: block.size * 1.05, x: W / 2, y: nextY, fill: palette.text,
+          reveal: { style: 'mask-rise', unit: 'line', start: 1.0 * k, duration: 0.7 * k, stagger: 0.12 * k },
         }));
-        nextY += H * 0.06;
+        nextY += Math.max(H * 0.06, block.size * 1.05 * block.lines.length + unit * 0.02);
       }
       if (support) {
         const size = Math.max(16, H * 0.028);

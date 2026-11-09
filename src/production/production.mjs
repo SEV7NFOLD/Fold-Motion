@@ -5,6 +5,7 @@ import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
+import { FONTS, measure } from '../render/typography.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 
 export { durationFromBrief };
@@ -646,11 +647,14 @@ export function evaluateCreativeQA(timeline, context = {}) {
   const primaryColor = normalizedContext.primaryColor.toLowerCase();
   const accentColor = normalizedContext.accentColor.toLowerCase();
   const brandFidelity = usedColors.includes(primaryColor) && usedColors.includes(accentColor);
+  const frameFit = measureFrameFit(timeline);
   return {
     pass: contrastResults.length > 0
       && contrastResults.every((metric) => metric.pass)
       && legibility
-      && brandFidelity,
+      && brandFidelity
+      && frameFit.pass,
+    frameFit,
     contrast: {
       pass: contrastResults.length > 0 && contrastResults.every((metric) => metric.pass),
       minimumRatio: contrastResults.length ? Math.min(...contrastResults.map((metric) => metric.ratio ?? 0)) : 0,
@@ -660,6 +664,33 @@ export function evaluateCreativeQA(timeline, context = {}) {
     legibility: { pass: legibility, minimumFontSize: 16, textElementCount: textElements.length },
     brandFidelity: { pass: brandFidelity, primaryColor, accentColor },
   };
+}
+
+/**
+ * Every line of text inside the frame, measured at its widest moment (lines
+ * that settle start with open tracking). Catches layouts that spill off the
+ * edges, which a narrow vertical frame exposes.
+ */
+export function measureFrameFit(timeline) {
+  const W = timeline.width;
+  const H = timeline.height;
+  const failures = [];
+  for (const shot of timeline.shots) {
+    for (const element of shot.spec.elements || []) {
+      if (element.type !== 'text' || !Array.isArray(element.lines) || !FONTS[element.font]) continue;
+      const size = element.size || element.fontSize;
+      const tracking = Math.max(element.tracking || 0, element.settle?.from || 0);
+      element.lines.forEach((line) => {
+        const width = measure(element.font, line, size) + tracking * size * Math.max(0, [...line].length - 1);
+        const left = element.anchor === 'start' ? element.x : element.anchor === 'end' ? element.x - width : element.x - width / 2;
+        // A line that can't be measured fails: a check must never pass by default.
+        if (!Number.isFinite(width) || !Number.isFinite(left)) failures.push({ shotId: shot.shotId, element: element.id, line, error: 'could not be measured' });
+        else if (left < -1 || left + width > W + 1) failures.push({ shotId: shot.shotId, element: element.id, line, left: Math.round(left), right: Math.round(left + width) });
+      });
+      if (!(element.y > 0 && element.y < H + 1)) failures.push({ shotId: shot.shotId, element: element.id, line: element.lines[0], y: element.y });
+    }
+  }
+  return { pass: failures.length === 0, checkedWidth: W, failures: failures.slice(0, 6) };
 }
 
 function shotBackground(spec) {
