@@ -279,3 +279,13 @@ test('the studio picks a format before the shots are built, and can rebuild in a
   assert.match(studio, /function rebuildShots\(record\)/);
   assert.match(studio, /if \(record\.project\.state === 'RENDERING'\) rebuildShots\(record\)/);
 });
+
+test('the studio shows the director’s notes and stays put on small screens', () => {
+  const studio = read(root, 'public', 'studio.js');
+  const css = read(root, 'public', 'studio.css');
+  assert.match(studio, /function directorNotes\(timeline\)/);
+  assert.match(studio, /Director’s notes/);
+  assert.match(css, /overscroll-behavior: none/, 'the page never bounces');
+  assert.match(css, /@media \(max-height: 820px\)/, 'short screens tighten the welcome');
+  assert.match(studio, /if \(record\.messages\.length === 0\) threadScroll\.scrollTop = 0;/, 'the welcome reads from the top');
+});

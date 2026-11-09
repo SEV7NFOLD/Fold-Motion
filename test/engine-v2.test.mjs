@@ -734,3 +734,28 @@ test('film looks come from the brief or the model, and map to FFmpeg filters', a
   const { storyboard } = await createCreativePlan('A cinematic launch film', DARK, null);
   assert.equal(storyboard.grade, 'cinematic');
 });
+
+test('Gemini sees the product photos as images, picks one per shot, and gives a reason', async () => {
+  const thumb = `data:image/jpeg;base64,${Buffer.from('fake-jpeg-bytes').toString('base64')}`;
+  const context = { ...DARK, products: [{ width: 300, height: 450, thumb }, { width: 450, height: 300, thumb }] };
+  const { storyboard } = await createCreativePlan('A launch', context, null);
+  storyboard.shots = ['Precision in silence', 'Alpha', 'Creativity at scale'].map((line, i) => ({ ...storyboard.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 2 }));
+  const directions = [
+    { id: 'a', recipe: 'title-reveal', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'cut', reason: 'Opens on the promise before the product.' },
+    { id: 'b', recipe: 'product-hero', product: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut', reason: 'Photo 2 shows the bottle side-on, the clearest silhouette.' },
+    { id: 'c', recipe: 'lockup', motion: { camera: 'static', atmosphere: 'grid' }, transitionOut: 'cut', reason: 'Signs off on the brand.' },
+  ];
+  let body;
+  const built = await generateProductionAction({
+    action: 'compile', storyboard, context, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => { body = JSON.parse(options.body); return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(directions) }] } }] }; } }; },
+  });
+  const parts = body.contents[0].parts;
+  assert.equal(parts.filter((part) => part.inlineData).length, 2, 'both photos attached as images');
+  assert.equal(parts[1].inlineData.mimeType, 'image/jpeg');
+  assert.doesNotMatch(parts[0].text, /base64/, 'the prompt text carries no image data');
+  assert.match(parts[0].text, /attached in that order/);
+  const hero = built.timeline.shots[1].spec;
+  assert.equal(hero.elements.find((element) => element.type === 'image').product, 2, 'the chosen photo');
+  assert.equal(hero.reason, 'Photo 2 shows the bottle side-on, the clearest silhouette.');
+});

@@ -133,13 +133,14 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    '- "reason" is one short sentence (under 20 words) on why the shot is staged this way, for the client to read; when it shows a product photo, say why that photo.',
     '- "typeEffect" is "decode" (letters scramble through code-like glyphs, then lock in: tech, editorial, reveals), "outline" (letters trace as outlines, then fill: elegant, premium) or "none". Use it on one or two hero lines at most.',
     '- "zoom" as a transition flies the camera into a letter of the line and reveals the next shot through it: a signature move, once per film at most, on a shot whose line has a bold display word.',
     height > width
       ? '- This is a vertical 9:16 film for phones: keep lines short (one to three words) so the type stays large, and expect product heroes to stack the photo above the line.'
       : height === width ? '- This is a square 1:1 film for feeds: keep lines short; product heroes stack the photo above the line.' : '- This is a landscape 16:9 film.',
     context.products?.length
-      ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.`
+      ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.${context.products.some((product) => product.thumb) ? ' The photos are attached in that order (photo 1 first): look at them, and give each product shot the photo whose angle, framing and light suit it best (a clear silhouette for a product hero, strong texture or color for a type window).' : ''}`
       : '- No product photos are uploaded: don\'t use "product-hero" or "type-window".',
     context.logo ? '- A logo is uploaded: the end card carries it, and "logo-reveal" can open or close the film.' : '- No logo is uploaded: don\'t use "logo-reveal".',
     `- Do not output elements, coordinates or sizes: the engine lays out the copy itself on a ${width} × ${height} canvas.`,
@@ -273,18 +274,18 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
       'Include at least two purposeful shots. Every shot must include id, purpose, positive durationSeconds, onScreenCopy, mainVisual, composition, cameraBehavior, motionBehavior, transitionIn, transitionOut, and acceptanceCriteria.',
       'Include acceptanceCriteria.technical and acceptanceCriteria.creative arrays. Preserve exact supplied headlines, subheadlines, hard constraints, and brand colors.',
       `Creative brief:\n${prompt}`,
-      `Production context:\n${JSON.stringify(context)}`,
+      `Production context:\n${JSON.stringify(promptContext(context))}`,
     ].join('\n\n'));
   }
 
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
       'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
-      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, beam and sweep.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, reason, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
-      `Production context:\n${JSON.stringify(context)}`,
+      `Production context:\n${JSON.stringify(promptContext(context))}`,
     ].join('\n\n'));
     const shotSpecs = Array.isArray(result) ? result : result?.shotSpecs;
     if (!Array.isArray(shotSpecs)) {
@@ -411,6 +412,23 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   }
 }
 
+/**
+ * The context as the prompt shows it: product photos appear as "photo 1",
+ * "photo 2" with their sizes; the thumbnails themselves travel as image parts.
+ */
+export function promptContext(context = {}) {
+  if (!Array.isArray(context.products)) return context;
+  return { ...context, products: context.products.map((product, index) => ({ photo: index + 1, width: product.width, height: product.height })) };
+}
+
+/** Product thumbnails as Gemini image parts, in photo order. */
+export function productImages(context = {}) {
+  return (context.products || []).flatMap((product) => {
+    const match = /^data:(image\/(?:jpeg|png));base64,(.+)$/.exec(product?.thumb || '');
+    return match ? [{ inlineData: { mimeType: match[1], data: match[2] } }] : [];
+  });
+}
+
 export class GeminiAIProvider extends BaseAIProvider {
   constructor({
     apiKey,
@@ -489,7 +507,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         `Creative brief:\n${prompt}`,
-        `Production context:\n${JSON.stringify(context)}`,
+        `Production context:\n${JSON.stringify(promptContext(context))}`,
       ].join('\n\n'),
       responseSchema,
     );
@@ -517,6 +535,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         transitionOut: { type: 'STRING', enum: [...TRANSITION_OPTIONS] },
         product: { type: 'INTEGER' },
         typeEffect: { type: 'STRING', enum: ['none', 'decode', 'outline'] },
+        reason: { type: 'STRING' },
         beam: { type: 'BOOLEAN' },
         sweep: { type: 'BOOLEAN' },
       },
@@ -529,9 +548,10 @@ export class GeminiAIProvider extends BaseAIProvider {
         SHOT_COMPILER,
         sceneRules(context),
         `Approved storyboard:\n${JSON.stringify(storyboard)}`,
-        `Production context:\n${JSON.stringify(context)}`,
+        `Production context:\n${JSON.stringify(promptContext(context))}`,
       ].join('\n\n'),
       { type: 'ARRAY', items: sceneSchema },
+      productImages(context),
     );
     if (!Array.isArray(shotSpecs)) {
       throw new ProviderError('Gemini returned shot specifications in an invalid format.', { kind: 'output' });
@@ -539,9 +559,10 @@ export class GeminiAIProvider extends BaseAIProvider {
     return shotSpecs;
   }
 
-  async generateStructuredJson(instruction, responseSchema) {
+  async generateStructuredJson(instruction, responseSchema, images = []) {
     return this.requestJson({
       instruction,
+      images,
       responseSchema,
       systemText: 'Return only valid raw JSON matching the provided response schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
       emptyMessage: 'Gemini returned no structured production content.',
@@ -591,7 +612,7 @@ export class GeminiAIProvider extends BaseAIProvider {
       instruction: [
         'Generate one FOLD Motion scene specification as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text. The scene must match the supplied context for dimensions, frame rate, duration, and colors. Create a concise title, a stable kebab-case scene id, and an elements array containing objects with string id and type fields.',
         `Motion brief:\n${prompt}`,
-        `Scene context:\n${JSON.stringify(context)}`,
+        `Scene context:\n${JSON.stringify(promptContext(context))}`,
       ].join('\n\n'),
       responseSchema,
       systemText: 'Return only valid raw JSON matching the provided scene specification schema. Do not include markdown fences, conversational text, safety preambles, or content outside the JSON value.',
@@ -600,7 +621,7 @@ export class GeminiAIProvider extends BaseAIProvider {
     });
   }
 
-  async requestJson({ instruction, responseSchema, systemText, emptyMessage, invalidPrefix }) {
+  async requestJson({ instruction, responseSchema, systemText, emptyMessage, invalidPrefix, images = [] }) {
     const send = async (withThinking) => {
       const generationConfig = { responseMimeType: 'application/json', responseSchema };
       if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: this.thinkingLevel };
@@ -615,7 +636,7 @@ export class GeminiAIProvider extends BaseAIProvider {
             },
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: systemText }] },
-              contents: [{ parts: [{ text: instruction }] }],
+              contents: [{ parts: [{ text: instruction }, ...images] }],
               generationConfig,
             }),
             signal: AbortSignal.timeout(30_000),

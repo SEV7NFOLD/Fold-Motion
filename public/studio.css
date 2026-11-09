@@ -48,6 +48,10 @@
 html,
 body {
   height: 100%;
+  /* The app fills the screen and scrolls inside its panels; the page itself never
+     bounces or pulls to refresh. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -667,8 +671,15 @@ a {
 .view-studio.is-empty .thread-scroll {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  overflow: hidden;
+  /* The welcome sits at the bottom when there's room (auto margin on the hero), and
+     scrolls rather than being cut off at the top when there isn't. */
+  justify-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.view-studio.is-empty .thread-scroll > :first-child {
+  margin-top: auto;
 }
 
 .hero {
@@ -2540,4 +2551,83 @@ button.tool:hover,
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ fit and scroll */
+.history-list,
+.starters {
+  overscroll-behavior: contain;
+}
+
+/* Short screens (a 13-inch laptop, a phone in landscape): the welcome tightens so
+   the headline, message box and starters fit without clipping. */
+@media (max-height: 820px) {
+  .view-studio.is-empty {
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 0.18fr);
+  }
+
+  .hero {
+    padding-bottom: 1rem;
+  }
+
+  .hero-mark {
+    display: none;
+  }
+
+  .hero-title {
+    margin-bottom: 0.6rem;
+    font-size: clamp(2.1rem, 7.2vh, 3.6rem);
+  }
+}
+
+/* Phones and tablets: the welcome starts below the Chats button. */
+@media (max-width: 960px) {
+  .view-studio.is-empty .hero {
+    padding-top: 3.4rem;
+  }
+}
+
+/* Phones: the starters become compact text cards, leaving room for the welcome. */
+@media (max-width: 760px) {
+  .starter-thumb {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ director's notes */
+.director-notes {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.7rem;
+}
+
+.director-notes summary {
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.director-notes ol {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.director-notes li {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.director-shot {
+  color: var(--lavender);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.director-reason {
+  color: var(--text-2);
+  font-size: 0.8125rem;
 }

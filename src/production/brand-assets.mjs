@@ -41,8 +41,10 @@ function jpegDimensions(buffer) {
 export function normalizeProductsMeta(products) {
   if (!Array.isArray(products)) return undefined;
   const valid = (value) => Number.isFinite(value) && value > 0 && value <= LOGO_LIMITS.maxDimension;
+  // A small thumbnail lets the model see the photo when it directs the shots.
+  const thumbOf = (item) => (typeof item?.thumb === 'string' && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(item.thumb) && item.thumb.length <= 120_000 ? item.thumb : undefined);
   const list = products.slice(0, PRODUCT_LIMITS.count)
-    .map((item) => ({ width: Number(item?.width), height: Number(item?.height) }))
+    .map((item) => ({ width: Number(item?.width), height: Number(item?.height), ...(thumbOf(item) ? { thumb: thumbOf(item) } : {}) }))
     .filter((item) => valid(item.width) && valid(item.height));
   return list.length ? list : undefined;
 }
