@@ -782,3 +782,45 @@ test('every line fits the frame in every format, and QA fails a line that spills
   spill.shots[0].spec.elements[0].fontSize = undefined;
   assert.match(JSON.stringify(measureFrameFit(spill)), /could not be measured/, 'an unmeasurable line fails instead of passing');
 });
+
+test('any number of named product photos: the storyboard sees them and follows the brief’s photo instructions', async () => {
+  const { normalizeProductsMeta, resolveProducts } = await import('../src/production/brand-assets.mjs');
+  const thumb = `data:image/jpeg;base64,${Buffer.from('jpeg').toString('base64')}`;
+  const names = ['front.jpg', 'side-view.png', 'pair.jpg', 'close-up.jpg', 'sole.jpg', 'box.jpg', 'detail.jpg', 'hero.jpg', 'top.jpg', 'back.jpg'];
+  const products = normalizeProductsMeta(names.map((name) => ({ width: 300, height: 450, name, thumb })));
+  assert.equal(products.length, 10, 'more than three photos survive');
+  assert.equal(products[1].name, 'side-view', 'file names keep their words, not their extension');
+  const context = { ...DARK, products };
+  const base = (await createCreativePlan('A launch', DARK, null)).storyboard;
+  let body;
+  await generateProductionAction({
+    action: 'storyboard', prompt: 'Use the pair shot for the end card and photo 4 for the close-up.', context, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => { body = JSON.parse(options.body); return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(base) }] } }] }; } }; },
+  });
+  const parts = body.contents[0].parts;
+  assert.equal(parts.filter((part) => part.inlineData).length, 10, 'the storyboard sees every photo');
+  assert.match(parts[0].text, /Follow any instructions in the brief about which photo goes where/);
+  assert.match(parts[0].text, /"name":"pair"/);
+  assert.doesNotMatch(parts[0].text, /base64/);
+  // Renders carry only the photos the film shows; the rest arrive as null.
+  const sparse = resolveProducts([null, null, null, null, { dataUri: (await productBrand()).brand.products[0].dataUri }, null]);
+  assert.equal(sparse.length, 6);
+  assert.equal(sparse[4].width, 300);
+  assert.equal(sparse[0], null);
+});
+
+test('a sparse photo list renders the photo the shot asked for', async () => {
+  const { brand, bakeProductPanels } = await productBrand();
+  const { gradeProduct } = await import('../scripts/render-production.mjs');
+  const photo = brand.products[0];
+  const products = [null, null, null, null, { ...photo, graded: gradeProduct(photo, { primary: DARK.primaryColor, accent: DARK.accentColor }) }];
+  const context = { ...DARK, products: Array.from({ length: 5 }, () => ({ width: 300, height: 450 })) };
+  const spec = { version: 2, recipe: 'product-hero', product: 5, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  spec.elements = expandRecipe(spec, { copy: 'Alpha', context, shotIndex: 1 });
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: 48, shots: [{ shotId: 's', startFrame: 0, endFrame: 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] };
+  const sparseBrand = { products };
+  sparseBrand.panels = bakeProductPanels(timeline, sparseBrand);
+  assert.equal(Object.keys(sparseBrand.panels).length, 1);
+  assert.match(renderTimelineFrame(timeline, 30, sparseBrand), /<image /);
+  assert.throws(() => renderTimelineFrame({ ...timeline, shots: [{ ...timeline.shots[0], spec: { ...spec, elements: spec.elements.map((element) => (element.type === 'image' ? { ...element, product: 2 } : element)) } }] }, 30, { products }), /no product photo came with the render request/);
+});

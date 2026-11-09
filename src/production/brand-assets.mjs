@@ -9,7 +9,8 @@
 import { sanitizeSvg } from '../../public/svg-sanitize.mjs';
 
 export const LOGO_LIMITS = Object.freeze({ maxPngBytes: 1_500_000, maxDimension: 10_000 });
-export const PRODUCT_LIMITS = Object.freeze({ maxBytes: 3_000_000, count: 3 });
+// No practical limit on photos; the ceiling only protects a small server's memory.
+export const PRODUCT_LIMITS = Object.freeze({ maxBytes: 3_000_000, count: 40 });
 
 /** Logo metadata from a planning context: { kind, width, height } or undefined. */
 export function normalizeLogoMeta(logo) {
@@ -44,7 +45,13 @@ export function normalizeProductsMeta(products) {
   // A small thumbnail lets the model see the photo when it directs the shots.
   const thumbOf = (item) => (typeof item?.thumb === 'string' && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(item.thumb) && item.thumb.length <= 120_000 ? item.thumb : undefined);
   const list = products.slice(0, PRODUCT_LIMITS.count)
-    .map((item) => ({ width: Number(item?.width), height: Number(item?.height), ...(thumbOf(item) ? { thumb: thumbOf(item) } : {}) }))
+    .map((item) => ({
+      width: Number(item?.width),
+      height: Number(item?.height),
+      ...(thumbOf(item) ? { thumb: thumbOf(item) } : {}),
+      // The file name ("side-view") lets a brief say which photo goes where.
+      ...(typeof item?.name === 'string' && item.name.trim() ? { name: item.name.trim().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^\p{L}\p{N} ._-]/gu, ' ').slice(0, 40).trim() } : {}),
+    }))
     .filter((item) => valid(item.width) && valid(item.height));
   return list.length ? list : undefined;
 }
@@ -52,7 +59,9 @@ export function normalizeProductsMeta(products) {
 /** Turns product photos from a render request ({ dataUri }) into checked images. */
 export function resolveProducts(list) {
   if (!Array.isArray(list) || list.length === 0) return [];
+  // Photos the film doesn't use arrive as null, keeping every photo's number.
   return list.slice(0, PRODUCT_LIMITS.count).map((item, index) => {
+    if (item === null) return null;
     const match = /^data:image\/(jpeg|png);base64,/.exec(item?.dataUri || '');
     if (!match) throw new Error(`Product photo ${index + 1} must be a JPEG or PNG image.`);
     const buffer = Buffer.from(item.dataUri.slice(match[0].length), 'base64');

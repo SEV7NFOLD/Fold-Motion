@@ -289,3 +289,12 @@ test('the studio shows the director’s notes and stays put on small screens', (
   assert.match(css, /@media \(max-height: 820px\)/, 'short screens tighten the welcome');
   assert.match(studio, /if \(record\.messages\.length === 0\) threadScroll\.scrollTop = 0;/, 'the welcome reads from the top');
 });
+
+test('the brand kit takes as many photos as a production needs, numbered for briefs', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /products: 40 \}/);
+  assert.match(studio, /caption: `Photo \$\{index \+ 1\}`/);
+  assert.match(studio, /label: `Photo \$\{index \+ 1\}`/);
+  assert.match(studio, /function photosUsed\(timeline\)/);
+  assert.doesNotMatch(read(root, 'public', 'index.html'), /Up to 3/);
+});
