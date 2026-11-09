@@ -949,6 +949,8 @@ function makeOtherFormats(record) {
         ...(brandAssets() ? { assets: brandAssets() } : {}),
         music: record.music || 'auto',
         grade: record.grade || 'auto',
+        resolution: record.resolution || 'hd',
+        photoColor: record.photoColor || 'palette',
       });
       const variant = { format, report: result.report, at: nowIso() };
       record.project = { ...record.project, variants: [...(record.project.variants || []), variant] };
@@ -1102,6 +1104,8 @@ function renderFilm(record) {
       ...(brandAssets() ? { assets: brandAssets() } : {}),
       music: record.music || 'auto',
       grade: record.grade || 'auto',
+      resolution: record.resolution || 'hd',
+      photoColor: record.photoColor || 'palette',
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -1639,7 +1643,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), lookPicker(record), changesButton(), shotEditor(record));
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), sizePicker(record), musicPicker(record), lookPicker(record), ...photoColorPicker(record), changesButton(), shotEditor(record));
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1814,10 +1818,31 @@ function lookPicker(record) {
   return select;
 }
 
+const SIZES = { hd: 'HD', fhd: 'Full HD', '2k': '2K' };
+
+/** Output resolution: the layout is the same, only the frames are drawn larger. */
+function sizePicker(record) {
+  const notes = { hd: 'Size: HD · fastest', fhd: 'Size: Full HD · about 2× the time', '2k': 'Size: 2K · about 4× the time' };
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Output size', title: 'Full HD and 2K draw sharper frames and take longer to render.' },
+    ...Object.keys(SIZES).map((value) => h('option', { value, text: notes[value], ...((record.resolution || 'hd') === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => { record.resolution = select.value; persist(); });
+  return select;
+}
+
+/** Product photos graded into the palette, or kept in their original colors. */
+function photoColorPicker(record) {
+  if (!brandKit.products.length) return [];
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Product photo color', title: 'Keep original colors to show the packaging exactly as photographed.' },
+    h('option', { value: 'palette', text: 'Photos: Palette grade', ...((record.photoColor || 'palette') === 'palette' ? { selected: true } : {}) }),
+    h('option', { value: 'original', text: 'Photos: Original colors', ...(record.photoColor === 'original' ? { selected: true } : {}) }));
+  select.addEventListener('change', () => { record.photoColor = select.value; persist(); });
+  return [select];
+}
+
 function musicLine(report) {
   const audio = report?.audio;
   if (!audio) return null;
-  const look = LOOK_LABELS[report?.look] ? `. Look: ${LOOK_LABELS[report.look]}` : '';
+  const look = `${LOOK_LABELS[report?.look] ? `. Look: ${LOOK_LABELS[report.look]}` : ''}${report?.output ? `. ${report.output.label}, ${report.output.width}×${report.output.height}` : ''}`;
   const text = `${audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}` : 'No music'}${look}`;
   return h('p', { class: 'music-line', text });
 }
