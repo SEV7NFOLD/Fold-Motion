@@ -73,6 +73,20 @@ window draws the photo once per frame through a mask of all its letters. With
 product photos uploaded, `ensureProductShot` makes sure the film shows the
 product at least once.
 
+### Brand fonts
+
+A TTF or OTF uploaded to the brand kit replaces the display face (Anton) for
+headlines; body text stays Montserrat. `public/font-metrics.mjs` reads the
+font's own tables (cmap, hmtx, head, hhea, OS/2, name) for its family, weight,
+cap height and every character's advance width, matching the bundled fonts'
+measurements exactly. The studio measures at upload; the metrics travel with
+planning requests (`context.brandFont`, checked by `normalizeBrandFont`) so
+recipes lay text out with the font's real widths, and the file travels with
+renders (`assets.font`, checked by `resolveFont`) so the rasterizer draws it.
+WOFF/WOFF2 and font collections are refused with a clear message. Signed in,
+the font is kept in the brand kit row (`supabase/migrations/20261110000000_brand_font.sql`
+adds the column).
+
 ### Headline effects and film looks
 
 A direction's `typeEffect` gives a shot's title `decode` (each letter cycles

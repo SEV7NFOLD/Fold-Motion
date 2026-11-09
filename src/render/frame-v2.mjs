@@ -6,7 +6,7 @@
 import { mix, readableTextColor } from '../production/color.mjs';
 import { isDrawable, serializeSvgTree } from '../../public/svg-sanitize.mjs';
 import { normalizeMotion } from '../production/motion.mjs';
-import { capHeight, FONTS, layoutCharacters, layoutWords, measure } from './typography.mjs';
+import { capHeight, fontFace, layoutCharacters, layoutWords, measure } from './typography.mjs';
 
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -20,7 +20,7 @@ const ease = {
 };
 const f = (value) => Number(value.toFixed(2));
 const esc = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]);
-const fontAttrs = (font, size) => `font-family="${FONTS[font].family}" font-weight="${FONTS[font].weight}" font-size="${f(size)}"`;
+const fontAttrs = (font, size) => { const face = fontFace(font) || fontFace('display'); return `font-family="${esc(face.family)}" font-weight="${face.weight}" font-size="${f(size)}"`; };
 
 // ---------------------------------------------------------------- text
 
@@ -503,7 +503,7 @@ const LEFT_STEM = new Set([...'BDEFKLMPR']);
  * next shot. Undefined when no letter has a reliably solid point.
  */
 export function zoomTarget(shot) {
-  const element = shot.spec.elements?.find((item) => item.type === 'text' && item.role === 'title' && item.font === 'display')
+  const element = shot.spec.elements?.find((item) => item.type === 'text' && item.role === 'title' && (item.font === 'display' || String(item.font).startsWith('brand-')))
     || shot.spec.elements?.find((item) => item.type === 'text' && item.role === 'title');
   if (!element) return undefined;
   const { sizes, baselines } = lineGeometry(element);
