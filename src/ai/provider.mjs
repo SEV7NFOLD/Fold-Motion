@@ -140,7 +140,7 @@ function sceneRules(context = {}) {
       ? '- This is a vertical 9:16 film for phones: keep lines short (one to three words) so the type stays large, and expect product heroes to stack the photo above the line.'
       : height === width ? '- This is a square 1:1 film for feeds: keep lines short; product heroes stack the photo above the line.' : '- This is a landscape 16:9 film.',
     context.products?.length
-      ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.${context.products.some((product) => product.thumb) ? ' The photos are attached in that order (photo 1 first): look at them, and give each product shot the photo whose angle, framing and light suit it best (a clear silhouette for a product hero, strong texture or color for a type window).' : ''} When the storyboard or brief names a photo for a shot (by number, file name or what it shows), use that photo. With several photos, vary them across product shots.`
+      ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.${context.products.some((product) => product.thumb) ? ' The photos are attached in that order (photo 1 first): look at them, and give each product shot the photo whose angle, framing and light suit it best (a clear silhouette for a product hero, strong texture or color for a type window).' : ''} When the storyboard or brief names a photo for a shot (by number, file name or what it shows), use that photo. With several photos, vary them across product shots. Photos marked plain are packshots on a plain background: use them for product heroes, grids and splits; a type window needs a photo that isn't marked plain (rich texture or color).`
       : '- No product photos are uploaded: don\'t use "product-hero" or "type-window".',
     context.logo ? '- A logo is uploaded: the end card carries it, and "logo-reveal" can open or close the film.' : '- No logo is uploaded: don\'t use "logo-reveal".',
     `- Do not output elements, coordinates or sizes: the engine lays out the copy itself on a ${width} × ${height} canvas.`,
@@ -418,7 +418,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
  */
 export function promptContext(context = {}) {
   if (!Array.isArray(context.products)) return context;
-  return { ...context, products: context.products.map((product, index) => ({ photo: index + 1, ...(product.name ? { name: product.name } : {}), width: product.width, height: product.height })) };
+  return { ...context, products: context.products.map((product, index) => ({ photo: index + 1, ...(product.name ? { name: product.name } : {}), ...(product.plain ? { plain: true } : {}), width: product.width, height: product.height })) };
 }
 
 /** Product thumbnails as Gemini image parts, in photo order. */
@@ -482,6 +482,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         creativeDirection: { type: 'STRING' },
         musicMood: { type: 'STRING', enum: ['premium', 'energetic', 'editorial', 'warm'] },
         musicReason: { type: 'STRING' },
+        missingPhotos: { type: 'ARRAY', items: { type: 'STRING' } },
         grade: { type: 'STRING', enum: ['clean', 'cinematic', 'matte', 'noir'] },
         shots: { type: 'ARRAY', items: shotSchema },
         hardConstraints: { type: 'ARRAY', items: { type: 'STRING' } },
@@ -507,6 +508,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         ...(context.products?.length ? [`${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded${productImages(context).length ? ' and attached in order (photo 1 first)' : ''}, listed in the production context by number and file name. Follow any instructions in the brief about which photo goes where (by number, file name or what the photo shows). Otherwise, choose photos for the product moments yourself and use different photos across them when several fit. In each product shot's mainVisual, name the photo, for example "photo 2 (side view)".`] : []),
+        'If the brief asks to show a product that none of the uploaded photos shows, list it in missingPhotos, named as the brief names it, and never make a shot that names a product without showing it.',
         `Creative brief:\n${prompt}`,
         `Production context:\n${JSON.stringify(promptContext(context))}`,
       ].join('\n\n'),

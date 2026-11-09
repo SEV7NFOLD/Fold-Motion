@@ -833,6 +833,31 @@ function frameOf(record) {
 // Small thumbnails (320 px JPEG) let the model see each product photo when it
 // directs the shots; made once per photo.
 const productThumbs = new Map();
+const productLooks = new Map();
+
+/**
+ * A packshot on a plain background (uniform edges), and the product's bounds as
+ * fractions of the photo, so type windows can be filled with the product itself.
+ */
+function measurePhoto({ data, width, height }) {
+  const check = analyzeLogoPixels(data, width, height);
+  if (check.transparent || !check.uniformEdges) return { plain: false };
+  const [r0, g0, b0] = check.edgeColor;
+  let minX = width; let minY = height; let maxX = -1; let maxY = -1;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      if (Math.abs(data[i] - r0) + Math.abs(data[i + 1] - g0) + Math.abs(data[i + 2] - b0) > 60) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  if (maxX < 0) return { plain: true };
+  const pad = 0.03;
+  const x = Math.max(0, minX / width - pad);
+  const y = Math.max(0, minY / height - pad);
+  return { plain: true, crop: { x, y, w: Math.min(1 - x, (maxX - minX) / width + pad * 2), h: Math.min(1 - y, (maxY - minY) / height + pad * 2) } };
+}
 function thumbFor(product) {
   if (!product?.dataUri || productThumbs.has(product.id)) return productThumbs.get(product.id);
   productThumbs.set(product.id, undefined);
@@ -842,8 +867,10 @@ function thumbFor(product) {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    const context2d = canvas.getContext('2d', { willReadFrequently: true });
+    context2d.drawImage(image, 0, 0, canvas.width, canvas.height);
     productThumbs.set(product.id, canvas.toDataURL('image/jpeg', 0.72));
+    productLooks.set(product.id, measurePhoto(context2d.getImageData(0, 0, canvas.width, canvas.height)));
   };
   image.src = product.dataUri;
   return undefined;
@@ -853,7 +880,7 @@ function withBrand(context, record = activeRecord(), format = formatOf(record)) 
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
   const products = brandKit.products.length ? brandKit.products.map((product) => {
     const thumb = thumbFor(product);
-    return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}) };
+    return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}), ...(productLooks.get(product.id) || {}) };
   }) : undefined;
   const { width, height } = FORMATS[format];
   return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics };
@@ -950,7 +977,7 @@ function makeOtherFormats(record) {
         music: record.music || 'auto',
         grade: record.grade || 'auto',
         resolution: record.resolution || 'hd',
-        photoColor: record.photoColor || 'palette',
+        photoColor: record.photoColor || 'original',
       });
       const variant = { format, report: result.report, at: nowIso() };
       record.project = { ...record.project, variants: [...(record.project.variants || []), variant] };
@@ -1105,7 +1132,7 @@ function renderFilm(record) {
       music: record.music || 'auto',
       grade: record.grade || 'auto',
       resolution: record.resolution || 'hd',
-      photoColor: record.photoColor || 'palette',
+      photoColor: record.photoColor || 'original',
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -1697,6 +1724,7 @@ function storyboardView(message) {
         h('h2', { class: 'block-title', text: storyboard.title }),
         h('span', { class: 'block-badge', text: `${shots.length} shots` })),
       h('p', { class: 'block-lede', text: storyboard.narrativeConcept }),
+      storyboard.missingPhotos?.length ? h('p', { class: 'missing-photos', role: 'note', text: `No photo shows ${storyboard.missingPhotos.join(', ')}. Add ${storyboard.missingPhotos.length === 1 ? 'a photo of it' : 'photos of them'} to the brand kit before building, or ask for changes.` }) : null,
       MOOD_LABELS[storyboard.musicMood] ? h('p', { class: 'music-line', text: `Music: ${MOOD_LABELS[storyboard.musicMood]}${storyboard.musicReason ? `. ${storyboard.musicReason}` : ''}${LOOK_LABELS[storyboard.grade] ? ` Look: ${LOOK_LABELS[storyboard.grade]}.` : ''}` }) : null,
       ...filmstrip(shots.map((shot) => ({
         duration: Number(shot.durationSeconds) || 1,
@@ -1833,8 +1861,8 @@ function sizePicker(record) {
 function photoColorPicker(record) {
   if (!brandKit.products.length) return [];
   const select = h('select', { class: 'music-pick', 'aria-label': 'Product photo color', title: 'Keep original colors to show the packaging exactly as photographed.' },
-    h('option', { value: 'palette', text: 'Photos: Palette grade', ...((record.photoColor || 'palette') === 'palette' ? { selected: true } : {}) }),
-    h('option', { value: 'original', text: 'Photos: Original colors', ...(record.photoColor === 'original' ? { selected: true } : {}) }));
+    h('option', { value: 'original', text: 'Photos: Original colors', ...((record.photoColor || 'original') === 'original' ? { selected: true } : {}) }),
+    h('option', { value: 'palette', text: 'Photos: Palette grade', ...(record.photoColor === 'palette' ? { selected: true } : {}) }));
   select.addEventListener('change', () => { record.photoColor = select.value; persist(); });
   return [select];
 }

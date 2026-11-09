@@ -361,7 +361,13 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       break;
     }
     case 'type-window': {
-      const product = productFor(spec, context);
+      // Letters filled with a packshot's white background look pale: prefer a
+      // textured photo; with only packshots, fill with the cropped product.
+      let product = productFor(spec, context);
+      if (product?.meta?.plain) {
+        const textured = (context.products || []).findIndex((item) => !item.plain);
+        if (textured >= 0) product = { index: textured + 1, meta: context.products[textured] };
+      }
       if (!product) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
       const shown = display(copy, textCase);
       const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: H * 0.42, minSize: H * 0.12, maxLines: 2, tracking: 0.02 });
@@ -375,7 +381,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
         reveal: { style: 'window', unit: 'letter', start: 0, duration: 0.35, stagger: Math.min(0.14, (0.9 * k) / Math.max(1, letters)) },
         sweep: spec.sweep === false ? undefined : { start: Math.max(1.5 * k, spec.durationInSeconds * 0.6), duration: 0.8 },
       }));
-      elements.at(-1).window = { product: product.index, outline: palette.emphasis.from, under: [mix(context.primaryColor, context.accentColor, 0.38), mix(context.primaryColor, context.accentColor, 0.15)] };
+      elements.at(-1).window = { product: product.index, outline: palette.emphasis.from, under: [mix(context.primaryColor, context.accentColor, 0.38), mix(context.primaryColor, context.accentColor, 0.15)], ...(product.meta.plain && product.meta.crop ? { crop: product.meta.crop } : {}) };
       const lineY = lastBaseline + H * 0.07;
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.08, accent: palette.accent, start: 1.0 * k, duration: 0.5 * k }));
       if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, maxWidth: W * 0.88, palette, start: 1.1 * k }));

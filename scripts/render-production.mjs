@@ -378,7 +378,7 @@ export async function renderProductionProject({
   music = 'auto',
   grade = 'auto',
   resolution = 'hd',
-  photoColor = 'palette',
+  photoColor = 'original',
   outputRoot = path.resolve('output'),
 }) {
   const validation = validateTimeline(timeline);

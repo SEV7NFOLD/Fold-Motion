@@ -953,9 +953,44 @@ test('high-resolution output: sizes per format, sharper photos, original colors,
     const { buildAcceptanceSpec } = await import('../src/production/production.mjs');
     const { report } = await renderProductionProject({ timeline, storyboard, context, acceptance: buildAcceptanceSpec(storyboard, context), music: 'off', resolution: 'fhd', outputRoot });
     assert.deepEqual(report.output, { resolution: 'fhd', label: 'Full HD', width: 1920, height: 1080 });
+    assert.equal(report.photoColor, 'original', 'original colors by default');
     assert.equal(report.productionQA.dimensions.pass, true);
     assert.equal(report.productionQA.pass, true);
   } finally {
     await rm(outputRoot, { recursive: true, force: true });
   }
+});
+
+test('quick wins: a shot every 2.5 seconds, missing photos flagged, type windows avoid white packshots', async () => {
+  // A 15-second brief that comes back with four shots is rewritten for more cuts.
+  const brief = '0:00 - 0:04 | One. 0:04 - 0:08 | Two. 0:08 - 0:11 | Three. 0:11 - 0:15 | Four';
+  const base = (await createCreativePlan('A teaser', DARK, null)).storyboard;
+  const four = { ...base, missingPhotos: ['the aromatherapy bath oil'], shots: ['Slow down', 'Neroli', 'Every ritual', 'Find your hour'].map((line, i) => ({ ...base.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 3.75 })) };
+  const prompts = [];
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: brief, context: { ...DARK, products: [{ width: 300, height: 450 }] }, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async (_url, options) => { prompts.push(JSON.parse(options.body).contents[0].parts[0].text); return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(four) }] } }] }; } }; },
+  });
+  assert.equal(prompts.length, 2, 'four shots for 15 seconds is too few');
+  assert.match(prompts[0], /missingPhotos/);
+  assert.deepEqual(result.storyboard.missingPhotos, ['the aromatherapy bath oil']);
+  // Plain packshots and product bounds survive the server's checks; nonsense is dropped.
+  const { normalizeProductsMeta } = await import('../src/production/brand-assets.mjs');
+  const meta = normalizeProductsMeta([{ width: 300, height: 450, plain: true, crop: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 } }, { width: 300, height: 450, plain: 'yes', crop: { x: 0.9, y: 0, w: 0.5, h: 1 } }]);
+  assert.deepEqual(meta[0], { width: 300, height: 450, plain: true, crop: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 } });
+  assert.deepEqual(meta[1], { width: 300, height: 450 });
+  // Type windows prefer a textured photo, or fill with the cropped product.
+  const window = (products, product) => {
+    const spec = { version: 2, recipe: 'type-window', product, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+    return expandRecipe(spec, { copy: 'CITRUS', context: { ...DARK, products }, shotIndex: 1 }).find((element) => element.window).window;
+  };
+  const crop = { x: 0.3, y: 0.1, w: 0.4, h: 0.8 };
+  assert.equal(window([{ width: 300, height: 450, plain: true, crop }, { width: 600, height: 400 }], 1).product, 2, 'steered to the textured photo');
+  const cropped = window([{ width: 300, height: 450, plain: true, crop }], 1);
+  assert.deepEqual(cropped.crop, crop, 'only packshots: fill with the product');
+  const { brand } = await productBrand();
+  const spec = { version: 2, recipe: 'type-window', product: 1, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  spec.elements = expandRecipe(spec, { copy: 'CITRUS', context: { ...DARK, products: [{ width: 300, height: 450, plain: true, crop }] }, shotIndex: 1 });
+  const frame = renderTimelineFrame({ width: 1280, height: 720, fps: 24, totalFrames: 48, shots: [{ shotId: 's', startFrame: 0, endFrame: 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] }, 40, brand);
+  assert.match(frame, /<svg [^>]*viewBox="90 45 120 360"/, 'the letters show the product region');
 });

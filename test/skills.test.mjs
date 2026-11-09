@@ -313,5 +313,12 @@ test('the studio picks an output size and product photo color before rendering',
   assert.match(studio, /function sizePicker\(record\)/);
   assert.match(studio, /function photoColorPicker\(record\)/);
   assert.match(studio, /resolution: record\.resolution \|\| 'hd'/);
-  assert.match(studio, /photoColor: record\.photoColor \|\| 'palette'/);
+  assert.match(studio, /photoColor: record\.photoColor \|\| 'original'/);
+});
+
+test('the studio measures photos, keeps original colors by default, and warns about missing photos', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /function measurePhoto\(\{ data, width, height \}\)/);
+  assert.match(studio, /photoColor: record\.photoColor \|\| 'original'/);
+  assert.match(studio, /storyboard\.missingPhotos\?\.length/);
 });
