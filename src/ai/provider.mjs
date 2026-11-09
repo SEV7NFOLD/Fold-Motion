@@ -133,6 +133,9 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    height > width
+      ? '- This is a vertical 9:16 film for phones: keep lines short (one to three words) so the type stays large, and expect product heroes to stack the photo above the line.'
+      : height === width ? '- This is a square 1:1 film for feeds: keep lines short; product heroes stack the photo above the line.' : '- This is a landscape 16:9 film.',
     context.products?.length
       ? `- ${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded. Show the product at least once with "product-hero" or "type-window" (one or two short words), and set "product" to 1${context.products.length > 1 ? `-${context.products.length}` : ''}.`
       : '- No product photos are uploaded: don\'t use "product-hero" or "type-window".',
@@ -457,6 +460,8 @@ export class GeminiAIProvider extends BaseAIProvider {
         platform: { type: 'STRING' },
         narrativeConcept: { type: 'STRING' },
         creativeDirection: { type: 'STRING' },
+        musicMood: { type: 'STRING', enum: ['premium', 'energetic', 'editorial', 'warm'] },
+        musicReason: { type: 'STRING' },
         shots: { type: 'ARRAY', items: shotSchema },
         hardConstraints: { type: 'ARRAY', items: { type: 'STRING' } },
         acceptanceCriteria: {

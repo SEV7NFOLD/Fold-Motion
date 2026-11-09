@@ -314,7 +314,7 @@ async function syncToCloud() {
 function persist() {
   if (cloud) {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 3, records: {}, activeId: store.activeId, log: store.log.slice(-40), cloud: true }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 3, records: {}, activeId: store.activeId, log: store.log.slice(-40), lastFormat: store.lastFormat, cloud: true }));
     } catch { /* the bookmark is optional */ }
     scheduleCloudSync();
     return;
@@ -734,11 +734,75 @@ function renderBrandTray() {
 }
 
 /** Planning requests carry logo metadata only (so recipes can lay it out). */
-function withBrand(context) {
+// ------------------------------------------------------------------ formats
+
+const FORMATS = {
+  landscape: { width: 1280, height: 720, label: '16:9 Landscape', short: '16:9' },
+  vertical: { width: 720, height: 1280, label: '9:16 Vertical', short: '9:16' },
+  square: { width: 960, height: 960, label: '1:1 Square', short: '1:1' },
+};
+const formatOf = (record) => (FORMATS[record?.format] ? record.format : FORMATS[store.lastFormat] ? store.lastFormat : 'landscape');
+
+/** The film's shape: its timeline's once built, otherwise the chosen format's. */
+function frameOf(record) {
+  const timeline = record?.project?.timeline;
+  if (timeline?.width && timeline?.height) return { width: timeline.width, height: timeline.height };
+  const { width, height } = FORMATS[formatOf(record)];
+  return { width, height };
+}
+
+function withBrand(context, record = activeRecord()) {
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
   const products = brandKit.products.length ? brandKit.products.map((product) => ({ width: product.width, height: product.height })) : undefined;
-  return { ...context, logo, products };
+  const { width, height } = FORMATS[formatOf(record)];
+  return { ...context, logo, products, width, height };
 }
+
+/** Rebuilds the shots in a new format before rendering (same storyboard). */
+function rebuildShots(record) {
+  return work(record, `Rebuilding the shots in ${FORMATS[formatOf(record)].label}`, 'Couldn’t rebuild the shots', 'compile', async () => {
+    const result = await postJson('/api/generate', {
+      action: 'compile',
+      storyboard: record.project.storyboard,
+      context: withBrand(record.project.context, record),
+    });
+    record.project = { ...record.project, timeline: result.timeline, compileProvider: result.provider };
+    record.providers.compile = { ...providerResult(result), at: nowIso() };
+    addMessage(record, 'system', 'timeline', { timeline: result.timeline, ...providerResult(result) });
+  });
+}
+
+/** A format picker; after the shots are built, changing it rebuilds them. */
+function formatPicker(record) {
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Format', title: 'Changing the format rebuilds the shots for the new frame.' },
+    ...Object.entries(FORMATS).map(([value, format]) => h('option', { value, text: `Format: ${format.label}`, ...(formatOf(record) === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => {
+    record.format = select.value;
+    store.lastFormat = select.value;
+    syncFormatPick();
+    persist();
+    if (record.project.state === 'RENDERING') rebuildShots(record);
+  });
+  return select;
+}
+
+function syncFormatPick() {
+  const record = activeRecord();
+  $('format-pick').value = formatOf(record);
+  const built = record?.project?.timeline && !['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW', 'BUILDING'].includes(record.project.state);
+  $('format-pick').title = built ? 'This film is built. Change its format on the “Shots built” card, or start a new chat.' : 'Pick the format before the shots are built: layout depends on it.';
+}
+
+$('format-pick').addEventListener('change', () => {
+  const record = activeRecord();
+  const value = $('format-pick').value;
+  store.lastFormat = value;
+  if (record && ['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW'].includes(record.project.state)) record.format = value;
+  else if (record?.project?.state === 'RENDERING') { record.format = value; rebuildShots(record); }
+  else if (record && record.project.state !== 'BRIEF') say(record, `New films will be ${FORMATS[value].label}. This one is already rendered; start a new chat to make it in that format.`);
+  persist();
+  render();
+});
 
 /** Render requests carry the logo itself. */
 function brandAssets() {
@@ -756,12 +820,13 @@ function brandAssets() {
 }
 
 function writeStoryboard(record) {
+  record.format = formatOf(record); // the chat keeps the format it started with
   return work(record, 'Writing the storyboard', 'Couldn’t write the storyboard', 'storyboard', async () => {
     if (record.project.state === 'BRIEF') await transition(record, 'PLANNING');
     const result = await postJson('/api/generate', {
       action: 'storyboard',
       prompt: record.project.brief,
-      context: withBrand(record.project.context),
+      context: withBrand(record.project.context, record),
     });
     record.project = {
       ...record.project,
@@ -799,7 +864,7 @@ function buildShots(record) {
     const result = await postJson('/api/generate', {
       action: 'compile',
       storyboard: record.project.storyboard,
-      context: withBrand(record.project.context),
+      context: withBrand(record.project.context, record),
     });
     record.project = { ...record.project, timeline: result.timeline, compileProvider: result.provider };
     await transition(record, 'RENDERING');
@@ -814,7 +879,7 @@ function renderFilm(record) {
       timeline: record.project.timeline,
       storyboard: record.project.storyboard,
       acceptance: record.project.acceptance,
-      context: withBrand(record.project.context),
+      context: withBrand(record.project.context, record),
       ...(brandAssets() ? { assets: brandAssets() } : {}),
       music: record.music || 'auto',
     });
@@ -1352,7 +1417,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), musicPicker(record), changesButton());
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), changesButton());
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1398,6 +1463,7 @@ function storyboardView(message) {
         h('h2', { class: 'block-title', text: storyboard.title }),
         h('span', { class: 'block-badge', text: `${shots.length} shots` })),
       h('p', { class: 'block-lede', text: storyboard.narrativeConcept }),
+      MOOD_LABELS[storyboard.musicMood] ? h('p', { class: 'music-line', text: `Music: ${MOOD_LABELS[storyboard.musicMood]}${storyboard.musicReason ? `. ${storyboard.musicReason}` : ''}` }) : null,
       ...filmstrip(shots.map((shot) => ({
         duration: Number(shot.durationSeconds) || 1,
         copy: shot.onScreenCopy,
@@ -1465,6 +1531,7 @@ function timelineView(message) {
 
 // ------------------------------------------------------------------ music (FOLD Score)
 
+const MOOD_LABELS = { premium: 'Premium calm', energetic: 'Energetic', editorial: 'Editorial', warm: 'Warm' };
 const MUSIC_CHOICES = [
   ['auto', 'Music: Auto'],
   ['premium', 'Music: Premium calm'],
@@ -1476,8 +1543,9 @@ const MUSIC_CHOICES = [
 
 /** The soundtrack choice for this production, sent with the render. */
 function musicPicker(record) {
-  const select = h('select', { class: 'music-pick', 'aria-label': 'Music for this film', title: 'FOLD Score composes music from your edit. Auto picks a mood from your brief.' },
-    ...MUSIC_CHOICES.map(([value, label]) => h('option', { value, text: label, ...((record.music || 'auto') === value ? { selected: true } : {}) })));
+  const directed = MOOD_LABELS[record.project?.storyboard?.musicMood];
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Music for this film', title: 'FOLD Score composes music from your edit. Auto uses the mood the storyboard chose.' },
+    ...MUSIC_CHOICES.map(([value, label]) => h('option', { value, text: value === 'auto' && directed ? `Music: Auto (${directed})` : label, ...((record.music || 'auto') === value ? { selected: true } : {}) })));
   select.addEventListener('change', () => {
     record.music = select.value;
     persist();
@@ -1669,6 +1737,10 @@ function buildWorkingNode() {
 }
 
 function renderThread(record, { stick = false } = {}) {
+  const frame = frameOf(record);
+  thread.style.setProperty('--frame-w', frame.width);
+  thread.style.setProperty('--frame-h', frame.height);
+  syncFormatPick();
   const nearBottom = threadScroll.scrollHeight - threadScroll.scrollTop - threadScroll.clientHeight < 160;
   if (thread.dataset.recordId !== record.id) {
     thread.replaceChildren();
@@ -1851,7 +1923,7 @@ function renderProjects() {
         type: 'button',
         onclick: () => openRecord(record),
       },
-      h('span', { class: 'poster' }, posterFor(record)),
+      h('span', { class: 'poster', style: `--frame-w: ${frameOf(record).width}; --frame-h: ${frameOf(record).height}` }, posterFor(record)),
       h('span', { class: 'project-name', text: recordTitle(record) }),
       h('span', { class: 'project-status' },
         h('span', { class: `status-pill${waiting ? ' is-waiting' : done ? ' is-done' : ''}`, text: waiting ? 'Needs you' : done ? 'Delivered' : 'In progress' }),
@@ -1884,7 +1956,7 @@ function renderLibrary() {
     return h('article', { class: 'film' },
       safeOutputUrl(artifacts?.video)
         ? h('video', { class: 'player', src: artifacts.video, controls: true, preload: 'metadata', playsinline: true, ...(artifacts?.film?.path ? { 'data-film-path': artifacts.film.path } : {}) })
-        : h('span', { class: 'poster' }, posterFor(record)),
+        : h('span', { class: 'poster', style: `--frame-w: ${frameOf(record).width}; --frame-h: ${frameOf(record).height}` }, posterFor(record)),
       h('h2', { text: recordTitle(record) }),
       h('p', { text: `${Number.isFinite(duration) ? `${seconds(duration)}, ` : ''}delivered ${relativeTime(delivered)}` }),
       exportLinks(artifacts));
@@ -2360,7 +2432,7 @@ async function enterCloud(client) {
       syncedJson.set(row.id, JSON.stringify(row.data));
     }
   }
-  store = { ...emptyStore(), records, activeId: records[local.activeId] ? local.activeId : rows[0]?.id || null, log: Array.isArray(local.log) ? local.log.slice(-LOG_LIMIT) : [] };
+  store = { ...emptyStore(), records, activeId: records[local.activeId] ? local.activeId : rows[0]?.id || null, log: Array.isArray(local.log) ? local.log.slice(-LOG_LIMIT) : [], lastFormat: local.lastFormat };
   nodeCache.clear();
   thread.dataset.recordId = '';
   await loadBrandKit();

@@ -608,9 +608,68 @@ test('too few shots for the film gets one rewrite asking for more cuts', async (
   });
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /only 3 shots for a 10-second film/);
+  assert.match(prompts[1], /Return exactly 6 shots/);
   assert.match(prompts[1], /two or three shots inside each timecoded beat/);
   assert.equal(result.storyboard.shots.length, 6);
   let elapsed = 0;
   const cuts = result.storyboard.shots.map((shot) => { elapsed += shot.durationSeconds; return Math.round(elapsed * 1000) / 1000; });
   assert.ok(cuts.includes(3) && cuts.includes(7), `cuts at ${cuts.join(', ')}`);
+});
+
+test('vertical and square films stack product heroes and keep every element inside the frame', async () => {
+  const { brand, bakeProductPanels } = await productBrand();
+  for (const [width, height] of [[720, 1280], [960, 960]]) {
+    const context = { ...PRODUCT_CONTEXT, width, height };
+    const { storyboard } = await createCreativePlan('A launch film for Alpha', context, null);
+    storyboard.shots = ['Precision in silence', 'Alpha', 'Built to last', 'Alpha', 'Creativity at scale'].map((line, i) => ({ ...storyboard.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: 1.6 }));
+    const { timeline } = await compileCreativePlan(storyboard, context, null);
+    assert.deepEqual([timeline.width, timeline.height], [width, height]);
+    const hero = timeline.shots.flatMap((shot) => shot.spec.elements).find((element) => element.type === 'image');
+    assert.ok(hero, 'a product hero');
+    const title = timeline.shots.find((shot) => shot.spec.elements.includes(hero)).spec.elements.find((element) => element.role === 'title');
+    assert.ok(title.y > hero.y + hero.height * 0.8, 'the line sits below the stacked photo');
+    for (const shot of timeline.shots) {
+      for (const element of shot.spec.elements) {
+        if (element.type === 'text') assert.ok(element.y > 0 && element.y < height, `${element.id} inside the frame`);
+      }
+    }
+    brand.panels = bakeProductPanels(timeline, brand);
+    const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+    for (const frame of [10, 50, 90, timeline.totalFrames - 1]) {
+      const png = new Resvg(renderTimelineFrame(timeline, frame, brand), { fitTo: { mode: 'width', value: width / 4 }, font }).render();
+      assert.equal(png.height, height / 4);
+    }
+  }
+});
+
+test('the storyboard carries a music mood: the model’s choice, else the brief’s words', async () => {
+  const offline = await createCreativePlan('A bold, punchy launch for a sneaker', DARK, null);
+  assert.equal(offline.storyboard.musicMood, 'energetic');
+  const base = offline.storyboard;
+  const chosen = { ...base, musicMood: 'warm', musicReason: 'A candle film should feel close and human.' };
+  const result = await generateProductionAction({
+    action: 'storyboard', prompt: 'A candle launch', context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+    fetchImpl: async () => ({ ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify(chosen) }] } }] }; } }),
+  });
+  assert.equal(result.storyboard.musicMood, 'warm');
+  assert.equal(result.storyboard.musicReason, 'A candle film should feel close and human.');
+  const { scoreMood } = await import('../scripts/render-production.mjs');
+  assert.equal(scoreMood('auto', result.storyboard), 'warm');
+  assert.equal(scoreMood('energetic', result.storyboard), 'energetic', 'the studio pick wins');
+  assert.equal(scoreMood('auto', {}), 'auto');
+});
+
+test('type windows use a lifted grade so dark products read inside the letters', async () => {
+  const { brand } = await productBrand();
+  const { gradeProduct } = await import('../scripts/render-production.mjs');
+  const lifted = gradeProduct(brand.products[0], { primary: DARK.primaryColor, accent: DARK.accentColor }, { lift: true });
+  const normal = brand.products[0].graded;
+  const mean = (uri) => {
+    const png = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="60"><image href="${uri}" width="40" height="60"/></svg>`).render();
+    const px = png.pixels;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+    return sum / (px.length / 4) / 3;
+  };
+  assert.ok(mean(lifted) > mean(normal) + 40, `lifted ${mean(lifted).toFixed(0)} vs ${mean(normal).toFixed(0)}`);
 });

@@ -272,6 +272,38 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     case 'product-hero': {
       const product = productFor(spec, context);
       if (!product) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
+      if (W / H < 1.2) {
+        // Vertical and square frames stack the product above the line.
+        const panelHeight = H * (H > W ? 0.56 : 0.54);
+        const panelWidth = Math.min(W * 0.92, panelHeight * (product.meta.width / product.meta.height) * 1.15);
+        elements.push({
+          id: `shot-${n}-product`, type: 'image', role: 'product', product: product.index, x: (W - panelWidth) / 2, y: H * 0.05, width: panelWidth, height: panelHeight,
+          feather: { left: 0.14, right: 0.14, top: 0.1, bottom: 0.3 },
+          reveal: { style: 'emerge', start: 0, duration: 1.1 * k }, push: 0.04,
+          glint: { start: Math.max(1.4 * k, spec.durationInSeconds * 0.5), duration: 0.8 },
+        });
+        const shown = display(copy, textCase);
+        const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: H * (H > W ? 0.1 : 0.13), minSize: H * 0.04, maxLines: 2, tracking: 0.04 });
+        const lineHeight = block.size * 1.02;
+        const top = H * 0.05 + panelHeight + H * 0.06;
+        const y = top + capHeight('display', block.size) + (kicker ? H * 0.035 : 0);
+        const lastBaseline = y + (block.lines.length - 1) * lineHeight;
+        if (kicker) {
+          const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: top, height: H, palette, start: 0.35 * k });
+          kickerNode.fill = palette.emphasis.from;
+          elements.push(kickerNode);
+        }
+        elements.push(textElement({
+          id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+          lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+          reveal: { style: 'mask-rise', unit: 'word', start: 0.6 * k, duration: 0.8 * k, stagger: 0.1 * k },
+          settle: { from: 0.05, start: 0.6 * k, duration: 1.4 * k },
+          sweep: spec.sweep === false ? undefined : { start: Math.max(1.6 * k, spec.durationInSeconds * 0.62), duration: 0.8 },
+          emphasis: emphasisFor(shown),
+        }));
+        elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lastBaseline + H * 0.03, width: W * 0.14, accent: palette.accent, start: 1.0 * k, duration: 0.6 * k }));
+        break;
+      }
       const side = (productOrdinal ?? shotIndex) % 2 === 0 ? 'right' : 'left';
       const panelWidth = Math.min(W * 0.5, H * (product.meta.width / product.meta.height));
       const panelX = side === 'right' ? W - panelWidth - W * 0.04 : W * 0.04;
