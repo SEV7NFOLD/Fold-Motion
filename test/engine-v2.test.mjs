@@ -850,3 +850,44 @@ test('edits rebuild the shots with no AI call, and the same film re-lays out for
   specs[1].recipe = 'type-window';
   assert.notEqual(rebuildTimeline(edited, specs, DARK).timeline.shots[1].spec.recipe, 'type-window', 'the same rules apply to edits (no photos, no type window)');
 });
+
+test('stat, quote, product grid and split screen render inside the frame in every format', async () => {
+  const { measureFrameFit } = await import('../src/production/production.mjs');
+  const { brand, bakeProductPanels } = await productBrand();
+  const photo = brand.products[0];
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const [width, height] of [[1280, 720], [720, 1280], [960, 960]]) {
+    const context = { ...DARK, width, height, products: Array.from({ length: 4 }, () => ({ width: 300, height: 450 })) };
+    const plan = [
+      { recipe: 'stat', copy: '98% recycled leather', kicker: 'Made better' },
+      { recipe: 'quote', copy: 'The most comfortable loafer I have ever owned.', kicker: 'A customer' },
+      { recipe: 'product-grid', copy: 'Every angle', product: 1 },
+      { recipe: 'split', copy: 'Built to last', product: 2 },
+    ];
+    let start = 0;
+    const shots = plan.map((item, index) => {
+      const spec = { version: 2, ...item, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+      spec.elements = expandRecipe(spec, { copy: item.copy, context, shotIndex: index });
+      const shot = { shotId: `s${index}`, startFrame: start, endFrame: start + 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec };
+      start += 48;
+      return shot;
+    });
+    const timeline = { width, height, fps: 24, totalFrames: start, shots };
+    assert.equal(measureFrameFit(timeline).pass, true, `${width}x${height}: ${JSON.stringify(measureFrameFit(timeline).failures)}`);
+    assert.equal(shots[2].spec.elements.filter((element) => element.type === 'image').length, 4, 'a grid of four photos');
+    const products = Array.from({ length: 4 }, () => ({ ...photo, graded: photo.graded }));
+    const kit = { products };
+    kit.panels = bakeProductPanels(timeline, kit);
+    for (const frame of [3, 20, 47, 60, 100, 140, 180]) {
+      const png = new Resvg(renderTimelineFrame(timeline, frame, kit), { fitTo: { mode: 'width', value: width / 4 }, font }).render();
+      assert.equal(png.width, width / 4);
+    }
+    const counting = renderTimelineFrame(timeline, 8, kit);
+    const settled = renderTimelineFrame(timeline, 47, kit);
+    assert.doesNotMatch(counting, />98%</, 'mid-count shows a smaller number');
+    assert.match(settled, /98%/, 'the count settles on the exact line');
+  }
+  const { normalizeDirection } = await import('../src/production/recipes.mjs');
+  assert.notEqual(normalizeDirection({ recipe: 'stat', transitionOut: 'cut' }, { copy: 'No numbers here', index: 1, count: 3, seed: 's' }).direction.recipe, 'stat');
+  assert.equal(normalizeDirection({ recipe: 'product-grid', transitionOut: 'cut' }, { copy: 'Every angle', index: 1, count: 3, seed: 's', productCount: 1 }).direction.recipe, 'product-hero');
+});

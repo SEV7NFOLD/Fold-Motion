@@ -86,7 +86,7 @@ export function extractCues(timeline) {
         } else if (reveal.style === 'mask-rise' && reveal.unit === 'word') {
           const words = String(element.shown || element.content || '').split(/\s+/).filter(Boolean).length;
           for (let i = 0; i < Math.min(words, 6); i += 1) add(start + reveal.start + i * reveal.stagger + reveal.duration * 0.2, 'word', { index: i });
-        } else if (['cascade', 'mask-rise', 'fade', 'slide'].includes(reveal.style)) {
+        } else if (['cascade', 'mask-rise', 'fade', 'slide', 'count', 'decode', 'outline'].includes(reveal.style)) {
           add(start + reveal.start, 'reveal');
         }
         if (element.sweep) add(start + element.sweep.start, 'sweep');

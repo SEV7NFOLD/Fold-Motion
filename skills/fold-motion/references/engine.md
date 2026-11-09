@@ -25,6 +25,10 @@ and this file disagree about current behavior, this file and the code win.
 | `lockup` | End card: the line, a hairline, the kicker set as a brand name in the display face, light sweep; the uploaded logo, if any, sits above the line |
 | `product-hero` | An uploaded product photo, graded into the palette, as a feathered panel on one side (alternating sides from one product shot to the next) with a settle, a slow push-in and a pass of light; the line rises huge in the display face beside it. Only with product photos |
 | `type-window` | Giant display letters filled with the graded product photo, landing one by one, outlined for legibility; one or two short words (longer lines become a product hero). Only with product photos |
+| `stat` | A number in the line counts up from zero (keeping its decimals and separators), huge in the display face, then settles exactly as written. Only when the line contains a number |
+| `quote` | A testimonial: a large quotation mark, the line in Montserrat Medium word by word, and the kicker beneath as the attribution |
+| `product-grid` | Two to four product photos in a grid (a row in landscape, two by two in vertical and square), each emerging in turn, with the line beneath. Only with two or more photos |
+| `split` | A split screen: a product photo fills one half edge to edge (top half in vertical), the line sits on the other half beside an accent divider. Only with product photos |
 | `logo-reveal` | The uploaded logo as the hero: an SVG strokes itself on along each shape's measured length and fills with its own colors, a PNG wipes in; a glint crosses its exact silhouette; the line sits small beneath. Only with an uploaded logo (`normalizeDirection` swaps it out otherwise) |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
