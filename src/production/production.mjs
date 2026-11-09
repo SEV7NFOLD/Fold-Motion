@@ -948,6 +948,31 @@ function strengthenDirection(specs, storyboard) {
   return changes;
 }
 
+/**
+ * Rebuilds the shots from the existing directions, with the client's edits, and no
+ * AI call: a changed line, duration, shot type, photo or transition goes through
+ * the same rules as the model's directions. Also re-lays a film out for another
+ * format. Returns the timeline and a matching acceptance spec.
+ */
+export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
+  const validation = validateStoryboard(storyboard);
+  if (!validation.valid) throw new Error(`The edited storyboard is invalid: ${validation.errors.join(' ')}`);
+  if (!Array.isArray(shotSpecs) || shotSpecs.length !== storyboard.shots.length) {
+    throw new Error('Send one shot direction for each storyboard shot.');
+  }
+  const normalizedContext = normalizeProductionContext(context);
+  const seed = `${storyboard.id}|${storyboard.title}`;
+  const repairs = [];
+  const specs = storyboard.shots.map((shot, index) => {
+    const result = directedShotSpec(shotSpecs[index] || {}, shot, index, storyboard.shots.length, normalizedContext, seed);
+    repairs.push(...result.repairs.filter((note) => !note.includes('no motion chosen')));
+    return result.spec;
+  });
+  repairs.push(...limitFolds(specs, storyboard.shots.map((shot) => shot.id)));
+  const timeline = buildTimeline(storyboard, specs, normalizedContext);
+  return { timeline, acceptance: buildAcceptanceSpec(storyboard, normalizedContext), provider: 'rebuild', ...(repairs.length ? { repairs } : {}) };
+}
+
 export async function compileCreativePlan(storyboard, context = {}, provider = null) {
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);

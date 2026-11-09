@@ -5,7 +5,7 @@ import {
   getGeminiKeyPool,
   OpenAICompatibleAIProvider,
 } from '../ai/provider.mjs';
-import { compileCreativePlan, createCreativePlan } from '../production/production.mjs';
+import { compileCreativePlan, createCreativePlan, rebuildTimeline } from '../production/production.mjs';
 
 const DEFAULT_BACKUP_MODELS = 'gemini-3.6-flash';
 const sleep = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
@@ -107,12 +107,15 @@ export async function generateProductionAction({
   prompt,
   context,
   storyboard,
+  shotSpecs,
   apiKey,
   apiKeys,
   fetchImpl = globalThis.fetch,
   logger = console,
   environment = process.env,
 }) {
+  // Edits and format changes rebuild the shots without any AI call.
+  if (action === 'rebuild') return rebuildTimeline(storyboard, shotSpecs, context);
   const run = (provider) => action === 'compile'
     ? compileCreativePlan(storyboard, context, provider)
     : createCreativePlan(prompt, context, provider);

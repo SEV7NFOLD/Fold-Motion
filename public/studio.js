@@ -796,28 +796,124 @@ function thumbFor(product) {
   return undefined;
 }
 
-function withBrand(context, record = activeRecord()) {
+function withBrand(context, record = activeRecord(), format = formatOf(record)) {
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
   const products = brandKit.products.length ? brandKit.products.map((product) => {
     const thumb = thumbFor(product);
     return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}) };
   }) : undefined;
-  const { width, height } = FORMATS[formatOf(record)];
+  const { width, height } = FORMATS[format];
   return { ...context, logo, products, width, height };
 }
 
 /** Rebuilds the shots in a new format before rendering (same storyboard). */
 function rebuildShots(record) {
-  return work(record, `Rebuilding the shots in ${FORMATS[formatOf(record)].label}`, 'Couldn’t rebuild the shots', 'compile', async () => {
-    const result = await postJson('/api/generate', {
-      action: 'compile',
-      storyboard: record.project.storyboard,
-      context: withBrand(record.project.context, record),
-    });
-    record.project = { ...record.project, timeline: result.timeline, compileProvider: result.provider };
-    record.providers.compile = { ...providerResult(result), at: nowIso() };
+  return work(record, `Rebuilding the shots in ${FORMATS[formatOf(record)].label}`, 'Couldn’t rebuild the shots', 'rebuild', async () => {
+    const result = await rebuildRequest(record, record.project.storyboard, currentSpecs(record));
+    record.project = { ...record.project, timeline: result.timeline, acceptance: result.acceptance };
     addMessage(record, 'system', 'timeline', { timeline: result.timeline, ...providerResult(result) });
   });
+}
+
+/** The directions the current shots were built with. */
+const currentSpecs = (record) => record.project.timeline.shots.map((shot) => ({ ...shot.spec, elements: undefined }));
+
+/** Rebuilds shots from directions, with no AI call (edits and format changes). */
+function rebuildRequest(record, storyboard, shotSpecs, format = formatOf(record)) {
+  return postJson('/api/generate', { action: 'rebuild', storyboard, shotSpecs, context: withBrand(record.project.context, record, format) });
+}
+
+// ------------------------------------------------------------------ edit shots in place
+
+/** Inline editor for the built shots: line, seconds, shot type, photo, transition. */
+function shotEditor(record) {
+  const { storyboard, timeline } = record.project;
+  const photoCount = brandKit.products.length;
+  const recipes = Object.keys(RECIPE_LABELS).filter((recipe) => (!['product-hero', 'type-window'].includes(recipe) || photoCount) && (recipe !== 'logo-reveal' || brandKit.logo));
+  const rows = timeline.shots.map((shot, index) => {
+    const spec = shot.spec;
+    const line = h('input', { class: 'edit-line', type: 'text', value: storyboard.shots[index].onScreenCopy, 'aria-label': `Shot ${index + 1} line`, maxlength: '90' });
+    const seconds = h('input', { class: 'edit-seconds', type: 'number', min: '0.6', max: '12', step: '0.1', value: String(Number(storyboard.shots[index].durationSeconds.toFixed(2))), 'aria-label': `Shot ${index + 1} seconds` });
+    const recipe = h('select', { class: 'edit-recipe', 'aria-label': `Shot ${index + 1} shot type` }, ...recipes.map((value) => h('option', { value, text: RECIPE_LABELS[value], ...(spec.recipe === value ? { selected: true } : {}) })));
+    const currentPhoto = spec.elements?.find((element) => element.type === 'image')?.product || spec.elements?.find((element) => element.window)?.window?.product || spec.product || 1;
+    const photo = h('select', { class: 'edit-photo', 'aria-label': `Shot ${index + 1} photo` }, ...brandKit.products.map((_, i) => h('option', { value: String(i + 1), text: `Photo ${i + 1}`, ...(currentPhoto === i + 1 ? { selected: true } : {}) })));
+    const syncPhoto = () => { photo.hidden = !['product-hero', 'type-window'].includes(recipe.value); };
+    recipe.addEventListener('change', syncPhoto);
+    syncPhoto();
+    const last = index === timeline.shots.length - 1;
+    const transition = last ? null : h('select', { class: 'edit-transition', 'aria-label': `Shot ${index + 1} transition` }, ...Object.entries(TRANSITION_LABELS).map(([value, label]) => h('option', { value, text: `Then: ${label}`, ...((spec.transitionOut || 'cut') === value ? { selected: true } : {}) })));
+    return { line, seconds, recipe, photo, transition, node: h('div', { class: 'edit-row' },
+      h('span', { class: 'edit-index', text: String(index + 1) }),
+      h('div', { class: 'edit-fields' }, line, h('div', { class: 'edit-controls' }, seconds, h('span', { class: 'edit-unit', text: 's' }), recipe, photo, transition)),
+    ) };
+  });
+  const apply = h('button', { class: 'pill pill-go', type: 'button', text: 'Apply changes' });
+  const panel = h('details', { class: 'shot-editor' },
+    h('summary', { text: 'Edit shots' }),
+    h('p', { class: 'edit-hint', text: 'Change a line, a duration, a shot type, a photo or a transition. Changes rebuild instantly, with no AI call.' }),
+    ...rows.map((row) => row.node),
+    h('div', { class: 'edit-actions' }, apply));
+  apply.addEventListener('click', () => {
+    const edited = JSON.parse(JSON.stringify(storyboard));
+    const specs = currentSpecs(record);
+    for (const [index, row] of rows.entries()) {
+      const text = row.line.value.trim();
+      if (!text) return row.line.focus();
+      edited.shots[index].onScreenCopy = text;
+      edited.shots[index].durationSeconds = Math.min(12, Math.max(0.6, Number(row.seconds.value) || edited.shots[index].durationSeconds));
+      specs[index].recipe = row.recipe.value;
+      if (!row.photo.hidden) specs[index].product = Number(row.photo.value);
+      if (row.transition) specs[index].transitionOut = row.transition.value;
+    }
+    editShots(record, edited, specs);
+  });
+  return panel;
+}
+
+function editShots(record, storyboard, shotSpecs) {
+  return work(record, 'Updating the shots', 'Couldn’t update the shots', 'rebuild', async () => {
+    const result = await rebuildRequest(record, storyboard, shotSpecs);
+    record.project = { ...record.project, storyboard, timeline: result.timeline, acceptance: result.acceptance };
+    addMessage(record, 'system', 'timeline', { timeline: result.timeline, ...providerResult(result) });
+  });
+}
+
+// ------------------------------------------------------------------ every format in one go
+
+/** Renders the approved film again in the formats it isn't in yet, through the queue. */
+function makeOtherFormats(record) {
+  const others = Object.keys(FORMATS).filter((format) => format !== formatOf(record) && !(record.project.variants || []).some((variant) => variant.format === format));
+  return work(record, 'Rendering and checking', 'Couldn’t make the other formats', 'variants', async () => {
+    for (const format of others) {
+      const rebuilt = await rebuildRequest(record, record.project.storyboard, currentSpecs(record), format);
+      const result = await renderQueued({
+        timeline: rebuilt.timeline,
+        storyboard: record.project.storyboard,
+        acceptance: rebuilt.acceptance,
+        context: withBrand(record.project.context, record, format),
+        ...(brandAssets() ? { assets: brandAssets() } : {}),
+        music: record.music || 'auto',
+        grade: record.grade || 'auto',
+      });
+      const variant = { format, report: result.report, at: nowIso() };
+      record.project = { ...record.project, variants: [...(record.project.variants || []), variant] };
+      addMessage(record, 'system', 'variant', variant);
+      persist();
+    }
+  });
+}
+
+function variantView(data) {
+  const format = FORMATS[data.format];
+  const video = data.report?.artifacts?.video;
+  const checks = qaChecks(data.report);
+  const failed = checks.filter((check) => !check.pass).length;
+  return systemMessage(
+    h('p', { class: 'msg-text', text: `${format?.label || data.format} version ready.` }),
+    h('div', { class: 'block', style: `--frame-w: ${format?.width || 16}; --frame-h: ${format?.height || 9}` },
+      safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true, ...(data.report?.artifacts?.film?.path ? { 'data-film-path': data.report.artifacts.film.path } : {}) }) : null,
+      h('p', { class: `qa-summary${failed ? ' is-fail' : ''}`, text: failed ? `${failed} of ${checks.length} QA checks failed` : `✓ All ${checks.length} QA checks passed` }),
+      safeOutputUrl(video) ? h('a', { class: 'pill pill-go', href: downloadUrl(video, `fold-motion-${format?.short?.replace(':', 'x') || data.format}.mp4`), download: '', ...(data.report?.artifacts?.film?.path ? { 'data-film-path': data.report.artifacts.film.path, 'data-download': 'true' } : {}) }, icon('download'), `Download ${format?.short || ''}`) : null));
 }
 
 /** A format picker; after the shots are built, changing it rebuilds them. */
@@ -998,6 +1094,8 @@ function runRetry(record, kind) {
     render: () => renderFilm(record),
     approve: () => approveCut(record),
     deliver: () => deliver(record),
+    rebuild: () => rebuildShots(record),
+    variants: () => makeOtherFormats(record),
   };
   actions[kind]?.();
 }
@@ -1485,7 +1583,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), lookPicker(record), changesButton());
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), lookPicker(record), changesButton(), shotEditor(record));
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1496,18 +1594,26 @@ function fillGate(slot, message, record) {
   } else if (message.type === 'render') {
     if (state === 'QA') {
       const passes = qaPasses(message.data.report);
-      content.push(goButton('Approve final cut', () => approveCut(record)), changesButton());
+      content.push(goButton('Approve final cut', () => approveCut(record)), changesButton(), ...otherFormatsButton(record));
       if (!passes) {
         content[0].disabled = true;
         content.push(h('p', { class: 'gate-note', text: 'Every check has to pass before the cut can be approved. Ask for changes to fix the failing checks.' }));
       }
     } else if (stage > PROJECT_STATES.indexOf('QA')) content.push(stamp('Final cut approved'));
   } else if (message.type === 'approved') {
-    if (state === 'APPROVED') content.push(goButton('Deliver', () => deliver(record)));
+    if (state === 'APPROVED') content.push(goButton('Deliver', () => deliver(record)), ...otherFormatsButton(record));
   }
 
   slot.replaceChildren(...content);
   slot.hidden = content.length === 0;
+}
+
+function otherFormatsButton(record) {
+  const others = Object.keys(FORMATS).filter((format) => format !== formatOf(record) && !(record.project.variants || []).some((variant) => variant.format === format));
+  if (!others.length || !record.project.renderReport) return [];
+  const button = h('button', { class: 'pill', type: 'button', text: `Also make ${others.map((format) => FORMATS[format].short).join(' and ')}` });
+  button.addEventListener('click', () => makeOtherFormats(record));
+  return [button];
 }
 
 function systemMessage(...children) {
@@ -1758,6 +1864,7 @@ function messageView(message, record) {
     if (type === 'storyboard') return storyboardView(message);
     if (type === 'timeline') return timelineView(message);
     if (type === 'render') return renderView(message);
+    if (type === 'variant') return { node: variantView(data) };
   } catch (error) {
     return { node: systemMessage(note('fault', h('p', { text: `This card couldn’t be shown: ${error.message}` }))) };
   }
@@ -1769,7 +1876,8 @@ function messageView(message, record) {
     return {
       node: systemMessage(
         h('p', { class: 'msg-text', text: `Delivered. ${recordTitle(record)} is in your Library.` }),
-        exportLinks(data.artifacts)),
+        exportLinks(data.artifacts),
+        ...(record.project.variants || []).filter((variant) => safeOutputUrl(variant.report?.artifacts?.video)).map((variant) => h('a', { class: 'pill', href: downloadUrl(variant.report.artifacts.video, `fold-motion-${FORMATS[variant.format]?.short?.replace(':', 'x')}.mp4`), download: '', ...(variant.report.artifacts.film?.path ? { 'data-film-path': variant.report.artifacts.film.path, 'data-download': 'true' } : {}) }, icon('download'), `Download ${FORMATS[variant.format]?.short || variant.format}`))),
     };
   }
   if (type === 'error') {

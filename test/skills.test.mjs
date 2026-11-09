@@ -298,3 +298,12 @@ test('the brand kit takes as many photos as a production needs, numbered for bri
   assert.match(studio, /function photosUsed\(timeline\)/);
   assert.doesNotMatch(read(root, 'public', 'index.html'), /Up to 3/);
 });
+
+test('the studio edits shots in place and makes every format', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /function shotEditor\(record\)/);
+  assert.match(studio, /action: 'rebuild'/);
+  assert.match(studio, /function makeOtherFormats\(record\)/);
+  assert.match(studio, /if \(type === 'variant'\) return \{ node: variantView\(data\) \}/);
+  assert.match(studio, /variants: \(\) => makeOtherFormats\(record\)/);
+});

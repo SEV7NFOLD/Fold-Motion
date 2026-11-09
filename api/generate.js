@@ -34,13 +34,13 @@ export default async function generate(request, response) {
     return response.status(400).json({ success: false, error: 'Context must be a JSON object.' });
   }
   const action = body.action || 'storyboard';
-  if (!['storyboard', 'compile'].includes(action)) {
-    return response.status(400).json({ success: false, error: 'Action must be "storyboard" or "compile".' });
+  if (!['storyboard', 'compile', 'rebuild'].includes(action)) {
+    return response.status(400).json({ success: false, error: 'Action must be "storyboard", "compile" or "rebuild".' });
   }
   if (action === 'storyboard' && (typeof body.prompt !== 'string' || !body.prompt.trim())) {
     return response.status(400).json({ success: false, error: 'A valid text prompt is required.' });
   }
-  if (action === 'compile' && (!body.storyboard || typeof body.storyboard !== 'object' || Array.isArray(body.storyboard))) {
+  if ((action === 'compile' || action === 'rebuild') && (!body.storyboard || typeof body.storyboard !== 'object' || Array.isArray(body.storyboard))) {
     return response.status(400).json({ success: false, error: 'A valid approved storyboard is required.' });
   }
   if (action === 'compile') {
@@ -55,6 +55,7 @@ export default async function generate(request, response) {
       action,
       prompt: body.prompt,
       storyboard: body.storyboard,
+      shotSpecs: body.shotSpecs,
       context: body.context ?? defaultContext,
       apiKeys: getGeminiKeyPool(),
     });

@@ -2680,3 +2680,102 @@ button.tool:hover,
   background: linear-gradient(90deg, var(--indigo), var(--lavender));
   transition: width 0.6s var(--ease);
 }
+
+/* ------------------------------------------------------------------ edit shots */
+.gate .shot-editor {
+  flex-basis: 100%;
+  margin-top: 0.4rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.shot-editor summary {
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edit-hint {
+  margin: 0.5rem 0 0.7rem;
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+
+.edit-row {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.edit-index {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--lavender);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.edit-fields {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.edit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.shot-editor input,
+.shot-editor select {
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.shot-editor input:focus,
+.shot-editor select:focus {
+  border-color: var(--indigo-line);
+  outline: none;
+}
+
+.edit-line {
+  width: 100%;
+}
+
+.edit-seconds {
+  width: 4.2rem;
+}
+
+.edit-unit {
+  margin-left: -0.25rem;
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+
+.shot-editor select[hidden] {
+  display: none;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
