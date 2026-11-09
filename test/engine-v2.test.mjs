@@ -768,7 +768,8 @@ test('every line fits the frame in every format, and QA fails a line that spills
     for (const recipe of ['kicker-title', 'title-reveal', 'statement', 'type-stack', 'lockup']) {
       const spec = { version: 2, recipe, kicker: 'Embossed leather, gold horsebit, hand finished', kickerExact: recipe === 'lockup', durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
       for (const copy of lines) {
-        spec.elements = expandRecipe(spec, { copy, context, shotIndex: 1 });
+        // End cards also carry a long supporting line (from the brief's On-Screen Text).
+        spec.elements = expandRecipe(spec, { copy, context, shotIndex: 1, support: recipe === 'lockup' ? 'Pure Lakes. Natural & handmade in the Lake District.' : '' });
         const timeline = { width, height, fps: 24, totalFrames: 72, shots: [{ shotId: 's', startFrame: 0, endFrame: 71, durationFrames: 72, palette: {}, spec }] };
         const fit = measureFrameFit(timeline);
         assert.equal(fit.pass, true, `${width}x${height} ${recipe} "${copy}": ${JSON.stringify(fit.failures)}`);
