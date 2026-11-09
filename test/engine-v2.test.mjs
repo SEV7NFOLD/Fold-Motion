@@ -922,3 +922,39 @@ test('brand fonts: measured exactly, used for headlines, drawn in their own face
   assert.equal(resolved.extension, 'ttf');
   assert.throws(() => resolveFont({ dataUri: `data:font/ttf;base64,${Buffer.from('not a font at all').toString('base64')}` }), /isn’t a TTF or OTF/);
 });
+
+test('high-resolution output: sizes per format, sharper photos, original colors, and a real Full HD render', { timeout: 150_000 }, async () => {
+  const { outputSize, gradeProduct, renderProductionProject } = await import('../scripts/render-production.mjs');
+  const sizes = (width, height) => ['hd', 'fhd', '2k'].map((key) => `${outputSize({ width, height }, key).width}x${outputSize({ width, height }, key).height}`);
+  assert.deepEqual(sizes(1280, 720), ['1280x720', '1920x1080', '2560x1440']);
+  assert.deepEqual(sizes(720, 1280), ['720x1280', '1080x1920', '1440x2560']);
+  assert.deepEqual(sizes(960, 960), ['960x960', '1080x1080', '1440x1440']);
+  assert.equal(outputSize({ width: 1280, height: 720 }, 'nonsense').key, 'hd');
+  const { Resvg: R } = await import('@resvg/resvg-js');
+  const red = Buffer.from(new R('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600"><rect width="1600" height="1600" fill="#E0301E"/></svg>').render().asPng());
+  const product = { dataUri: `data:image/png;base64,${red.toString('base64')}`, width: 1600, height: 1600 };
+  const palette = { primary: DARK.primaryColor, accent: DARK.accentColor };
+  const pixel = (uri) => { const png = new R(`<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><image href="${uri}" width="4" height="4"/></svg>`).render(); return [...png.pixels.slice(0, 3)]; };
+  const original = gradeProduct(product, palette, { original: true, scale: 2 });
+  assert.deepEqual(pixel(original).map((c) => Math.round(c / 16)), [14, 3, 2], 'original colors are kept');
+  assert.notDeepEqual(pixel(gradeProduct(product, palette)).map((c) => Math.round(c / 16)), [14, 3, 2], 'the palette grade recolors');
+  const size = (uri) => new R(`<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>`) && Buffer.from(uri.split(',')[1], 'base64').readUInt32BE(16);
+  assert.equal(size(gradeProduct(product, palette, { scale: 2 })), 1440, 'prepared at 2K');
+  assert.equal(size(gradeProduct({ ...product, width: 900, height: 900 }, palette, { scale: 2 })), 900, 'never enlarged past the source');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const context = { primaryColor: '#0E0E11', accentColor: '#7C3AED', durationInSeconds: 2 };
+  const { storyboard } = await createCreativePlan('A short film for FOLD Motion', context, null);
+  const { timeline } = await compileCreativePlan(storyboard, context, null);
+  const outputRoot = await mkdtemp(path.join(os.tmpdir(), 'fold-hires-'));
+  try {
+    const { buildAcceptanceSpec } = await import('../src/production/production.mjs');
+    const { report } = await renderProductionProject({ timeline, storyboard, context, acceptance: buildAcceptanceSpec(storyboard, context), music: 'off', resolution: 'fhd', outputRoot });
+    assert.deepEqual(report.output, { resolution: 'fhd', label: 'Full HD', width: 1920, height: 1080 });
+    assert.equal(report.productionQA.dimensions.pass, true);
+    assert.equal(report.productionQA.pass, true);
+  } finally {
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});

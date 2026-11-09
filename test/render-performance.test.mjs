@@ -38,7 +38,9 @@ test('the background grid is one path, not an expensive SVG pattern', () => {
 test('the encoder uses a lean, bounded configuration', () => {
   assert.match(renderer, /'-preset', process\.env\.RENDER_X264_PRESET \|\| 'veryfast'/);
   assert.match(renderer, /RENDER_FFMPEG_THREADS, 1\)/);
-  assert.match(renderer, /'-x264-params', 'aq-mode=3'/);
+  // HD keeps aq-mode=3; Full HD and 2K also drop look-ahead, B-frames and mbtree
+  // (each holds full frames), halving the encoder's memory.
+  assert.match(renderer, /'-x264-params', output\.scale > 1 \? 'aq-mode=3:rc-lookahead=0:bframes=0:mbtree=0' : 'aq-mode=3'/);
   assert.match(renderer, /globalThis\.gc\?\.\(\)/);
 });
 

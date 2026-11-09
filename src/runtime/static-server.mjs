@@ -288,10 +288,13 @@ async function performRender({ body, fold, projectRoot, onProgress }) {
       ...(body.assets ? { assets: body.assets } : {}),
       ...(typeof body.music === 'string' ? { music: body.music } : {}),
       ...(typeof body.grade === 'string' ? { grade: body.grade } : {}),
+      ...(['hd', 'fhd', '2k'].includes(body.resolution) ? { resolution: body.resolution } : {}),
+      ...(body.photoColor === 'original' ? { photoColor: 'original' } : {}),
     }));
     const renderResult = await runNodeScriptStreaming('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
       label: 'Rendering',
-      timeoutMs: renderTimeoutMs(),
+      // Bigger frames take longer: the timeout grows with the pixels drawn.
+      timeoutMs: renderTimeoutMs() * ({ fhd: 2.3, '2k': 4 }[body.resolution] || 1),
       onProgress,
     });
     const reportLine = renderResult.stdout.split(/\r?\n/).find((line) => line.startsWith('RENDER_REPORT:'));

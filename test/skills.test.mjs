@@ -307,3 +307,11 @@ test('the studio edits shots in place and makes every format', () => {
   assert.match(studio, /if \(type === 'variant'\) return \{ node: variantView\(data\) \}/);
   assert.match(studio, /variants: \(\) => makeOtherFormats\(record\)/);
 });
+
+test('the studio picks an output size and product photo color before rendering', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /function sizePicker\(record\)/);
+  assert.match(studio, /function photoColorPicker\(record\)/);
+  assert.match(studio, /resolution: record\.resolution \|\| 'hd'/);
+  assert.match(studio, /photoColor: record\.photoColor \|\| 'palette'/);
+});

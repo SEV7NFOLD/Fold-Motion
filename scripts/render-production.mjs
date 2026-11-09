@@ -40,10 +40,12 @@ function gridPath(width, height) {
 }
 
 /** Subtle temporal film grain for v2 films (RENDER_GRAIN, default 3; 0 turns it off). */
-function grainFilter(timeline) {
+function grainFilter(timeline, scale = 1) {
   if (!timeline.shots.some((shot) => shot.spec.version === 2)) return '';
-  const strength = Number(process.env.RENDER_GRAIN ?? 3);
-  return Number.isFinite(strength) && strength > 0 ? `noise=alls=${Math.min(20, strength)}:allf=t` : '';
+  // Grain looks finer at higher resolutions, and fresh grain on every pixel of
+  // every frame is costly to encode: it gets gentler as the frame grows.
+  const strength = Number(process.env.RENDER_GRAIN ?? 3) / scale;
+  return Number.isFinite(strength) && strength > 0 ? `noise=alls=${Math.min(20, Number(strength.toFixed(2)))}:allf=t` : '';
 }
 
 /**
@@ -52,7 +54,28 @@ function grainFilter(timeline) {
  * soft lights and warm paper highlights. Returns a PNG data URI whose shorter
  * side is 720 px, which every frame then reuses.
  */
-export function gradeProduct(product, { primary, accent }, { lift = false } = {}) {
+/**
+ * Output sizes. The layout keeps its own size (1280x720, 720x1280 or 960x960);
+ * only rasterization scales, so text and graphics stay sharp and every recipe and
+ * creative check is unchanged.
+ */
+export const RESOLUTIONS = Object.freeze({
+  hd: { label: 'HD', landscape: 1280, vertical: 720, square: 960, work: 1 },
+  fhd: { label: 'Full HD', landscape: 1920, vertical: 1080, square: 1080, work: 2.3 },
+  '2k': { label: '2K', landscape: 2560, vertical: 1440, square: 1440, work: 4 },
+});
+
+/** The output size for a timeline at a resolution: { key, width, height, scale }. */
+export function outputSize(timeline, resolution = 'hd') {
+  const key = Object.hasOwn(RESOLUTIONS, resolution) ? resolution : 'hd';
+  const shape = timeline.width > timeline.height ? 'landscape' : timeline.width < timeline.height ? 'vertical' : 'square';
+  const width = RESOLUTIONS[key][shape];
+  const scale = width / timeline.width;
+  const even = (value) => Math.round(value / 2) * 2;
+  return { key, label: RESOLUTIONS[key].label, width: even(width), height: even(timeline.height * scale), scale };
+}
+
+export function gradeProduct(product, { primary, accent }, { lift = false, scale = 1, original = false } = {}) {
   // Inside letters a photo has to read as light against the background, so type
   // windows get a lifted grade: dark products still show their shape.
   const stops = lift ? [
@@ -76,13 +99,17 @@ export function gradeProduct(product, { primary, accent }, { lift = false } = {}
     const u = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
     return (channel(c0, index) + (channel(c1, index) - channel(c0, index)) * u).toFixed(4);
   }).join(' ');
-  const scale = 720 / Math.min(product.width, product.height);
-  const width = Math.round(product.width * scale);
-  const height = Math.round(product.height * scale);
+  // Prepared at the output resolution (at least 720 px on the shorter side), but
+  // never enlarged past the source photo: upscaling adds no detail.
+  const shorter = Math.min(product.width, product.height);
+  const target = Math.max(720, Math.min(720 * scale, shorter));
+  const factor = target / shorter;
+  const width = Math.round(product.width * factor);
+  const height = Math.round(product.height * factor);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="grade" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">`
     + '<feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0"/>'
     + `<feComponentTransfer><feFuncR type="table" tableValues="${table(0)}"/><feFuncG type="table" tableValues="${table(1)}"/><feFuncB type="table" tableValues="${table(2)}"/></feComponentTransfer>`
-    + `</filter></defs><image href="${product.dataUri}" width="${width}" height="${height}" filter="url(#grade)"/></svg>`;
+    + `</filter></defs><image href="${product.dataUri}" width="${width}" height="${height}"${original ? '' : ' filter="url(#grade)"'}/></svg>`;
   return `data:image/png;base64,${Buffer.from(new Resvg(svg).render().asPng()).toString('base64')}`;
 }
 
@@ -90,15 +117,16 @@ export function gradeProduct(product, { primary, accent }, { lift = false } = {}
  * Bakes each product panel's feathered edges into a transparent PNG once per
  * render, so frames draw one plain image instead of two gradient masks.
  */
-export function bakeProductPanels(timeline, brand) {
+export function bakeProductPanels(timeline, brand, scale = 1) {
   const panels = {};
   for (const shot of timeline.shots) {
     for (const element of shot.spec.elements || []) {
       if (element.type !== 'image' || !element.feather) continue;
       const product = brand.products?.[element.product - 1];
       if (!product?.graded) continue;
-      const w = Math.round(element.width);
-      const h = Math.round(element.height);
+      // Baked at the output resolution so the panel stays sharp when it's drawn.
+      const w = Math.round(element.width * scale);
+      const h = Math.round(element.height * scale);
       const { left, right, top, bottom } = element.feather;
       const stop = (offset, opacity) => `<stop offset="${offset}" stop-color="#FFFFFF" stop-opacity="${opacity}"/>`;
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs>`
@@ -126,8 +154,8 @@ export function filmLook(grade, storyboard) {
   return Object.hasOwn(LOOK_FILTERS, storyboard?.grade) ? storyboard.grade : 'clean';
 }
 
-function videoFilters(timeline, look) {
-  return [LOOK_FILTERS[look], grainFilter(timeline)].filter(Boolean).join(',');
+function videoFilters(timeline, look, scale = 1) {
+  return [LOOK_FILTERS[look], grainFilter(timeline, scale)].filter(Boolean).join(',');
 }
 
 /** The score's mood: the studio's pick, else the storyboard's (the model's choice), else the brief's words. */
@@ -349,6 +377,8 @@ export async function renderProductionProject({
   assets,
   music = 'auto',
   grade = 'auto',
+  resolution = 'hd',
+  photoColor = 'palette',
   outputRoot = path.resolve('output'),
 }) {
   const validation = validateTimeline(timeline);
@@ -357,13 +387,16 @@ export async function renderProductionProject({
   if (normalizeBrandFont(context?.brandFont)) registerBrandFont(normalizeBrandFont(context.brandFont));
   let fontOptions = RESVG_FONT_OPTIONS;
   const palette = timeline.shots[0]?.palette || { primary: '#0E0E11', accent: '#7C3AED' };
+  const output = outputSize(timeline, resolution);
+  // Photos are graded into the palette, or kept in their original colors.
+  const original = photoColor === 'original';
   const hasWindows = timeline.shots.some((shot) => (shot.spec.elements || []).some((element) => element.window));
   brand.products = brand.products.map((product) => (product ? {
     ...product,
-    graded: gradeProduct(product, palette),
-    ...(hasWindows ? { windowGraded: gradeProduct(product, palette, { lift: true }) } : {}),
+    graded: gradeProduct(product, palette, { scale: output.scale, original }),
+    ...(hasWindows && !original ? { windowGraded: gradeProduct(product, palette, { lift: true, scale: output.scale }) } : {}),
   } : null));
-  brand.panels = bakeProductPanels(timeline, brand);
+  brand.panels = bakeProductPanels(timeline, brand, output.scale);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
 
   const projectId = timeline.id.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
@@ -384,6 +417,24 @@ export async function renderProductionProject({
     await writeFile(fontPath, brand.font.buffer);
     fontOptions = { ...RESVG_FONT_OPTIONS, fontFiles: [...RESVG_FONT_OPTIONS.fontFiles, fontPath] };
   }
+  // Large images go to files, and every frame points at them instead of embedding
+  // megabytes of image data as text: far less memory at Full HD and 2K.
+  const assetsDirectory = path.join(outputDirectory, 'assets');
+  await mkdir(assetsDirectory, { recursive: true });
+  let assetCount = 0;
+  const toFile = async (uri) => {
+    if (typeof uri !== 'string' || !uri.startsWith('data:image/')) return uri;
+    assetCount += 1;
+    const file = path.join(assetsDirectory, `image-${assetCount}.png`);
+    await writeFile(file, Buffer.from(uri.slice(uri.indexOf(',') + 1), 'base64'));
+    return file;
+  };
+  for (const product of brand.products) {
+    if (!product) continue;
+    product.graded = await toFile(product.graded);
+    if (product.windowGraded) product.windowGraded = await toFile(product.windowGraded);
+  }
+  for (const id of Object.keys(brand.panels || {})) brand.panels[id] = await toFile(brand.panels[id]);
   await writeFile(path.join(outputDirectory, 'timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
   await writeFile(path.join(outputDirectory, 'storyboard.json'), `${JSON.stringify(storyboard, null, 2)}\n`);
   await writeFile(path.join(outputDirectory, 'acceptance.json'), `${JSON.stringify(acceptance, null, 2)}\n`);
@@ -410,7 +461,7 @@ export async function renderProductionProject({
     const pngPath = path.join(framesDirectory, `${frameName}.png`);
     await writeFile(svgPath, svg);
     const rasterizer = new Resvg(svg, {
-      fitTo: { mode: 'width', value: timeline.width },
+      fitTo: { mode: 'width', value: output.width },
       font: fontOptions,
     });
     await writeFile(pngPath, rasterizer.render().asPng());
@@ -447,17 +498,22 @@ export async function renderProductionProject({
     '-framerate', String(timeline.fps),
     '-i', path.join(framesDirectory, 'frame-%06d.png'),
     ...(scored ? ['-i', scorePath] : []),
-    ...(videoFilters(timeline, filmLook(grade, storyboard)) ? ['-vf', videoFilters(timeline, filmLook(grade, storyboard))] : []),
+    ...(videoFilters(timeline, filmLook(grade, storyboard), output.scale) ? ['-vf', videoFilters(timeline, filmLook(grade, storyboard), output.scale)] : []),
     // The score arrives mastered to -14 LUFS; FFmpeg only encodes it.
     ...(scored ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-shortest'] : []),
     '-c:v', 'libx264',
     // veryfast uses one reference frame and a short lookahead: far less memory and
     // CPU than the default preset, at a quality that holds up for motion graphics.
     '-preset', process.env.RENDER_X264_PRESET || 'veryfast',
-    '-crf', String(positiveNumber(process.env.RENDER_X264_CRF, 18)),
+    // Above HD, CRF 20 is still visually lossless for motion graphics (more pixels
+    // per detail) and keeps 2K files near HD sizes.
+    '-crf', String(positiveNumber(process.env.RENDER_X264_CRF, output.scale > 1 ? 20 : 18)),
     // aq-mode 3 spends bits on dark, smooth areas, which keeps dark brand
     // backgrounds and glows from breaking into blocky bands.
-    '-x264-params', 'aq-mode=3',
+    // At Full HD and 2K the encoder's look-ahead, B-frames and macroblock tree hold
+    // several full frames each: turned off, memory halves; the CRF quality target is
+    // unchanged (files come out larger instead).
+    '-x264-params', output.scale > 1 ? 'aq-mode=3:rc-lookahead=0:bframes=0:mbtree=0' : 'aq-mode=3',
     '-threads', String(positiveNumber(process.env.RENDER_FFMPEG_THREADS, 1)),
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
@@ -499,16 +555,16 @@ export async function renderProductionProject({
     && encodedFrameCount === timeline.totalFrames
     && manifest.frames.every((frame) => /^[a-f\d]{64}$/i.test(frame.sha256) && frame.sizeBytes > 0);
   const productionQA = {
-    pass: stream?.width === timeline.width
-      && stream?.height === timeline.height
+    pass: stream?.width === output.width
+      && stream?.height === output.height
       && Math.abs(actualRate - expectedRate) < 0.01
       && Math.abs(actualDuration - timeline.durationInSeconds) <= 1 / timeline.fps
       && frameIntegrityPass
       && (audioQA ? audioQA.pass : true),
     ...(audioQA ? { audio: audioQA } : {}),
     dimensions: {
-      pass: stream?.width === timeline.width && stream?.height === timeline.height,
-      expected: { width: timeline.width, height: timeline.height },
+      pass: stream?.width === output.width && stream?.height === output.height,
+      expected: { width: output.width, height: output.height },
       actual: { width: stream?.width, height: stream?.height },
     },
     fps: {
@@ -542,6 +598,8 @@ export async function renderProductionProject({
     creativeQA,
     ...(score ? { audio: { engine: 'FOLD Score', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
     look: filmLook(grade, storyboard),
+    output: { resolution: output.key, label: output.label, width: output.width, height: output.height },
+    photoColor: original ? 'original' : 'palette',
     videoMetadata: metadata,
     artifacts: {
       video: `${baseUrl}/production.mp4`,
