@@ -8,6 +8,7 @@ import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './
 import { fontFace, measure } from '../render/typography.mjs';
 import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
+import { chooseStyle, enforceStyleKit, resolveStyle, STYLE_KITS, STYLE_OPTIONS } from './style-kits.mjs';
 
 export { durationFromBrief };
 
@@ -122,6 +123,8 @@ export function normalizeProductionContext(context = {}) {
       normalized[key] = DEFAULTS[key];
     }
   }
+  // A style kit chosen in the studio (otherwise the storyboard's is used).
+  if (!STYLE_OPTIONS.includes(normalized.style)) delete normalized.style;
   for (const key of ['headline', 'subheadline']) {
     if (typeof normalized[key] !== 'string') normalized[key] = '';
     normalized[key] = normalized[key].trim();
@@ -903,6 +906,11 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
       : [];
     if (missing.length) storyboard.missingPhotos = missing;
     else delete storyboard.missingPhotos;
+    // The film's visual language: the model's choice, or the brief's words.
+    storyboard.style = STYLE_OPTIONS.includes(generatedStoryboard?.style) ? generatedStoryboard.style : chooseStyle(`${prompt} ${storyboard.creativeDirection || ''}`, storyboard.musicMood);
+    const styleReason = typeof generatedStoryboard?.styleReason === 'string' ? generatedStoryboard.styleReason.trim().slice(0, 160) : '';
+    if (styleReason && STYLE_OPTIONS.includes(generatedStoryboard?.style)) storyboard.styleReason = styleReason;
+    else delete storyboard.styleReason;
   }
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
@@ -994,6 +1002,7 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
     throw new Error('Send one shot direction for each storyboard shot.');
   }
   const normalizedContext = normalizeProductionContext(context);
+  normalizedContext.style = resolveStyle(storyboard, normalizedContext);
   const seed = `${storyboard.id}|${storyboard.title}`;
   const repairs = [];
   const specs = storyboard.shots.map((shot, index) => {
@@ -1002,7 +1011,9 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
     return result.spec;
   });
   repairs.push(...limitFolds(specs, storyboard.shots.map((shot) => shot.id)));
+  repairs.push(...enforceStyleKit(specs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
   const timeline = buildTimeline(storyboard, specs, normalizedContext);
+  timeline.style = normalizedContext.style;
   return { timeline, acceptance: buildAcceptanceSpec(storyboard, normalizedContext), provider: 'rebuild', ...(repairs.length ? { repairs } : {}) };
 }
 
@@ -1010,12 +1021,16 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
   const normalizedContext = normalizeProductionContext(context);
+  normalizedContext.style = resolveStyle(storyboard, normalizedContext);
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
     const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed, storyboard.shots.length));
     ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
     strengthenDirection(shotSpecs, storyboard);
-    return { timeline: buildTimeline(storyboard, shotSpecs, normalizedContext), provider: 'mock-provider' };
+    enforceStyleKit(shotSpecs, normalizedContext.style);
+    const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
+    timeline.style = normalizedContext.style;
+    return { timeline, provider: 'mock-provider' };
   }
 
   const rawSpecs = await provider.compileStoryboard(storyboard, normalizedContext);
@@ -1038,8 +1053,10 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   repairs.push(...limitFolds(shotSpecs, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...ensureProductShot(shotSpecs, normalizedContext.products?.length || 0, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...strengthenDirection(shotSpecs, storyboard));
+  repairs.push(...enforceStyleKit(shotSpecs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
+    timeline.style = normalizedContext.style;
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };
   } catch (error) {
     throw markOutputError(error);

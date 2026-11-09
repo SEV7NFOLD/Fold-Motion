@@ -923,6 +923,12 @@ export function limitFolds(specs, labels = []) {
       spec.textMotion = 'rise';
     }
     if (spec.echo && (echoes += 1) > 2) delete spec.echo;
+    // Variety: no shot type three times in a row (products and end cards excepted).
+    if (index >= 2 && typeof spec.recipe === 'string' && spec.recipe === specs[index - 1]?.recipe && spec.recipe === specs[index - 2]?.recipe && !['product-hero', 'product-grid', 'lockup', 'logo-reveal'].includes(spec.recipe)) {
+      const swap = spec.recipe === 'statement' ? 'title-reveal' : 'statement';
+      changes.push(`${label}: "${spec.recipe}" three times in a row; this one became "${swap}".`);
+      spec.recipe = swap;
+    }
     if (spec.typeEffect && (effects += 1) > 2) {
       changes.push(`${label}: at most two headline effects per film; dropped "${spec.typeEffect}".`);
       delete spec.typeEffect;

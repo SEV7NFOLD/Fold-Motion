@@ -117,6 +117,18 @@ is dropped. Fit checks graphics too, and FOLD Score chimes as each appears.
 Emojis are for playful briefs only (a rule for the model now; style kits will
 enforce it in code).
 
+### Style kits
+
+Each film has a visual language from `src/production/style-kits.mjs`:
+`editorial-luxury`, `playful-dtc`, `tech-ui`, `bold-street` or `warm-craft`. A kit
+lists the text motions, emphasis styles, graphic kinds, echoes and headline
+effects it allows, and a graphics budget per film. The storyboard picks one
+(`style`, with `styleReason`; offline, the brief's words with the music mood as
+a tiebreaker); the studio's Style picker overrides it and rebuilds without AI.
+`enforceStyleKit` applies the kit in code on every build, so a luxury film can't
+get emojis even if the model asks. The timeline records its `style`. Variety: no
+shot type three times in a row (products and end cards excepted).
+
 ### Headline effects and film looks
 
 A direction's `typeEffect` gives a shot's title `decode` (each letter cycles

@@ -337,3 +337,10 @@ test('every browser module parses (the studio would fail to load otherwise)', as
     execFileSync(process.execPath, ['--check', path.join(root, 'public', file)], { stdio: 'pipe' });
   }
 });
+
+test('the studio shows the style and offers a Style picker that rebuilds', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /function stylePicker\(record\)/);
+  assert.match(studio, /'editorial-luxury': 'Editorial luxury'/);
+  assert.match(studio, /if \(record\.project\.state === 'RENDERING'\) rebuildShots\(record\);\n  \}\);\n  return select;\n\}/);
+});
