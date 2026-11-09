@@ -673,3 +673,64 @@ test('type windows use a lifted grade so dark products read inside the letters',
   };
   assert.ok(mean(lifted) > mean(normal) + 40, `lifted ${mean(lifted).toFixed(0)} vs ${mean(normal).toFixed(0)}`);
 });
+
+test('zoom through a letter flies into solid ink and reveals the next shot through the letter', async () => {
+  const { zoomTarget, TRANSITION_SECONDS } = await import('../src/render/frame-v2.mjs');
+  const plan = [{ copy: 'Built to last', recipe: 'title-reveal', emphasis: 'last', transitionOut: 'zoom' }, { copy: 'Creativity at scale', recipe: 'lockup', transitionOut: 'cut' }];
+  let start = 0;
+  const shots = plan.map((item, index) => {
+    const spec = { version: 2, ...item, durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' } };
+    spec.elements = expandRecipe(spec, { copy: item.copy, context: DARK, shotIndex: index });
+    const shot = { shotId: `s${index}`, startFrame: start, endFrame: start + 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec };
+    start += 48;
+    return shot;
+  });
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: start, shots };
+  const target = zoomTarget(shots[0]);
+  assert.ok(target && ['T', 'L'].includes(target.character.toUpperCase()), `aims at ${target?.character}`);
+  assert.equal(zoomTarget({ spec: { elements: [{ type: 'text', role: 'title', font: 'display', lines: ['OCCO'], size: 100, tracking: 0, x: 640, y: 400, anchor: 'middle', content: 'OCCO' }] } }), undefined, 'no solid letter: no zoom');
+  const mid = renderTimelineFrame(timeline, 47 - Math.round(TRANSITION_SECONDS.zoom[0] * 24 * 0.5), {});
+  assert.match(mid, /<clipPath id="zoom-letter">/);
+  assert.match(mid, /scale\(/);
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  const lastFrame = new Resvg(renderTimelineFrame(timeline, 47, {}), { fitTo: { mode: 'width', value: 320 }, font }).render().asPng();
+  const nextFirst = new Resvg(renderTimelineFrame(timeline, 48, {}), { fitTo: { mode: 'width', value: 320 }, font }).render().asPng();
+  assert.ok(lastFrame.length > 1000 && nextFirst.length > 1000);
+});
+
+test('decode and outline headline effects animate, then settle into the exact copy', async () => {
+  const { applyTypeEffect, limitFolds } = await import('../src/production/recipes.mjs');
+  for (const effect of ['decode', 'outline']) {
+    const spec = { version: 2, copy: 'Built to last', recipe: 'title-reveal', typeEffect: effect, durationInSeconds: 2.5, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+    spec.elements = applyTypeEffect(expandRecipe(spec, { copy: spec.copy, context: DARK, shotIndex: 0 }), spec);
+    const title = spec.elements.find((element) => element.role === 'title');
+    assert.equal(title.reveal.style, effect);
+    const timeline = { width: 1280, height: 720, fps: 24, totalFrames: 60, shots: [{ shotId: 's', startFrame: 0, endFrame: 59, durationFrames: 60, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] };
+    const during = renderTimelineFrame(timeline, 14, {});
+    const after = renderTimelineFrame(timeline, 59, {});
+    if (effect === 'outline') assert.match(during, /stroke-dasharray/);
+    else assert.ok(!during.includes('>last<') || /fill-opacity|opacity="0.85"/.test(during), 'scrambled glyphs while decoding');
+    assert.match(after, /BUILT|Built/);
+  }
+  const specs = Array.from({ length: 4 }, () => ({ version: 2, transitionOut: 'zoom', typeEffect: 'decode' }));
+  const changes = limitFolds(specs, ['a', 'b', 'c', 'd']);
+  assert.equal(specs.filter((spec) => spec.transitionOut === 'zoom').length, 1);
+  assert.equal(specs.filter((spec) => spec.typeEffect).length, 2);
+  assert.ok(changes.length >= 4);
+});
+
+test('film looks come from the brief or the model, and map to FFmpeg filters', async () => {
+  const { chooseGrade } = await import('../src/production/production.mjs');
+  const { filmLook, LOOK_FILTERS } = await import('../scripts/render-production.mjs');
+  assert.equal(chooseGrade('A moody black and white noir teaser'), 'noir');
+  assert.equal(chooseGrade('A cinematic, epic trailer'), 'cinematic');
+  assert.equal(chooseGrade('A vintage, filmic piece'), 'matte');
+  assert.equal(chooseGrade('A launch film'), 'clean');
+  assert.equal(filmLook('auto', { grade: 'matte' }), 'matte');
+  assert.equal(filmLook('noir', { grade: 'matte' }), 'noir', 'the studio pick wins');
+  assert.equal(filmLook('auto', {}), 'clean');
+  assert.equal(LOOK_FILTERS.clean, '');
+  assert.match(LOOK_FILTERS.noir, /saturation=0\.22/);
+  const { storyboard } = await createCreativePlan('A cinematic launch film', DARK, null);
+  assert.equal(storyboard.grade, 'cinematic');
+});

@@ -36,6 +36,7 @@ How to direct:
 - Emphasis is the one word that carries the idea, copied exactly from the line. Give the hero line an emphasis word; never emphasize most of a line.
 - Never repeat in the kicker anything the line already says, even in part.
 - Use transitions for rhythm: "wipe" for energy, "fade" for calm, "push" for momentum, "cut" for punch. Don't use the same one every time.
+- "zoom" flies the camera into a letter of the line and reveals the next shot through it. Once per film at most, out of a shot whose line has a bold display word; it pairs well with a decode or outline headline.
 - "fold" is FOLD Motion's signature. Use it once, or twice at most, on the film's most important change of scene, such as the move from the opening into the hero line or the product. Never use it on every cut.
 - Keep one atmosphere across the film or change it once on purpose. Match camera moves to the mood: slow push-ins for premium, drifts for flow, pull-outs to resolve.
 - Keep "textCase" as "as-written" when the copy contains deliberate casing such as brand or product names; otherwise the display recipes look best in "upper".`;

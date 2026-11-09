@@ -2,7 +2,7 @@ import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
-import { ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
@@ -430,7 +430,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
       const productOrdinal = shotSpecs.slice(0, index).filter((spec) => spec?.recipe === 'product-hero').length;
       sourceSpec = {
         ...expanded,
-        elements: expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }),
+        elements: applyTypeEffect(expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }), expanded),
       };
     }
     const validation = validateSceneSpec(sourceSpec);
@@ -698,6 +698,16 @@ function markOutputError(error) {
 }
 
 /** Ids of shots before the last that reuse the brief's On-Screen Text (equal or contained). */
+export const GRADES = Object.freeze(['clean', 'cinematic', 'matte', 'noir']);
+
+/** A film look from the brief's words; clean (true brand colors) by default. */
+export function chooseGrade(text = '') {
+  if (/\b(noir|monochrome|black and white|black-and-white|b&w)\b/i.test(text)) return 'noir';
+  if (/\b(matte|filmic|vintage|analog|analogue|nostalgic|retro)\b/i.test(text)) return 'matte';
+  if (/\b(cinematic|epic|trailer|blockbuster|dramatic)\b/i.test(text)) return 'cinematic';
+  return 'clean';
+}
+
 function earlierShotsReusing(storyboard, onScreenText) {
   if (!onScreenText.length || !Array.isArray(storyboard?.shots)) return [];
   const norm = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -828,6 +838,7 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     const reason = typeof generatedStoryboard?.musicReason === 'string' ? generatedStoryboard.musicReason.trim().slice(0, 160) : '';
     if (reason && MOOD_OPTIONS.includes(generatedStoryboard?.musicMood)) storyboard.musicReason = reason;
     else delete storyboard.musicReason;
+    storyboard.grade = GRADES.includes(generatedStoryboard?.grade) ? generatedStoryboard.grade : chooseGrade(`${prompt} ${storyboard.creativeDirection || ''}`);
   }
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;

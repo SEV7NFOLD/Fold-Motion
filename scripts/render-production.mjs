@@ -110,6 +110,24 @@ export function bakeProductPanels(timeline, brand) {
   return panels;
 }
 
+/** FFmpeg filters for each film look; clean leaves the brand colors untouched. */
+export const LOOK_FILTERS = Object.freeze({
+  clean: '',
+  cinematic: "eq=contrast=1.06:saturation=1.08,colorbalance=rs=-0.03:bs=0.04:rh=0.03:bh=-0.02",
+  matte: "curves=all='0/0.06 0.5/0.5 1/0.95',eq=saturation=0.92",
+  noir: 'eq=saturation=0.22:contrast=1.08',
+});
+
+/** The film's look: the studio's pick, else the storyboard's, else clean. */
+export function filmLook(grade, storyboard) {
+  if (Object.hasOwn(LOOK_FILTERS, grade)) return grade;
+  return Object.hasOwn(LOOK_FILTERS, storyboard?.grade) ? storyboard.grade : 'clean';
+}
+
+function videoFilters(timeline, look) {
+  return [LOOK_FILTERS[look], grainFilter(timeline)].filter(Boolean).join(',');
+}
+
 /** The score's mood: the studio's pick, else the storyboard's (the model's choice), else the brief's words. */
 export function scoreMood(music, storyboard) {
   if (MOOD_OPTIONS.includes(music)) return music;
@@ -328,6 +346,7 @@ export async function renderProductionProject({
   context,
   assets,
   music = 'auto',
+  grade = 'auto',
   outputRoot = path.resolve('output'),
 }) {
   const validation = validateTimeline(timeline);
@@ -410,7 +429,7 @@ export async function renderProductionProject({
     '-framerate', String(timeline.fps),
     '-i', path.join(framesDirectory, 'frame-%06d.png'),
     ...(scored ? ['-i', scorePath] : []),
-    ...(grainFilter(timeline) ? ['-vf', grainFilter(timeline)] : []),
+    ...(videoFilters(timeline, filmLook(grade, storyboard)) ? ['-vf', videoFilters(timeline, filmLook(grade, storyboard))] : []),
     // The score arrives mastered to -14 LUFS; FFmpeg only encodes it.
     ...(scored ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-shortest'] : []),
     '-c:v', 'libx264',
@@ -504,6 +523,7 @@ export async function renderProductionProject({
     productionQA,
     creativeQA,
     ...(score ? { audio: { engine: 'FOLD Score', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
+    look: filmLook(grade, storyboard),
     videoMetadata: metadata,
     artifacts: {
       video: `${baseUrl}/production.mp4`,

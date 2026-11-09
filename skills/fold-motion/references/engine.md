@@ -28,8 +28,11 @@ and this file disagree about current behavior, this file and the code win.
 | `logo-reveal` | The uploaded logo as the hero: an SVG strokes itself on along each shape's measured length and fills with its own colors, a PNG wipes in; a glint crosses its exact silhouette; the line sits small beneath. Only with an uploaded logo (`normalizeDirection` swaps it out otherwise) |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
-`fade` (through the background), `push` (the camera pushes through) and
-`fold`, FOLD Motion's signature: the frame folds in half like paper, revealing
+`fade` (through the background), `push` (the camera pushes through), `zoom`
+(the camera flies into a letter of the line, a point of solid ink preferring the
+emphasized word, and the next shot shows through the letter until it fills the
+frame; once per film, and a push when no letter fits) and `fold`, FOLD Motion's
+signature: the frame folds in half like paper, revealing
 the next shot, then the folded half folds away. A film's folds alternate
 between a vertical and a horizontal crease; the paper's back is stock tinted
 with the brand's colors. `limitFolds` keeps at most two folds per film (extras
@@ -65,6 +68,15 @@ feathered edges into a transparent image, so frames draw one plain image. A type
 window draws the photo once per frame through a mask of all its letters. With
 product photos uploaded, `ensureProductShot` makes sure the film shows the
 product at least once.
+
+### Headline effects and film looks
+
+A direction's `typeEffect` gives a shot's title `decode` (each letter cycles
+through code-like glyphs, then locks in, left to right) or `outline` (the
+letters trace themselves as outlines, then fill); at most two per film, and not
+on type windows or logo reveals. The storyboard's `grade` sets the film's look,
+applied in FFmpeg with the grain: `clean` (brand colors untouched, the default),
+`cinematic`, `matte` or `noir`. The studio's Look picker overrides it.
 
 ### Sound (FOLD Score)
 
