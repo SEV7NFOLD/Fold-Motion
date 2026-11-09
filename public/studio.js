@@ -3,6 +3,7 @@ import { durationFromBrief } from './brief-length.mjs';
 import { sanitizeSvg, serializeSvgTree } from './svg-sanitize.mjs';
 import { createSupabaseClient } from './supabase-client.mjs';
 import { analyzeLogoPixels, removePlainBackground } from './logo-check.mjs';
+import { readFontMetrics } from './font-metrics.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -518,6 +519,7 @@ async function loadLocalBrandKit() {
     brandKit = { logo: null, products: [] };
   }
   logoTree = brandKit.logo?.kind === 'svg' ? sanitizeSvg(brandKit.logo.svg) : null;
+  if (brandKit.font) loadBrandFontFace(brandKit.font);
   renderBrandTray();
 }
 
@@ -573,7 +575,16 @@ async function saveBrandKitToCloud() {
     for (const [index, product] of brandKit.products.entries()) {
       if (!product.path) brandKit.products[index] = await uploadBrandFile(product, `${uid}/products/${product.id}.jpg`, 'image/jpeg');
     }
-    await cloud.upsert('brand_kits', [{ owner: uid, logo: brandMeta(brandKit.logo) || null, products: brandKit.products.map(brandMeta), updated_at: new Date().toISOString() }]);
+    const row = { owner: uid, logo: brandMeta(brandKit.logo) || null, products: brandKit.products.map(brandMeta), font: brandKit.font || null, updated_at: new Date().toISOString() };
+    try {
+      await cloud.upsert('brand_kits', [row]);
+    } catch (error) {
+      // Databases set up before brand fonts lack the column: save the rest.
+      if (!/font/i.test(error.message)) throw error;
+      delete row.font;
+      await cloud.upsert('brand_kits', [row]);
+      if (brandKit.font) showAssetError('Your font is saved in this browser only. Run the brand-font SQL in Supabase to keep it in your account.');
+    }
   } catch (error) {
     showAssetError(error.status === 401 ? 'Your session ended. Sign in again.' : `Couldn’t save to Supabase: ${error.message}`);
   }
@@ -590,7 +601,7 @@ async function blobToDataUri(blob) {
 
 /** Loads the brand kit from Supabase; on first sign-in, imports this browser's kit. */
 async function loadBrandKitFromCloud() {
-  const rows = await cloud.select('brand_kits', 'select=logo,products');
+  const rows = await cloud.select('brand_kits', 'select=*');
   const row = rows?.[0];
   if (!row) {
     await loadLocalBrandKit();
@@ -609,7 +620,8 @@ async function loadBrandKitFromCloud() {
       products.push({ ...product, dataUri: await blobToDataUri(await cloud.download('brand-assets', product.path)) });
     } catch { /* a missing file just drops out of the tray */ }
   }
-  brandKit = { logo, products };
+  brandKit = { logo, products, font: row.font?.dataUri ? row.font : null };
+  if (brandKit.font) loadBrandFontFace(brandKit.font);
   logoTree = logo?.kind === 'svg' ? sanitizeSvg(logo.svg) : null;
   renderBrandTray();
 }
@@ -686,6 +698,33 @@ async function prepareRasterLogo(file) {
 
 const dataUriBytes = (uri) => Math.round((uri.length - uri.indexOf(',') - 1) * 0.75);
 
+// ---- brand font: measured here, drawn in previews, sent with plans and renders
+function loadBrandFontFace(font) {
+  try {
+    const face = new FontFace(font.family, `url(${font.dataUri})`, { weight: String(font.metrics.weight) });
+    document.fonts.add(face);
+    face.load().then(() => render()).catch(() => {});
+  } catch { /* previews fall back to the display face */ }
+}
+
+async function uploadFont(file) {
+  showAssetError('');
+  try {
+    if (file.size > 3_000_000) throw new Error('That font is larger than 3 MB.');
+    const buffer = await file.arrayBuffer();
+    const metrics = readFontMetrics(buffer);
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const type = String.fromCharCode(...bytes.subarray(0, 4)) === 'OTTO' ? 'font/otf' : 'font/ttf';
+    brandKit.font = { name: file.name, family: metrics.family, dataUri: `data:${type};base64,${btoa(binary)}`, metrics };
+    loadBrandFontFace(brandKit.font);
+    await saveBrandKit();
+  } catch (error) {
+    showAssetError(error.message);
+  }
+}
+
 async function uploadLogo(file) {
   showAssetError('');
   try {
@@ -733,7 +772,21 @@ function assetThumb({ src, name, onRemove, label, caption }) {
     caption ? h('span', { class: 'asset-caption', text: caption }) : null);
 }
 
+function renderFontSlot() {
+  const slot = $('font-slot');
+  if (!slot) return;
+  // Only the label's text changes: the file input inside the label must stay.
+  if (!brandKit.font) { slot.replaceChildren(); $('font-button').firstChild.textContent = 'Upload font'; return; }
+  const remove = h('button', { class: 'asset-remove', type: 'button', 'aria-label': 'Remove brand font', text: '×' });
+  remove.addEventListener('click', async () => { brandKit.font = null; await saveBrandKit(); });
+  slot.replaceChildren(h('span', { class: 'asset-item font-chip', title: brandKit.font.name },
+    h('span', { class: 'font-sample', style: `font-family: '${brandKit.font.family}', var(--display); font-weight: ${brandKit.font.metrics.weight}`, text: 'Aa' }),
+    h('span', { class: 'font-name', text: brandKit.font.family }), remove));
+  $('font-button').firstChild.textContent = 'Replace';
+}
+
 function renderBrandTray() {
+  renderFontSlot();
   const logoSlot = $('logo-slot');
   const productSlots = $('product-slots');
   if (!logoSlot || !productSlots) return;
@@ -803,7 +856,7 @@ function withBrand(context, record = activeRecord(), format = formatOf(record)) 
     return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}) };
   }) : undefined;
   const { width, height } = FORMATS[format];
-  return { ...context, logo, products, width, height };
+  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics };
 }
 
 /** Rebuilds the shots in a new format before rendering (same storyboard). */
@@ -965,8 +1018,9 @@ function photosUsed(timeline) {
 }
 
 function brandAssets() {
-  if (!brandKit.logo && brandKit.products.length === 0) return undefined;
+  if (!brandKit.logo && brandKit.products.length === 0 && !brandKit.font) return undefined;
   const assets = {};
+  if (brandKit.font) assets.font = { dataUri: brandKit.font.dataUri };
   if (brandKit.logo) {
     assets.logo = cloud && brandKit.logo.path
       ? { kind: brandKit.logo.kind, path: brandKit.logo.path }
@@ -1356,7 +1410,7 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
     } else if (element.type === 'text' && Array.isArray(element.lines)) {
       // v2 text: the recipe already measured and wrapped it; draw its final state.
-      const [family, weight] = PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
+      const [family, weight] = String(element.font).startsWith('brand-') && brandKit.font ? [`'${brandKit.font.family}'`, brandKit.font.metrics.weight] : PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
       const emphasis = new Set(element.emphasis?.words ?? []);
       // Type windows: the letters are filled with the product photo.
       const windowProduct = element.window ? brandKit.products[element.window.product - 1] : null;
@@ -2413,6 +2467,7 @@ for (const [field, picker, key] of [['primary-hex', 'primary-color-input', 'prim
 }
 
 $('logo-input').addEventListener('change', (event) => { const [file] = event.target.files; if (file) uploadLogo(file); event.target.value = ''; });
+$('font-input').addEventListener('change', (event) => { const [file] = event.target.files; if (file) uploadFont(file); event.target.value = ''; });
 $('product-input').addEventListener('change', (event) => { addProducts([...event.target.files]); event.target.value = ''; });
 
 $('new-production').addEventListener('click', () => startNewProduction());
@@ -2564,7 +2619,7 @@ $('attach-menu').addEventListener('click', (event) => {
   const choice = event.target.closest('[data-attach]')?.dataset.attach;
   if (!choice) return;
   closeAttachMenu();
-  $(choice === 'logo' ? 'logo-input' : 'product-input').click();
+  $({ logo: 'logo-input', font: 'font-input', products: 'product-input' }[choice]).click();
 });
 document.addEventListener('click', (event) => {
   if (!$('attach-menu').hidden && !event.target.closest('.attach')) closeAttachMenu();

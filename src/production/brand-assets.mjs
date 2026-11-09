@@ -38,6 +38,39 @@ function jpegDimensions(buffer) {
   return undefined;
 }
 
+/**
+ * A brand font's metrics from a planning context (measured in the studio by
+ * public/font-metrics.mjs), checked so layout can trust them.
+ */
+export function normalizeBrandFont(font) {
+  if (!font || typeof font !== 'object') return undefined;
+  const number = (value, low, high) => (Number.isFinite(Number(value)) && Number(value) >= low && Number(value) <= high ? Number(value) : undefined);
+  const family = typeof font.family === 'string' ? font.family.replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 60) : '';
+  const capHeight = number(font.capHeight, 0.3, 1.2);
+  const ascender = number(font.ascender, 0.3, 2);
+  const descender = number(font.descender, 0, 1);
+  const fallbackAdvance = number(font.fallbackAdvance, 0.1, 2);
+  if (!family || capHeight === undefined || ascender === undefined || descender === undefined || fallbackAdvance === undefined) return undefined;
+  const advance = {};
+  for (const [character, width] of Object.entries(font.advance || {}).slice(0, 600)) {
+    if ([...character].length === 1 && number(width, 0, 3) !== undefined) advance[character] = Number(width);
+  }
+  if (!advance.H || advance[' '] === undefined) return undefined;
+  return { family, weight: number(font.weight, 100, 1000) || 400, capHeight, ascender, descender, fallbackAdvance, advance };
+}
+
+/** A brand font file from a render request ({ dataUri }), checked as a TTF or OTF. */
+export function resolveFont(font) {
+  if (!font?.dataUri) return null;
+  const match = /^data:(?:font\/(?:ttf|otf|sfnt)|application\/(?:font-sfnt|x-font-ttf|x-font-otf|octet-stream));base64,/.exec(font.dataUri);
+  if (!match) throw new Error('The brand font must be a TTF or OTF file.');
+  const buffer = Buffer.from(font.dataUri.slice(match[0].length), 'base64');
+  if (buffer.length > 3_000_000) throw new Error('The brand font is larger than 3 MB.');
+  const tag = buffer.subarray(0, 4).toString('latin1');
+  if (!(buffer.readUInt32BE(0) === 0x00010000 || tag === 'OTTO' || tag === 'true')) throw new Error('The brand font isn’t a TTF or OTF file.');
+  return { buffer, extension: tag === 'OTTO' ? 'otf' : 'ttf' };
+}
+
 /** Product photo metadata from a planning context: [{ width, height }], at most three. */
 export function normalizeProductsMeta(products) {
   if (!Array.isArray(products)) return undefined;
@@ -107,5 +140,5 @@ export function resolveLogo(asset) {
 
 /** Resolves every brand asset in a render request ({ logo, products }). */
 export function resolveBrandAssets(assets = {}) {
-  return { logo: resolveLogo(assets?.logo), products: resolveProducts(assets?.products) };
+  return { logo: resolveLogo(assets?.logo), products: resolveProducts(assets?.products), font: resolveFont(assets?.font) };
 }

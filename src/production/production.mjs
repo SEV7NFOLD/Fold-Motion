@@ -4,8 +4,8 @@ import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
-import { normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
-import { FONTS, measure } from '../render/typography.mjs';
+import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
+import { fontFace, measure } from '../render/typography.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 
 export { durationFromBrief };
@@ -119,6 +119,9 @@ export function normalizeProductionContext(context = {}) {
   const products = normalizeProductsMeta(normalized.products);
   if (products) normalized.products = products;
   else delete normalized.products;
+  const brandFont = normalizeBrandFont(normalized.brandFont);
+  if (brandFont) normalized.brandFont = brandFont;
+  else delete normalized.brandFont;
   return normalized;
 }
 
@@ -677,7 +680,7 @@ export function measureFrameFit(timeline) {
   const failures = [];
   for (const shot of timeline.shots) {
     for (const element of shot.spec.elements || []) {
-      if (element.type !== 'text' || !Array.isArray(element.lines) || !FONTS[element.font]) continue;
+      if (element.type !== 'text' || !Array.isArray(element.lines) || !fontFace(element.font)) continue;
       const size = element.size || element.fontSize;
       const tracking = Math.max(element.tracking || 0, element.settle?.from || 0);
       element.lines.forEach((line) => {

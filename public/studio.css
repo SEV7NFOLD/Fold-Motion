@@ -2779,3 +2779,31 @@ button.tool:hover,
   padding-top: 0.6rem;
   border-top: 1px solid var(--line);
 }
+
+/* Brand font chip */
+.font-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 1.6rem 0.3rem 0.4rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.font-sample {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.font-name {
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

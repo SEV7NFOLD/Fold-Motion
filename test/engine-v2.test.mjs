@@ -891,3 +891,34 @@ test('stat, quote, product grid and split screen render inside the frame in ever
   assert.notEqual(normalizeDirection({ recipe: 'stat', transitionOut: 'cut' }, { copy: 'No numbers here', index: 1, count: 3, seed: 's' }).direction.recipe, 'stat');
   assert.equal(normalizeDirection({ recipe: 'product-grid', transitionOut: 'cut' }, { copy: 'Every angle', index: 1, count: 3, seed: 's', productCount: 1 }).direction.recipe, 'product-hero');
 });
+
+test('brand fonts: measured exactly, used for headlines, drawn in their own face, and checked', async () => {
+  const { readFontMetrics } = await import('../public/font-metrics.mjs');
+  const { normalizeBrandFont, resolveFont } = await import('../src/production/brand-assets.mjs');
+  const { readFileSync } = await import('node:fs');
+  const known = JSON.parse(readFileSync(new URL('../assets/fonts/metrics.json', import.meta.url), 'utf8'));
+  for (const role of ['display', 'medium']) {
+    const measured = readFontMetrics(readFileSync(new URL(`../assets/fonts/${known[role].file}`, import.meta.url)));
+    assert.equal(measured.family, known[role].family);
+    assert.equal(measured.capHeight, known[role].capHeight);
+    for (const character of 'AHWaegm0%') assert.ok(Math.abs(measured.advance[character] - known[role].advance[character]) < 0.0002, `${role} ${character}`);
+  }
+  assert.throws(() => readFontMetrics(Buffer.from('wOF2xxxxxxxxxxxxxxxx')), /web font/);
+  // Montserrat Medium stands in for an uploaded brand font.
+  const file = readFileSync(new URL('../assets/fonts/Montserrat-Medium.ttf', import.meta.url));
+  const metrics = normalizeBrandFont(readFontMetrics(file));
+  assert.ok(metrics);
+  assert.equal(normalizeBrandFont({ family: 'X', capHeight: 9 }), undefined, 'nonsense metrics are refused');
+  const context = { ...DARK, brandFont: metrics };
+  const spec = { version: 2, recipe: 'title-reveal', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  spec.elements = expandRecipe(spec, { copy: 'Inscribed in leather', context, shotIndex: 0 });
+  const title = spec.elements.find((element) => element.role === 'title');
+  assert.match(title.font, /^brand-/, 'headlines use the brand font');
+  const timeline = { width: 1280, height: 720, fps: 24, totalFrames: 48, shots: [{ shotId: 's', startFrame: 0, endFrame: 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] };
+  const { measureFrameFit } = await import('../src/production/production.mjs');
+  assert.equal(measureFrameFit(timeline).pass, true);
+  assert.match(renderTimelineFrame(timeline, 47, {}), /font-family="Montserrat" font-weight="500"/);
+  const resolved = resolveFont({ dataUri: `data:font/ttf;base64,${file.toString('base64')}` });
+  assert.equal(resolved.extension, 'ttf');
+  assert.throws(() => resolveFont({ dataUri: `data:font/ttf;base64,${Buffer.from('not a font at all').toString('base64')}` }), /isn’t a TTF or OTF/);
+});

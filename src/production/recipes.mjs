@@ -7,7 +7,7 @@
  * so text always fits and nothing collides. Output elements carry their own reveal
  * timing; the renderer (src/render/frame-v2.mjs) animates them deterministically.
  */
-import { capHeight, fitBlock, measure } from '../render/typography.mjs';
+import { capHeight, fitBlock, measure, registerBrandFont } from '../render/typography.mjs';
 import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
 export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window', 'stat', 'quote', 'product-grid', 'split']);
@@ -160,6 +160,8 @@ function blockBaseline(centerY, size, lineCount, lineHeight, font) {
  * `support`: optional supporting line (the subheadline on the final shot).
  */
 export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '', productOrdinal }) {
+  // An uploaded brand font takes the display face's place in every recipe.
+  const DISPLAY = context.brandFont ? registerBrandFont(context.brandFont) : 'display';
   const W = context.width;
   const H = context.height;
   const palette = recipePalette(context.primaryColor, context.accentColor);
@@ -178,20 +180,20 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const shown = display(copy, textCase);
       // Size for the widest moment: the line starts with open tracking and tightens.
       const settleFrom = 0.06;
-      const block = fitBlock('display', shown, { maxWidth: W * 0.84, maxSize: H * 0.21, minSize: H * 0.075, maxLines: 2, tracking: settleFrom });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.84, maxSize: H * 0.21, minSize: H * 0.075, maxLines: 2, tracking: settleFrom });
       const lineHeight = block.size * 1.02;
-      const y = blockBaseline(H * 0.47, block.size, block.lines.length, lineHeight, 'display');
+      const y = blockBaseline(H * 0.47, block.size, block.lines.length, lineHeight, DISPLAY);
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const words = shown.split(/\s+/).length;
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.012,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.012,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
         reveal: { style: 'mask-rise', unit: 'word', start: 0.15 * k, duration: 0.8 * k, stagger: Math.min(0.16, 0.9 / Math.max(1, words)) * k },
         settle: { from: settleFrom, start: 0.15 * k, duration: 1.4 * k },
         sweep: sweepAt(1.5),
         emphasis: emphasisFor(shown),
       }));
-      const widest = Math.max(...block.lines.map((line) => measure('display', line, block.size, 0.012)));
+      const widest = Math.max(...block.lines.map((line) => measure(DISPLAY, line, block.size, 0.012)));
       const lineY = lastBaseline + H * 0.06;
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: Math.min(W * 0.32, widest * 0.5), accent: palette.accent, start: 0.75 * k, duration: 0.7 * k }));
       if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.058, height: H, maxWidth: W * 0.88, palette, start: 1.2 * k }));
@@ -228,13 +230,13 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     }
     case 'kicker-title': {
       const shown = display(copy, textCase);
-      const block = fitBlock('display', shown, { maxWidth: W * 0.7, maxSize: H * 0.15, minSize: H * 0.07, maxLines: 2, tracking: 0.03 });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.7, maxSize: H * 0.15, minSize: H * 0.07, maxLines: 2, tracking: 0.03 });
       const lineHeight = block.size * 1.04;
-      const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, 'display');
+      const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, DISPLAY);
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('display', block.size) - H * 0.075, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight(DISPLAY, block.size) - H * 0.075, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k }));
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.03,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.03,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
         reveal: { style: 'mask-rise', unit: 'line', start: 0.75 * k, duration: 0.9 * k, stagger: 0.12 * k },
         sweep: sweepAt(1.7),
@@ -254,13 +256,13 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const targetWidth = W * 0.6;
       // Each line fills the width, capped at a quarter of the height; the width always
       // wins, so a long line in a narrow frame shrinks instead of spilling over.
-      const lineSizes = lines.map((line) => Math.min(H * 0.25, targetWidth / measure('display', line, 1, 0.01)));
+      const lineSizes = lines.map((line) => Math.min(H * 0.25, targetWidth / measure(DISPLAY, line, 1, 0.01)));
       const gap = H * 0.025;
-      const caps = lineSizes.map((size) => capHeight('display', size));
+      const caps = lineSizes.map((size) => capHeight(DISPLAY, size));
       const total = caps.reduce((sum, cap) => sum + cap, 0) + gap * (lines.length - 1);
       const y = H * 0.5 - total / 2 + caps[0];
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: Math.min(...lineSizes), tracking: 0.01,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: Math.min(...lineSizes), tracking: 0.01,
         lines, lineHeight: gap, lineSizes, x: W / 2, y, fill: palette.text,
         reveal: { style: 'slide', unit: 'line', start: 0.1 * k, duration: 0.7 * k, stagger: 0.14 * k },
         sweep: sweepAt(1.4),
@@ -300,10 +302,10 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
           glint: { start: Math.max(1.4 * k, spec.durationInSeconds * 0.5), duration: 0.8 },
         });
         const shown = display(copy, textCase);
-        const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: H * (H > W ? 0.1 : 0.13), minSize: H * 0.04, maxLines: 2, tracking: 0.04 });
+        const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: H * (H > W ? 0.1 : 0.13), minSize: H * 0.04, maxLines: 2, tracking: 0.04 });
         const lineHeight = block.size * 1.02;
         const top = H * 0.05 + panelHeight + H * 0.06;
-        const y = top + capHeight('display', block.size) + (kicker ? H * 0.035 : 0);
+        const y = top + capHeight(DISPLAY, block.size) + (kicker ? H * 0.035 : 0);
         const lastBaseline = y + (block.lines.length - 1) * lineHeight;
         if (kicker) {
           const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: top, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k });
@@ -311,7 +313,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
           elements.push(kickerNode);
         }
         elements.push(textElement({
-          id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+          id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.015,
           lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
           reveal: { style: 'mask-rise', unit: 'word', start: 0.6 * k, duration: 0.8 * k, stagger: 0.1 * k },
           settle: { from: 0.05, start: 0.6 * k, duration: 1.4 * k },
@@ -333,17 +335,17 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const textLeft = side === 'right' ? W * 0.08 : panelX + panelWidth + W * 0.05;
       const textWidth = side === 'right' ? panelX - W * 0.05 - textLeft : W * 0.92 - textLeft;
       const shown = display(copy, textCase);
-      const block = fitBlock('display', shown, { maxWidth: textWidth, maxSize: H * 0.3, minSize: H * 0.07, maxLines: 2, tracking: 0.06 });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: textWidth, maxSize: H * 0.3, minSize: H * 0.07, maxLines: 2, tracking: 0.06 });
       const lineHeight = block.size * 1.02;
-      const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, 'display');
+      const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, DISPLAY);
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       if (kicker) {
-        const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: textLeft + 3, y: y - capHeight('display', block.size) - H * 0.05, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k, anchor: 'start' });
+        const kickerNode = kickerElement({ id: `shot-${n}-kicker`, kicker, x: textLeft + 3, y: y - capHeight(DISPLAY, block.size) - H * 0.05, height: H, maxWidth: W * 0.88, palette, start: 0.35 * k, anchor: 'start' });
         kickerNode.fill = palette.emphasis.from;
         elements.push(kickerNode);
       }
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.015,
         lines: block.lines, lineHeight, x: textLeft, y, anchor: 'start', fill: palette.text,
         reveal: { style: 'mask-rise', unit: 'word', start: 0.6 * k, duration: 0.8 * k, stagger: 0.1 * k },
         settle: { from: 0.06, start: 0.6 * k, duration: 1.4 * k },
@@ -357,13 +359,13 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const product = productFor(spec, context);
       if (!product) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
       const shown = display(copy, textCase);
-      const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: H * 0.42, minSize: H * 0.12, maxLines: 2, tracking: 0.02 });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: H * 0.42, minSize: H * 0.12, maxLines: 2, tracking: 0.02 });
       const lineHeight = block.size * 0.98;
-      const y = blockBaseline(H * 0.47, block.size, block.lines.length, lineHeight, 'display');
+      const y = blockBaseline(H * 0.47, block.size, block.lines.length, lineHeight, DISPLAY);
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const letters = [...shown].filter((character) => character !== ' ').length;
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.02,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.02,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
         reveal: { style: 'window', unit: 'letter', start: 0, duration: 0.35, stagger: Math.min(0.14, (0.9 * k) / Math.max(1, letters)) },
         sweep: spec.sweep === false ? undefined : { start: Math.max(1.5 * k, spec.durationInSeconds * 0.6), duration: 0.8 },
@@ -390,27 +392,27 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       let lineHeight;
       if (opensWithNumber) {
         const label = words.slice(1).join(' ');
-        const big = fitBlock('display', words[0], { maxWidth: W * 0.8, maxSize: unit * (W < H ? 0.42 : 0.36), minSize: unit * 0.1, maxLines: 1, tracking: 0.01 });
-        const small = fitBlock('display', label, { maxWidth: W * 0.8, maxSize: big.size * 0.3, minSize: unit * 0.04, maxLines: 1, tracking: 0.01 });
+        const big = fitBlock(DISPLAY, words[0], { maxWidth: W * 0.8, maxSize: unit * (W < H ? 0.42 : 0.36), minSize: unit * 0.1, maxLines: 1, tracking: 0.01 });
+        const small = fitBlock(DISPLAY, label, { maxWidth: W * 0.8, maxSize: big.size * 0.3, minSize: unit * 0.04, maxLines: 1, tracking: 0.01 });
         lines = [words[0], label];
         lineSizes = [big.size, small.size];
         // With per-line sizes the renderer steps each baseline by this gap plus the
         // next line's cap height (as in type stacks).
         lineHeight = unit * 0.055;
       } else {
-        const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 });
+        const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 });
         lines = block.lines;
         lineSizes = undefined;
         lineHeight = block.size * 1.02;
       }
-      const firstSize = lineSizes ? lineSizes[0] : fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 }).size;
-      const caps = (lineSizes || lines.map(() => firstSize)).map((size) => capHeight('display', size));
+      const firstSize = lineSizes ? lineSizes[0] : fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 }).size;
+      const caps = (lineSizes || lines.map(() => firstSize)).map((size) => capHeight(DISPLAY, size));
       const totalHeight = lineSizes ? caps.reduce((sum, cap) => sum + cap, 0) + lineHeight * (lines.length - 1) : caps[0] + (lines.length - 1) * lineHeight;
       const y = H * 0.5 - totalHeight / 2 + caps[0];
       const lastBaseline = lineSizes ? y + caps.slice(1).reduce((sum, cap) => sum + cap + lineHeight, 0) : y + (lines.length - 1) * lineHeight;
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('display', firstSize) - unit * 0.06, height: H, maxWidth: W * 0.88, palette, start: 0.2 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight(DISPLAY, firstSize) - unit * 0.06, height: H, maxWidth: W * 0.88, palette, start: 0.2 * k }));
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: Math.min(...(lineSizes || [firstSize])), tracking: 0.01,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: Math.min(...(lineSizes || [firstSize])), tracking: 0.01,
         lines, lineHeight, ...(lineSizes ? { lineSizes } : {}), x: W / 2, y, fill: palette.text,
         reveal: { style: 'count', start: 0.1 * k, duration: Math.min(1.6, 0.55 * spec.durationInSeconds) },
         sweep: spec.sweep === false ? undefined : { start: Math.max(1.8 * k, spec.durationInSeconds * 0.7), duration: 0.8 },
@@ -428,7 +430,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const markSize = unit * 0.24;
       elements.push(textElement({
-        id: `shot-${n}-mark`, role: 'decor', content: '“', shown: '“', font: 'display', size: markSize, lines: ['“'], lineHeight: markSize,
+        id: `shot-${n}-mark`, role: 'decor', content: '“', shown: '“', font: DISPLAY, size: markSize, lines: ['“'], lineHeight: markSize,
         x: W / 2, y: y - capHeight('medium', block.size) - unit * 0.03 + markSize * 0.42, fill: palette.emphasis.from,
         reveal: { style: 'fade', unit: 'line', start: 0, duration: 0.6 * k, stagger: 0 },
       }));
@@ -469,11 +471,11 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
         });
       });
       const shown = display(copy, textCase);
-      const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: Math.min(W, H) * 0.11, minSize: Math.min(W, H) * 0.045, maxLines: 2, tracking: 0.03 });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.86, maxSize: Math.min(W, H) * 0.11, minSize: Math.min(W, H) * 0.045, maxLines: 2, tracking: 0.03 });
       const lineHeight = block.size * 1.02;
-      const y = top + areaH + H * 0.06 + capHeight('display', block.size);
+      const y = top + areaH + H * 0.06 + capHeight(DISPLAY, block.size);
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.015,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
         reveal: { style: 'mask-rise', unit: 'word', start: (0.3 + count * 0.12) * k, duration: 0.7 * k, stagger: 0.08 * k },
         emphasis: emphasisFor(shown),
@@ -493,12 +495,12 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       elements.push({ id: `shot-${n}-product`, type: 'image', role: 'product', product: product.index, ...photo, reveal: { style: 'emerge', start: 0, duration: 0.9 * k }, push: 0.035, glint: { start: Math.max(1.3 * k, spec.durationInSeconds * 0.5), duration: 0.8 } });
       const half = tall ? { x: W / 2, width: W * 0.84, centerY: H * 0.74 } : { x: photoOnRight ? W * 0.25 : W * 0.75, width: W * 0.4, centerY: H * 0.5 };
       const shown = display(copy, textCase);
-      const block = fitBlock('display', shown, { maxWidth: half.width, maxSize: Math.min(W, H) * 0.16, minSize: Math.min(W, H) * 0.05, maxLines: 3, tracking: 0.03 });
+      const block = fitBlock(DISPLAY, shown, { maxWidth: half.width, maxSize: Math.min(W, H) * 0.16, minSize: Math.min(W, H) * 0.05, maxLines: 3, tracking: 0.03 });
       const lineHeight = block.size * 1.02;
-      const y = blockBaseline(half.centerY, block.size, block.lines.length, lineHeight, 'display');
-      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: half.x, y: y - capHeight('display', block.size) - Math.min(W, H) * 0.05, height: H, maxWidth: half.width, palette, start: 0.4 * k }));
+      const y = blockBaseline(half.centerY, block.size, block.lines.length, lineHeight, DISPLAY);
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: half.x, y: y - capHeight(DISPLAY, block.size) - Math.min(W, H) * 0.05, height: H, maxWidth: half.width, palette, start: 0.4 * k }));
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.015,
         lines: block.lines, lineHeight, x: half.x, y, fill: palette.text,
         reveal: { style: 'mask-rise', unit: 'word', start: 0.5 * k, duration: 0.7 * k, stagger: 0.09 * k },
         emphasis: emphasisFor(shown),
@@ -535,9 +537,9 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
         // Sized from the frame's shorter side: in a tall frame, height-based sizes
         // are too big for the narrow width. Two lines at most, always inside the frame.
         const unit = Math.min(W, H);
-        const block = fitBlock('display', shownKicker, { maxWidth: W * (W < H ? 0.86 : 0.6), maxSize: unit * 0.07, minSize: unit * 0.032, maxLines: 2, tracking: 0.04 });
+        const block = fitBlock(DISPLAY, shownKicker, { maxWidth: W * (W < H ? 0.86 : 0.6), maxSize: unit * 0.07, minSize: unit * 0.032, maxLines: 2, tracking: 0.04 });
         elements.push(textElement({
-          id: `shot-${n}-kicker`, role: 'kicker', content: kicker, shown: shownKicker, font: 'display', size: block.size, tracking: 0.04,
+          id: `shot-${n}-kicker`, role: 'kicker', content: kicker, shown: shownKicker, font: DISPLAY, size: block.size, tracking: 0.04,
           lines: block.lines, lineHeight: block.size * 1.05, x: W / 2, y: nextY, fill: palette.text,
           reveal: { style: 'mask-rise', unit: 'line', start: 1.0 * k, duration: 0.7 * k, stagger: 0.12 * k },
         }));

@@ -23,8 +23,33 @@ export const FONT_FILES = Object.freeze(
   Object.keys(FONTS).map((key) => fileURLToPath(new URL(`../../assets/fonts/${METRICS[key].file}`, import.meta.url))),
 );
 
+// Uploaded brand fonts, registered from their measured metrics (see
+// public/font-metrics.mjs) under an id derived from those metrics.
+const BRAND_FONTS = new Map();
+
+/** A stable id for a brand font's metrics ("brand-" + a short hash). */
+export function brandFontId(metrics) {
+  const source = `${metrics.family}|${metrics.weight}|${Object.entries(metrics.advance).slice(0, 64).map(([c, w]) => `${c}${w}`).join('')}`;
+  let hash = 2166136261;
+  for (const character of source) hash = Math.imul(hash ^ character.codePointAt(0), 16777619);
+  return `brand-${(hash >>> 0).toString(36)}`;
+}
+
+/** Registers a brand font's metrics; returns the font id recipes and the renderer use. */
+export function registerBrandFont(metrics) {
+  const id = brandFontId(metrics);
+  if (!BRAND_FONTS.has(id)) BRAND_FONTS.set(id, { ...metrics });
+  return id;
+}
+
+/** Family and weight for a font id (built-in role or registered brand font). */
+export function fontFace(font) {
+  const metrics = METRICS[font] && font !== '_note' ? METRICS[font] : BRAND_FONTS.get(font);
+  return metrics ? { family: metrics.family, weight: metrics.weight } : undefined;
+}
+
 export function fontMetrics(font) {
-  const metrics = METRICS[font];
+  const metrics = (font !== '_note' && METRICS[font]) || BRAND_FONTS.get(font);
   if (!metrics) throw new Error(`Unknown font role "${font}".`);
   return metrics;
 }

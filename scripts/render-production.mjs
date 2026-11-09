@@ -11,6 +11,8 @@ import { renderTimelineFrame } from '../src/render/frame-v2.mjs';
 import { FONT_FILES } from '../src/render/typography.mjs';
 import { resolveBrandAssets } from '../src/production/brand-assets.mjs';
 import { mix } from '../src/production/color.mjs';
+import { normalizeBrandFont } from '../src/production/brand-assets.mjs';
+import { registerBrandFont } from '../src/render/typography.mjs';
 import { composeScore, encodeWav, masterScore, MOOD_OPTIONS } from '../src/audio/fold-score.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -351,6 +353,9 @@ export async function renderProductionProject({
 }) {
   const validation = validateTimeline(timeline);
   const brand = resolveBrandAssets(assets);
+  // A brand font: its metrics lay text out (registered for QA too), its file draws it.
+  if (normalizeBrandFont(context?.brandFont)) registerBrandFont(normalizeBrandFont(context.brandFont));
+  let fontOptions = RESVG_FONT_OPTIONS;
   const palette = timeline.shots[0]?.palette || { primary: '#0E0E11', accent: '#7C3AED' };
   const hasWindows = timeline.shots.some((shot) => (shot.spec.elements || []).some((element) => element.window));
   brand.products = brand.products.map((product) => (product ? {
@@ -372,6 +377,13 @@ export async function renderProductionProject({
     if (error.code !== 'ENOENT') throw error;
   }
   await mkdir(framesDirectory, { recursive: true });
+  if (brand.font) {
+    // The rasterizer loads fonts from files: the brand font joins the bundled ones
+    // (written after the existence check, which must see a fresh folder).
+    const fontPath = path.join(outputDirectory, `brand-font.${brand.font.extension}`);
+    await writeFile(fontPath, brand.font.buffer);
+    fontOptions = { ...RESVG_FONT_OPTIONS, fontFiles: [...RESVG_FONT_OPTIONS.fontFiles, fontPath] };
+  }
   await writeFile(path.join(outputDirectory, 'timeline.json'), `${JSON.stringify(timeline, null, 2)}\n`);
   await writeFile(path.join(outputDirectory, 'storyboard.json'), `${JSON.stringify(storyboard, null, 2)}\n`);
   await writeFile(path.join(outputDirectory, 'acceptance.json'), `${JSON.stringify(acceptance, null, 2)}\n`);
@@ -399,7 +411,7 @@ export async function renderProductionProject({
     await writeFile(svgPath, svg);
     const rasterizer = new Resvg(svg, {
       fitTo: { mode: 'width', value: timeline.width },
-      font: RESVG_FONT_OPTIONS,
+      font: fontOptions,
     });
     await writeFile(pngPath, rasterizer.render().asPng());
     // Each rasterizer holds native pixel memory that V8 can't see; collect regularly

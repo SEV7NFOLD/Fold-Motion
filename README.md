@@ -98,6 +98,14 @@ cascades, tracking that settles, gradient emphasis, hairlines, light sweeps,
 beams, depth planes and dot-field ripples, with film grain at encode. See
 `skills/fold-motion/references/engine.md`.
 
+## Brand fonts
+
+Upload the client's headline typeface (TTF or OTF) in the brand kit. FOLD
+Motion measures it exactly, lays every headline out with its real letter
+widths, and renders it; body text stays Montserrat. Signed-in studios: run
+`supabase/migrations/20261110000000_brand_font.sql` once so the font is kept in
+your account.
+
 ## Sound (FOLD Score)
 
 Every film gets a soundtrack composed from its own edit: the score reads each
