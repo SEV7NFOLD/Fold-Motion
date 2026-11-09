@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
@@ -263,7 +264,20 @@ async function handleRenderRequest(request, response, root) {
     return;
   }
   const projectRoot = path.resolve(root, '..');
-  const requestFile = path.join(os.tmpdir(), `fold-render-${process.pid}-${Date.now()}.json`);
+  // Queued renders (the studio's way): answer at once with a job, render one film
+  // at a time, and report progress. Without async, the request waits as before.
+  if (body.async === true) {
+    const job = enqueueRender({ body, fold: request.fold, projectRoot });
+    sendJson(response, 202, { success: true, jobId: job.id, position: queuePosition(job), status: job.status });
+    return;
+  }
+  const result = await performRender({ body, fold: request.fold, projectRoot });
+  sendJson(response, result.status, result.payload);
+}
+
+/** Renders one film: the render script, QA validation, then storage when signed in. */
+async function performRender({ body, fold, projectRoot, onProgress }) {
+  const requestFile = path.join(os.tmpdir(), `fold-render-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`);
   try {
     await writeFile(requestFile, JSON.stringify({
       timeline: body.timeline,
@@ -274,9 +288,10 @@ async function handleRenderRequest(request, response, root) {
       ...(typeof body.music === 'string' ? { music: body.music } : {}),
       ...(typeof body.grade === 'string' ? { grade: body.grade } : {}),
     }));
-    const renderResult = await runNodeScript('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
+    const renderResult = await runNodeScriptStreaming('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
       label: 'Rendering',
       timeoutMs: renderTimeoutMs(),
+      onProgress,
     });
     const reportLine = renderResult.stdout.split(/\r?\n/).find((line) => line.startsWith('RENDER_REPORT:'));
     if (!reportLine) throw new Error('Render command completed without reporting a QA artifact path.');
@@ -288,6 +303,7 @@ async function handleRenderRequest(request, response, root) {
     const report = JSON.parse(await readFile(reportPath, 'utf8'));
     let qaCommandPassed = true;
     let qaError;
+    onProgress?.({ stage: 'validating' });
     try {
       await runNodeScript('scripts/qa/validate-production.mjs', [reportPath], projectRoot, { label: 'QA validation', timeoutMs: 120_000 });
     } catch (error) {
@@ -297,9 +313,10 @@ async function handleRenderRequest(request, response, root) {
     // Signed in with Supabase: the film is kept in the user's films folder, not on this
     // server's disk (which a free Render instance wipes on every restart).
     let storageError;
-    if (request.fold?.config && request.fold.user) {
+    if (fold?.config && fold.user) {
+      onProgress?.({ stage: 'saving' });
       try {
-        const film = await storeFilm(request.fold.config, request.fold.user, {
+        const film = await storeFilm(fold.config, fold.user, {
           projectId: body.timeline.id,
           runId: path.basename(path.dirname(reportPath)),
           file: await readFile(path.join(path.dirname(reportPath), 'production.mp4')),
@@ -310,12 +327,125 @@ async function handleRenderRequest(request, response, root) {
         storageError = `${error.message} The film is playable from this server until it restarts.`;
       }
     }
-    sendJson(response, 200, { success: true, report, qaCommandPassed, qaError, ...(storageError ? { storageError } : {}) });
+    return { status: 200, payload: { success: true, report, qaCommandPassed, qaError, ...(storageError ? { storageError } : {}) } };
   } catch (error) {
-    sendJson(response, 500, { success: false, error: error.message });
+    return { status: 500, payload: { success: false, error: error.message } };
   } finally {
     await rm(requestFile, { force: true });
   }
+}
+
+// ------------------------------------------------------------------ render queue
+
+const renderJobs = new Map();
+const renderQueue = [];
+let renderRunning = 0;
+const RENDER_CONCURRENCY = Math.max(1, Number(process.env.RENDER_CONCURRENCY) || 1);
+const JOB_TTL_MS = 30 * 60 * 1000;
+
+function enqueueRender({ body, fold, projectRoot }) {
+  const job = {
+    id: randomUUID(),
+    owner: fold?.user?.id || null,
+    status: 'queued',
+    createdAt: Date.now(),
+    progress: { stage: 'queued' },
+    body,
+    fold,
+    projectRoot,
+  };
+  renderJobs.set(job.id, job);
+  renderQueue.push(job);
+  pumpRenderQueue();
+  return job;
+}
+
+/** 1 when the job is next or rendering, 2 when one job is ahead, and so on. */
+function queuePosition(job) {
+  if (job.status !== 'queued') return 0;
+  return renderQueue.indexOf(job) + 1 + renderRunning;
+}
+
+function pumpRenderQueue() {
+  while (renderRunning < RENDER_CONCURRENCY && renderQueue.length) {
+    const job = renderQueue.shift();
+    renderRunning += 1;
+    job.status = 'rendering';
+    job.startedAt = Date.now();
+    job.progress = { stage: 'preparing' };
+    performRender({ body: job.body, fold: job.fold, projectRoot: job.projectRoot, onProgress: (progress) => { job.progress = { ...job.progress, ...progress }; } })
+      .then((result) => {
+        job.status = result.status === 200 ? 'done' : 'failed';
+        job.result = result.payload;
+      })
+      .catch((error) => {
+        job.status = 'failed';
+        job.result = { success: false, error: error.message };
+      })
+      .finally(() => {
+        job.finishedAt = Date.now();
+        delete job.body; // the timeline and photos aren't needed any more
+        renderRunning -= 1;
+        pumpRenderQueue();
+      });
+  }
+  // Forget finished jobs after half an hour.
+  for (const [id, job] of renderJobs) if (job.finishedAt && Date.now() - job.finishedAt > JOB_TTL_MS) renderJobs.delete(id);
+}
+
+async function handleRenderJobRequest(request, response, jobId) {
+  const auth = await requireUser(request.headers);
+  if (auth.error) {
+    sendJson(response, auth.status || 401, { success: false, error: auth.error, signIn: true });
+    return;
+  }
+  const job = renderJobs.get(jobId);
+  if (!job || (auth.user && job.owner !== auth.user.id)) {
+    sendJson(response, 404, { success: false, error: 'That render isn’t running on this server (it may have restarted). Render again.' });
+    return;
+  }
+  const elapsed = ((job.finishedAt || Date.now()) - (job.startedAt || job.createdAt)) / 1000;
+  sendJson(response, 200, {
+    success: true,
+    jobId: job.id,
+    status: job.status,
+    position: queuePosition(job),
+    progress: job.progress,
+    elapsedSeconds: Math.round(elapsed),
+    ...(job.status === 'done' || job.status === 'failed' ? { result: job.result } : {}),
+  });
+}
+
+/** Runs a script, streaming its FOLD_PROGRESS lines to onProgress. */
+function runNodeScriptStreaming(script, args, cwd, { label, timeoutMs = DEFAULT_RENDER_TIMEOUT_MS, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--expose-gc', script, ...args], { cwd, windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    let pending = '';
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      pending += text;
+      let newline;
+      while ((newline = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (line.startsWith('FOLD_PROGRESS ')) {
+          try { onProgress?.(JSON.parse(line.slice('FOLD_PROGRESS '.length))); } catch { /* a garbled line is skipped */ }
+        }
+      }
+    });
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-200_000); });
+    child.on('error', (error) => { clearTimeout(timer); reject(new Error(describeProcessFailure(error, label, timeoutMs))); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0 && !timedOut) resolve({ stdout, stderr });
+      else reject(new Error(describeProcessFailure({ code, signal, killed: timedOut, stdout, stderr }, label, timeoutMs)));
+    });
+  });
 }
 
 async function handleStateRequest(request, response) {
@@ -367,6 +497,10 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
       }
       if (pathname === '/api/generate') {
         await handleGenerateRequest(request, response);
+        return;
+      }
+      if (pathname.startsWith('/api/render/jobs/') && request.method === 'GET') {
+        await handleRenderJobRequest(request, response, decodeURIComponent(pathname.slice('/api/render/jobs/'.length)));
         return;
       }
       if (pathname === '/api/render') {

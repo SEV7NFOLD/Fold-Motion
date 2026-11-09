@@ -366,6 +366,30 @@ function absorbTelemetry(events) {
 
 // ------------------------------------------------------------------ server
 
+/**
+ * Renders through the server's queue: one film at a time, with progress shown in
+ * the working indicator. Falls back to a plain request on servers without a queue.
+ */
+async function renderQueued(body) {
+  const started = await postJson('/api/render', { ...body, async: true });
+  if (!started.jobId) return started;
+  let drawingSince = 0;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const token = cloud ? await cloud.accessToken() : '';
+    const response = await fetch(`/api/render/jobs/${encodeURIComponent(started.jobId)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const job = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(job.error || `The render status couldn’t be read (HTTP ${response.status}).`);
+    if (job.progress?.stage === 'drawing' && !drawingSince) drawingSince = Date.now();
+    if (busy) {
+      busy.progress = { ...job.progress, position: job.position, drawingSeconds: drawingSince ? (Date.now() - drawingSince) / 1000 : 0 };
+      updateWorking();
+    }
+    if (job.status === 'done') return job.result;
+    if (job.status === 'failed') throw new Error(job.result?.error || 'The render failed.');
+  }
+}
+
 async function postJson(url, body) {
   const token = cloud ? await cloud.accessToken() : '';
   const response = await fetch(url, {
@@ -918,7 +942,7 @@ function buildShots(record) {
 
 function renderFilm(record) {
   return work(record, 'Rendering and checking', 'Couldn’t render the film', 'render', async () => {
-    const result = await postJson('/api/render', {
+    const result = await renderQueued({
       timeline: record.project.timeline,
       storyboard: record.project.storyboard,
       acceptance: record.project.acceptance,
@@ -1794,9 +1818,39 @@ const WORKING_SKELETON = {
   'Rendering and checking': 'wide',
 };
 
+const RENDER_STAGES = {
+  queued: 'Waiting for the renderer',
+  preparing: 'Preparing the shots',
+  drawing: 'Drawing frames',
+  scoring: 'Mixing the score',
+  encoding: 'Encoding the film',
+  validating: 'Running QA',
+  saving: 'Saving to your account',
+};
+
 function updateWorking() {
   if (!workingNode || !busy) return;
   const elapsed = Math.round((Date.now() - busy.startedAt) / 1000);
+  const progress = busy.progress;
+  const bar = workingNode.querySelector('.progress');
+  if (progress && bar) {
+    // Drawing frames is most of the work: the bar runs 5–85% while drawing.
+    const drawn = progress.total ? progress.done / progress.total : 0;
+    const share = { queued: 0, preparing: 0.03, drawing: 0.05 + 0.8 * drawn, scoring: 0.86, encoding: 0.9, validating: 0.95, saving: 0.98 }[progress.stage] ?? 0;
+    bar.hidden = false;
+    bar.firstChild.style.width = `${Math.round(share * 100)}%`;
+    bar.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+    let text = RENDER_STAGES[progress.stage] || 'Rendering';
+    if (progress.position > 1) text = `In line: #${progress.position}, another film is rendering`;
+    else if (progress.stage === 'drawing' && progress.total) {
+      const rate = progress.done / Math.max(1, progress.drawingSeconds || 1);
+      const left = rate > 0 ? Math.round((progress.total - progress.done) / rate) : 0;
+      text = `Drawing frames · ${progress.done} of ${progress.total}${progress.done > 12 && left > 0 ? ` · about ${left < 60 ? `${left}s` : `${Math.round(left / 60)} min`} left` : ''}`;
+    }
+    workingNode.querySelector('.shimmer-text').textContent = `${text}…`;
+    workingNode.querySelector('.working-time').textContent = `${elapsed}s`;
+    return;
+  }
   const hint = busy.label === 'Rendering and checking'
     ? (elapsed >= 20 ? ', rendering takes a few minutes on small servers' : '')
     : (elapsed >= 25 ? ', AI answers can take a minute' : '');
@@ -1810,6 +1864,7 @@ function buildWorkingNode() {
     : kind === 'wide' ? h('div', { class: 'skeleton-strip', 'aria-hidden': 'true' }, h('span', { class: 'skeleton skeleton-wide' })) : null;
   return h('div', { role: 'status' }, systemMessage(
     h('p', { class: 'working-text' }, h('span', { class: 'shimmer-text', text: `${busy.label}…` }), h('span', { class: 'working-time', text: '0s' })),
+    h('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Render progress', 'aria-valuemin': '0', 'aria-valuemax': '100', hidden: true }, h('span')),
     skeleton));
 }
 
