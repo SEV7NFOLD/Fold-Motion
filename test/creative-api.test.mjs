@@ -160,8 +160,9 @@ test('generation falls back from Gemini to Groq, then OpenRouter in order', asyn
   assert.equal(requests[2].options.headers['HTTP-Referer'], 'https://fold-motion.onrender.com');
   assert.equal(result.provider, 'OpenRouter');
   // Every storyboard carries a music mood (the brief's words decide when the model gives none).
-  const { musicMood, ...rest } = result.storyboard;
+  const { musicMood, grade, ...rest } = result.storyboard;
   assert.equal(musicMood, 'premium');
+  assert.ok(['clean', 'cinematic', 'matte', 'noir'].includes(grade), `look ${grade}`);
   assert.deepEqual(rest, storyboard);
   assert.match(JSON.parse(requests[2].options.body).messages[0].content, /Return only valid raw JSON/);
   assert.ok(result.telemetry.some(({ stage }) => stage === 'Rotating to OpenRouter'));
@@ -224,8 +225,9 @@ test('Groq is tried when Gemini keys are absent and OpenRouter is skipped when u
   assert.match(requests[0].url, /^https:\/\/api\.groq\.com\//);
   assert.equal(result.provider, 'Groq');
   // Every storyboard carries a music mood (the brief's words decide when the model gives none).
-  const { musicMood, ...rest } = result.storyboard;
+  const { musicMood, grade, ...rest } = result.storyboard;
   assert.equal(musicMood, 'premium');
+  assert.ok(['clean', 'cinematic', 'matte', 'noir'].includes(grade), `look ${grade}`);
   assert.deepEqual(rest, storyboard);
 });
 

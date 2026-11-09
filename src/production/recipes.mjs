@@ -14,7 +14,10 @@ export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicke
 
 /** Recipes that put an uploaded product photo on screen. */
 export const PRODUCT_RECIPES = Object.freeze(['product-hero', 'type-window']);
-export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold']);
+export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold', 'zoom']);
+
+/** Headline effects a direction can ask for. */
+export const TYPE_EFFECTS = Object.freeze(['decode', 'outline']);
 export const TEXT_CASE_OPTIONS = Object.freeze(['upper', 'as-written']);
 
 export const RECIPE_DESCRIPTIONS = Object.freeze({
@@ -433,10 +436,11 @@ const RECIPE_ALIASES = Object.freeze({
   window: 'type-window', 'letters-window': 'type-window', 'photo-type': 'type-window', 'image-type': 'type-window',
 });
 const TRANSITION_ALIASES = Object.freeze({
+  'zoom-through': 'zoom', 'letter-zoom': 'zoom', 'zoom-in': 'zoom', 'zoom-through-letter': 'zoom',
   'hard-cut': 'cut', none: 'cut', straight: 'cut',
   crossfade: 'fade', dissolve: 'fade', 'fade-through': 'fade', 'dip-to-black': 'fade',
   slide: 'wipe', swipe: 'wipe', 'wipe-left': 'wipe', 'wipe-right': 'wipe', panel: 'wipe',
-  zoom: 'push', 'zoom-through': 'push', 'push-in': 'push', 'push-through': 'push',
+  'push-in': 'push', 'push-through': 'push',
   'paper-fold': 'fold', 'the-fold': 'fold', origami: 'fold', crease: 'fold', 'fold-over': 'fold', 'page-fold': 'fold',
 });
 
@@ -479,7 +483,11 @@ export function fallbackDirection(seed, index, count, copy, productCount = 0) {
   if (recipe === 'kicker-title') recipe = 'title-reveal';
   if (productCount && count >= 2 && index === 1) recipe = 'product-hero';
   else if (productCount && count >= 4 && index === count - 2 && words.length <= 2 && String(copy).length <= 16) recipe = 'type-window';
+  // Offline films still show the newer effects: one headline effect on the second shot.
+  const seedValue = [...String(seed)].reduce((sum, character) => sum + character.codePointAt(0), 0);
+  const typeEffect = count >= 4 && index === 1 && !['product-hero', 'type-window'].includes(recipe) ? TYPE_EFFECTS[seedValue % TYPE_EFFECTS.length] : undefined;
   return {
+    ...(typeEffect ? { typeEffect } : {}),
     ...(productCount ? { product: (index % productCount) + 1 } : {}),
     recipe,
     transitionOut: index === count - 1 ? 'cut' : direction.transitions[index % direction.transitions.length],
@@ -574,6 +582,7 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
     direction: {
       recipe,
       ...(product ? { product } : {}),
+      ...(TYPE_EFFECTS.includes(source.typeEffect) ? { typeEffect: source.typeEffect } : {}),
       ...(textCase ? { textCase } : {}),
       kicker,
       emphasis,
@@ -592,15 +601,42 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
 export function limitFolds(specs, labels = []) {
   const changes = [];
   let folds = 0;
+  let zooms = 0;
+  let effects = 0;
   specs.forEach((spec, index) => {
-    if (spec?.version !== 2 || spec.transitionOut !== 'fold') return;
-    folds += 1;
-    if (folds > MAX_FOLDS) {
-      spec.transitionOut = 'wipe';
-      changes.push(`${labels[index] || `shot ${index + 1}`}: more than ${MAX_FOLDS} folds in the film; this one became a wipe.`);
+    if (spec?.version !== 2) return;
+    const label = labels[index] || `shot ${index + 1}`;
+    if (spec.transitionOut === 'fold') {
+      folds += 1;
+      if (folds > MAX_FOLDS) {
+        spec.transitionOut = 'wipe';
+        changes.push(`${label}: more than ${MAX_FOLDS} folds in the film; this one became a wipe.`);
+      }
+    }
+    // Signature moves stay special: one zoom through a letter, two headline effects.
+    if (spec.transitionOut === 'zoom' && (zooms += 1) > 1) {
+      spec.transitionOut = 'push';
+      changes.push(`${label}: one zoom through a letter per film; this one became a push.`);
+    }
+    if (spec.typeEffect && (effects += 1) > 2) {
+      changes.push(`${label}: at most two headline effects per film; dropped "${spec.typeEffect}".`);
+      delete spec.typeEffect;
     }
   });
   return changes;
+}
+
+/** Applies a shot's headline effect (decode or outline) to its title. */
+export function applyTypeEffect(elements, spec) {
+  if (!TYPE_EFFECTS.includes(spec?.typeEffect) || ['type-window', 'logo-reveal'].includes(spec.recipe)) return elements;
+  const k = Math.min(1.6, Math.max(1, (spec.durationInSeconds || 2.5) / 2.5));
+  for (const element of elements) {
+    if (element.type !== 'text' || element.role !== 'title') continue;
+    element.reveal = spec.typeEffect === 'decode'
+      ? { style: 'decode', start: 0.15 * k, duration: 0.95 * k }
+      : { style: 'outline', start: 0.1 * k, duration: 1.1 * k };
+  }
+  return elements;
 }
 
 /**

@@ -133,6 +133,8 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    '- "typeEffect" is "decode" (letters scramble through code-like glyphs, then lock in: tech, editorial, reveals), "outline" (letters trace as outlines, then fill: elegant, premium) or "none". Use it on one or two hero lines at most.',
+    '- "zoom" as a transition flies the camera into a letter of the line and reveals the next shot through it: a signature move, once per film at most, on a shot whose line has a bold display word.',
     height > width
       ? '- This is a vertical 9:16 film for phones: keep lines short (one to three words) so the type stays large, and expect product heroes to stack the photo above the line.'
       : height === width ? '- This is a square 1:1 film for feeds: keep lines short; product heroes stack the photo above the line.' : '- This is a landscape 16:9 film.',
@@ -278,7 +280,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
       'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
-      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, beam and sweep.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -462,6 +464,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         creativeDirection: { type: 'STRING' },
         musicMood: { type: 'STRING', enum: ['premium', 'energetic', 'editorial', 'warm'] },
         musicReason: { type: 'STRING' },
+        grade: { type: 'STRING', enum: ['clean', 'cinematic', 'matte', 'noir'] },
         shots: { type: 'ARRAY', items: shotSchema },
         hardConstraints: { type: 'ARRAY', items: { type: 'STRING' } },
         acceptanceCriteria: {
@@ -513,6 +516,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         },
         transitionOut: { type: 'STRING', enum: [...TRANSITION_OPTIONS] },
         product: { type: 'INTEGER' },
+        typeEffect: { type: 'STRING', enum: ['none', 'decode', 'outline'] },
         beam: { type: 'BOOLEAN' },
         sweep: { type: 'BOOLEAN' },
       },

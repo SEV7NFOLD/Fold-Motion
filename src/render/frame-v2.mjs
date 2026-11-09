@@ -40,7 +40,60 @@ function lineStart(element, line, size, tracking) {
   return element.anchor === 'start' ? element.x : element.anchor === 'end' ? element.x - width : element.x - width / 2;
 }
 
+
+// ---------------------------------------------------------------- headline effects
+
+const DECODE_GLYPHS = 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789#/+<>';
+
+/**
+ * Decode: each letter cycles through code-like glyphs, then locks into place, left
+ * to right. Outline: the letters trace themselves as outlines, then fill.
+ */
+function renderTypeEffect(element, t, ctx) {
+  const { reveal } = element;
+  const { sizes, baselines } = lineGeometry(element);
+  const out = [];
+  const total = element.lines.reduce((sum, line) => sum + line.replace(/\s/g, '').length, 0);
+  const tick = Math.floor(t * 24);
+  let index = 0;
+  element.lines.forEach((line, lineIndex) => {
+    const size = sizes[lineIndex];
+    const baseline = baselines[lineIndex];
+    const x0 = lineStart(element, line, size, element.tracking);
+    if (reveal.style === 'outline') {
+      const p = span(t, reveal.start, reveal.start + reveal.duration);
+      const draw = ease.inOutCubic(clamp(p / 0.65));
+      const fill = ease.outCubic(clamp((p - 0.45) / 0.55));
+      const dash = size * 3.2;
+      const spacing = f(element.tracking * size);
+      const anchorText = (attrs) => `<text x="${f(x0)}" y="${f(baseline)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" ${attrs}>${esc(line)}</text>`;
+      if (fill > 0) out.push(anchorText(`fill="${element.fill}" opacity="${f(fill)}"`));
+      if (draw > 0 && fill < 1) out.push(anchorText(`fill="none" stroke="${mix(ctx.accent, '#FFFFFF', 0.45)}" stroke-width="${f(Math.max(1.2, size * 0.012))}" stroke-dasharray="${f(dash)} ${f(dash)}" stroke-dashoffset="${f(dash * (1 - draw))}" opacity="${f(1 - fill * 0.7)}"`));
+      return;
+    }
+    for (const { character, x } of layoutCharacters(element.font, line, size, element.tracking, x0)) {
+      if (character === ' ') continue;
+      const appear = reveal.start + reveal.duration * 0.3 * (index / Math.max(1, total));
+      const lock = reveal.start + reveal.duration * (0.35 + 0.65 * (index / Math.max(1, total)));
+      index += 1;
+      if (t < appear) continue;
+      if (t >= lock) {
+        out.push(`<text x="${f(x)}" y="${f(baseline)}" ${fontAttrs(element.font, size)} fill="${element.fill}">${esc(character)}</text>`);
+      } else {
+        const glyph = DECODE_GLYPHS[(tick * 7 + index * 13) % DECODE_GLYPHS.length];
+        out.push(`<text x="${f(x)}" y="${f(baseline)}" ${fontAttrs(element.font, size)} fill="${mix(ctx.accent, '#FFFFFF', 0.35)}" opacity="0.85">${esc(glyph)}</text>`);
+      }
+    }
+  });
+  return { defs: [], body: out.join('') };
+}
+
 function renderText(element, t, ctx) {
+  if (element.reveal?.style === 'decode' || element.reveal?.style === 'outline') {
+    if (t < element.reveal.start + element.reveal.duration) return renderTypeEffect(element, t, ctx);
+    // Finished: draw as settled text, with emphasis and sweeps.
+    element = { ...element, reveal: { style: 'fade', unit: 'line', start: -10, duration: 0.01, stagger: 0 } };
+  }
   const out = [];
   const defs = [];
   const { reveal } = element;
@@ -413,7 +466,47 @@ function cameraTransform(camera, progress, extraScale, ctx) {
 
 // ---------------------------------------------------------------- timeline frame
 
-export const TRANSITION_SECONDS = Object.freeze({ wipe: [0.3, 0.34], fade: [0.3, 0.3], push: [0.35, 0.35], fold: [0.3, 0.3] });
+export const TRANSITION_SECONDS = Object.freeze({ wipe: [0.3, 0.34], fade: [0.3, 0.3], push: [0.35, 0.35], fold: [0.3, 0.3], zoom: [0.5, 0.3] });
+
+// Letters whose middle is solid ink, and letters with a solid left stem.
+const SOLID_CENTER = new Set([...'IHTXN1']);
+const LEFT_STEM = new Set([...'BDEFKLMPR']);
+
+/**
+ * Where a zoom through a letter flies in: a point of solid ink in one letter of
+ * the shot's title (preferring the emphasized word), with that glyph to clip the
+ * next shot. Undefined when no letter has a reliably solid point.
+ */
+export function zoomTarget(shot) {
+  const element = shot.spec.elements?.find((item) => item.type === 'text' && item.role === 'title' && item.font === 'display')
+    || shot.spec.elements?.find((item) => item.type === 'text' && item.role === 'title');
+  if (!element) return undefined;
+  const { sizes, baselines } = lineGeometry(element);
+  // Emphasis is stored as word positions across the whole title.
+  const emphasis = new Set(element.emphasis?.words ?? []);
+  const candidates = [];
+  let wordIndex = 0;
+  element.lines.forEach((line, lineIndex) => {
+    const size = sizes[lineIndex];
+    const x0 = lineStart(element, line, size, element.tracking);
+    const cap = capHeight(element.font, size);
+    let inWord = false;
+    for (const { character, x } of layoutCharacters(element.font, line, size, element.tracking, x0)) {
+      if (character === ' ') { if (inWord) wordIndex += 1; inWord = false; continue; }
+      inWord = true;
+      const upper = character.toUpperCase();
+      const advance = measure(element.font, character, size);
+      const preferred = emphasis.has(wordIndex) ? 0 : 1;
+      if (SOLID_CENTER.has(upper)) candidates.push({ rank: preferred * 2, x: x + advance / 2, character, glyphX: x, baseline: baselines[lineIndex], size, cap });
+      else if (LEFT_STEM.has(upper)) candidates.push({ rank: preferred * 2 + 1, x: x + advance * 0.16, character, glyphX: x, baseline: baselines[lineIndex], size, cap });
+    }
+    if (inWord) wordIndex += 1;
+  });
+  if (!candidates.length) return undefined;
+  candidates.sort((a, b) => a.rank - b.rank);
+  const pick = candidates[0];
+  return { ...pick, y: pick.baseline - pick.cap / 2, font: element.font };
+}
 
 /** Draws frame `frameIndex` of a timeline made of v2 shots, including transitions. */
 export function renderTimelineFrame(timeline, frameIndex, brand = {}) {
@@ -462,9 +555,37 @@ export function renderTimelineFrame(timeline, frameIndex, brand = {}) {
     if (stripe > 0.5) overlays.push(`<rect x="${f(Math.max(0, left - stripe))}" y="0" width="${f(Math.min(stripe, left))}" height="${H}" fill="${stripeColor}"/>`);
   }
 
+  if (incoming === 'zoom' && t < TRANSITION_SECONDS.zoom[1] && zoomTarget(previous)) {
+    extraScale *= lerp(1.08, 1, ease.outCubic(clamp(t / TRANSITION_SECONDS.zoom[1])));
+  }
+  const zoom = outgoing === 'zoom' && tail < TRANSITION_SECONDS.zoom[0] ? zoomTarget(shot) : undefined;
+  if (outgoing === 'zoom' && tail < TRANSITION_SECONDS.push[0] && !zoomTarget(shot)) {
+    // No letter to fly into: behave like a push.
+    const p = 1 - clamp(tail / TRANSITION_SECONDS.push[0]);
+    extraScale *= 1 + 0.3 * ease.inExpo(p);
+    overlays.push(veil(ease.inOutCubic(p)));
+  }
   const layer = shotLayers(timeline, index, t, extraScale, brand);
   const defs = [...filmDefs(primary, accent, W, H), ...layer.defs];
   let content = layer.content;
+  if (zoom) {
+    const p = 1 - clamp(tail / TRANSITION_SECONDS.zoom[0]);
+    // Big enough at the end that the letter's ink covers the whole frame.
+    const end = Math.min(600, Math.max(60, (Math.hypot(W, H) * 2.2) / (zoom.size * 0.12)));
+    const scale = end ** (p * p * p); // slow start, then the rush into the letter
+    // The letter does the zoom: a plain glyph (safe at any scale) that is the window
+    // onto the next shot, growing until its ink fills the frame. This shot only
+    // pushes in gently: scaling it far would push its masked pieces fully off the
+    // frame, which crashes the rasterizer.
+    const around = (factor) => `translate(${f(zoom.x)} ${f(zoom.y)}) scale(${factor.toFixed(4)}) translate(${f(-zoom.x)} ${f(-zoom.y)})`;
+    const next = shotLayers(timeline, index + 1, 0, 1.08, brand);
+    defs.push(...next.defs);
+    defs.push(`<clipPath id="zoom-letter"><text x="${f(zoom.glyphX)}" y="${f(zoom.baseline)}" ${fontAttrs(zoom.font, zoom.size)} transform="${around(scale)}">${esc(zoom.character)}</text></clipPath>`);
+    // The letter's outline, a constant thin line in the light accent, shows you're
+    // flying into the letter even when the next shot opens dark.
+    const outline = `<text x="${f(zoom.glyphX)}" y="${f(zoom.baseline)}" ${fontAttrs(zoom.font, zoom.size)} fill="none" stroke="${mix(accent, '#FFFFFF', 0.45)}" stroke-width="${f(2.5 / scale)}" opacity="${f(1 - 0.6 * p)}" transform="${around(scale)}">${esc(zoom.character)}</text>`;
+    content = `<g transform="${around(1 + 0.25 * ease.inOutCubic(p))}">${content}</g><g clip-path="url(#zoom-letter)">${next.content}</g>${outline}`;
+  }
   if (outgoing === 'fold' && tail < TRANSITION_SECONDS.fold[0]) {
     // The next shot waits underneath at its first frame while this one folds over it.
     const next = shotLayers(timeline, index + 1, 0, 1, brand);

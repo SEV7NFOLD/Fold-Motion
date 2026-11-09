@@ -94,7 +94,7 @@ const MOTION_LABELS = {
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
 const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window' };
-const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold' };
+const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold', zoom: 'Zoom through a letter' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
   bold: ['Montserrat, Arial, sans-serif', 700],
@@ -882,6 +882,7 @@ function renderFilm(record) {
       context: withBrand(record.project.context, record),
       ...(brandAssets() ? { assets: brandAssets() } : {}),
       music: record.music || 'auto',
+      grade: record.grade || 'auto',
     });
     record.project = { ...record.project, renderReport: result.report };
     await transition(record, 'QA');
@@ -1417,7 +1418,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), changesButton());
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), musicPicker(record), lookPicker(record), changesButton());
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1463,7 +1464,7 @@ function storyboardView(message) {
         h('h2', { class: 'block-title', text: storyboard.title }),
         h('span', { class: 'block-badge', text: `${shots.length} shots` })),
       h('p', { class: 'block-lede', text: storyboard.narrativeConcept }),
-      MOOD_LABELS[storyboard.musicMood] ? h('p', { class: 'music-line', text: `Music: ${MOOD_LABELS[storyboard.musicMood]}${storyboard.musicReason ? `. ${storyboard.musicReason}` : ''}` }) : null,
+      MOOD_LABELS[storyboard.musicMood] ? h('p', { class: 'music-line', text: `Music: ${MOOD_LABELS[storyboard.musicMood]}${storyboard.musicReason ? `. ${storyboard.musicReason}` : ''}${LOOK_LABELS[storyboard.grade] ? ` Look: ${LOOK_LABELS[storyboard.grade]}.` : ''}` }) : null,
       ...filmstrip(shots.map((shot) => ({
         duration: Number(shot.durationSeconds) || 1,
         copy: shot.onScreenCopy,
@@ -1553,10 +1554,26 @@ function musicPicker(record) {
   return select;
 }
 
+const LOOK_LABELS = { clean: 'Clean', cinematic: 'Cinematic', matte: 'Matte', noir: 'Noir' };
+
+/** The film's look (color grade), sent with the render. */
+function lookPicker(record) {
+  const directed = LOOK_LABELS[record.project?.storyboard?.grade];
+  const choices = [['auto', directed ? `Look: Auto (${directed})` : 'Look: Auto'], ...Object.entries(LOOK_LABELS).map(([value, label]) => [value, `Look: ${label}`])];
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Look for this film', title: 'A color grade over the whole film. Clean keeps your brand colors exact.' },
+    ...choices.map(([value, label]) => h('option', { value, text: label, ...((record.grade || 'auto') === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => {
+    record.grade = select.value;
+    persist();
+  });
+  return select;
+}
+
 function musicLine(report) {
   const audio = report?.audio;
   if (!audio) return null;
-  const text = audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}` : 'No music';
+  const look = LOOK_LABELS[report?.look] ? `. Look: ${LOOK_LABELS[report.look]}` : '';
+  const text = `${audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}` : 'No music'}${look}`;
   return h('p', { class: 'music-line', text });
 }
 
