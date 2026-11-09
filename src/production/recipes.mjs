@@ -583,6 +583,7 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
       recipe,
       ...(product ? { product } : {}),
       ...(TYPE_EFFECTS.includes(source.typeEffect) ? { typeEffect: source.typeEffect } : {}),
+      ...(typeof source.reason === 'string' && source.reason.trim() ? { reason: source.reason.trim().replace(/\s+/g, ' ').slice(0, 160) } : {}),
       ...(textCase ? { textCase } : {}),
       kicker,
       emphasis,

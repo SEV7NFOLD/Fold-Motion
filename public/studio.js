@@ -751,9 +751,31 @@ function frameOf(record) {
   return { width, height };
 }
 
+// Small thumbnails (320 px JPEG) let the model see each product photo when it
+// directs the shots; made once per photo.
+const productThumbs = new Map();
+function thumbFor(product) {
+  if (!product?.dataUri || productThumbs.has(product.id)) return productThumbs.get(product.id);
+  productThumbs.set(product.id, undefined);
+  const image = new Image();
+  image.onload = () => {
+    const scale = Math.min(1, 320 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    productThumbs.set(product.id, canvas.toDataURL('image/jpeg', 0.72));
+  };
+  image.src = product.dataUri;
+  return undefined;
+}
+
 function withBrand(context, record = activeRecord()) {
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
-  const products = brandKit.products.length ? brandKit.products.map((product) => ({ width: product.width, height: product.height })) : undefined;
+  const products = brandKit.products.length ? brandKit.products.map((product) => {
+    const thumb = thumbFor(product);
+    return { width: product.width, height: product.height, ...(thumb ? { thumb } : {}) };
+  }) : undefined;
   const { width, height } = FORMATS[formatOf(record)];
   return { ...context, logo, products, width, height };
 }
@@ -1524,9 +1546,25 @@ function timelineView(message) {
         last: shot === timeline.shots.at(-1),
         spec: shot.spec,
       })), palette),
+      directorNotes(timeline),
       toggles(message.id, [{ label: 'Timeline JSON', render: () => h('pre', { class: 'code', text: JSON.stringify(timeline, null, 2) }) }]),
       gate));
   return { node, gate };
+}
+
+/** The model's reason for each shot's staging, and which product photo it chose. */
+function directorNotes(timeline) {
+  const notes = timeline.shots.map((shot, index) => {
+    const photo = shot.spec.elements?.find((element) => element.type === 'image')?.product
+      || shot.spec.elements?.find((element) => element.window)?.window?.product;
+    return { index, recipe: RECIPE_LABELS[shot.spec.recipe] || shot.spec.recipe, photo, reason: shot.spec.reason };
+  }).filter((note) => note.reason);
+  if (notes.length === 0) return null;
+  return h('details', { class: 'director-notes' },
+    h('summary', { text: `Director’s notes (${notes.length})` }),
+    h('ol', {}, ...notes.map((note) => h('li', {},
+      h('span', { class: 'director-shot', text: `Shot ${note.index + 1} · ${note.recipe}${note.photo ? ` · photo ${note.photo}` : ''}` }),
+      h('span', { class: 'director-reason', text: note.reason })))));
 }
 
 
@@ -1792,7 +1830,9 @@ function renderThread(record, { stick = false } = {}) {
     clearInterval(workingTimer);
   }
 
-  if (stick || nearBottom) threadScroll.scrollTop = threadScroll.scrollHeight;
+  // The welcome (no messages yet) reads from the top; conversations follow the latest message.
+  if (record.messages.length === 0) threadScroll.scrollTop = 0;
+  else if (stick || nearBottom) threadScroll.scrollTop = threadScroll.scrollHeight;
 }
 
 function renderHead(record) {
@@ -2350,6 +2390,7 @@ document.addEventListener('keydown', (event) => {
 
 /** Small thumbnails above the message box: what goes with every brief. */
 function renderComposerAttachments() {
+  brandKit.products.forEach(thumbFor);
   const strip = $('composer-attachments');
   if (!strip) return;
   const items = [];
