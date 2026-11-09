@@ -923,7 +923,7 @@ a {
 
 .shot-frame {
   display: block;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--frame-w, 16) / var(--frame-h, 9);
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
@@ -1345,7 +1345,7 @@ a {
 
 .skeleton {
   flex: 0 0 clamp(12.5rem, 30%, 17rem);
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--frame-w, 16) / var(--frame-h, 9);
   border-radius: var(--r-md);
   background: linear-gradient(100deg, var(--surface) 30%, var(--surface-3) 50%, var(--surface) 70%);
   background-size: 300% 100%;
@@ -1367,7 +1367,7 @@ a {
 .player {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--frame-w, 16) / var(--frame-h, 9);
   border-radius: var(--r-md);
   background: #000;
 }
@@ -1957,7 +1957,7 @@ button.tool:hover,
 
 .poster {
   display: block;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--frame-w, 16) / var(--frame-h, 9);
   border-radius: var(--r-md);
   overflow: hidden;
   background: var(--surface);
@@ -2524,4 +2524,20 @@ button.tool:hover,
   margin: 0.6rem 0 0;
   color: var(--text-2);
   font-size: 0.8125rem;
+}
+
+/* Vertical and square films: the player keeps its shape without filling the screen. */
+.player {
+  width: min(100%, calc(72vh * var(--frame-w, 16) / var(--frame-h, 9)));
+  margin-inline: auto;
+}
+
+.format-pick {
+  appearance: none;
+  padding-right: 1.6rem;
+  background: var(--surface-2) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23aaa6a3' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 0.6rem center;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
 }

@@ -119,7 +119,11 @@
                       <span class="swatches" aria-hidden="true"><span class="swatch" id="swatch-primary"></span><span class="swatch" id="swatch-accent"></span></span>
                       <span id="details-label">Add headline and colors</span>
                     </button>
-                    <span class="tool tool-static">16:9, 24 fps</span>
+                    <select class="tool format-pick" id="format-pick" aria-label="Format" title="Pick the format before the shots are built: layout depends on it.">
+                      <option value="landscape">16:9 Landscape · YouTube, X</option>
+                      <option value="vertical">9:16 Vertical · Reels, TikTok</option>
+                      <option value="square">1:1 Square · Feeds</option>
+                    </select>
                     <button class="tool engine" id="engine-chip" type="button" data-view="system">
                       <span class="engine-dot" aria-hidden="true"></span><span id="engine-label">Checking engine</span>
                     </button>

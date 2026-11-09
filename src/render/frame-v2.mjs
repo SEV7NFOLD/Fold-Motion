@@ -125,7 +125,7 @@ function renderText(element, t, ctx) {
         const drift = lerp(-0.04, 0.04, ease.inOutSine(clamp(t / ctx.duration))) * (bottom - top);
         defs.push(`<mask id="${element.id}-letters">${windowGlyphs.join('')}</mask>`);
         out.push(`<g mask="url(#${element.id}-letters)"><rect x="${f(minX - size * 0.1)}" y="${f(top)}" width="${f(maxX - minX + size * 0.2)}" height="${f(bottom - top)}" fill="url(#${underId})"/>`
-          + `<image href="${product.graded}" x="${f(minX - size * 0.2)}" y="${f(top - (bottom - top) * 0.1 + drift)}" width="${f(maxX - minX + size * 0.4)}" height="${f((bottom - top) * 1.2)}" preserveAspectRatio="xMidYMid slice"/></g>`
+          + `<image href="${product.windowGraded || product.graded}" x="${f(minX - size * 0.2)}" y="${f(top - (bottom - top) * 0.1 + drift)}" width="${f(maxX - minX + size * 0.4)}" height="${f((bottom - top) * 1.2)}" preserveAspectRatio="xMidYMid slice"/></g>`
           + windowOutlines.join(''));
       }
     } else if (reveal.style === 'cascade' || reveal.style === 'type-on') {

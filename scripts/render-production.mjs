@@ -50,8 +50,15 @@ function grainFilter(timeline) {
  * soft lights and warm paper highlights. Returns a PNG data URI whose shorter
  * side is 720 px, which every frame then reuses.
  */
-export function gradeProduct(product, { primary, accent }) {
-  const stops = [
+export function gradeProduct(product, { primary, accent }, { lift = false } = {}) {
+  // Inside letters a photo has to read as light against the background, so type
+  // windows get a lifted grade: dark products still show their shape.
+  const stops = lift ? [
+    [0, mix(mix(primary, accent, 0.45), '#8E8A9A', 0.35)],
+    [0.35, mix(mix(accent, '#FFFFFF', 0.4), '#B6B2C2', 0.4)],
+    [0.7, '#E2DEE8'],
+    [1, '#FFFFFF'],
+  ] : [
     [0, mix(primary, '#000000', 0.35)],
     [0.42, mix(mix(primary, accent, 0.35), '#6E6A78', 0.45)],
     [0.75, mix(mix(accent, '#FFFFFF', 0.62), '#B0ACB8', 0.5)],
@@ -101,6 +108,12 @@ export function bakeProductPanels(timeline, brand) {
     }
   }
   return panels;
+}
+
+/** The score's mood: the studio's pick, else the storyboard's (the model's choice), else the brief's words. */
+export function scoreMood(music, storyboard) {
+  if (MOOD_OPTIONS.includes(music)) return music;
+  return MOOD_OPTIONS.includes(storyboard?.musicMood) ? storyboard.musicMood : 'auto';
 }
 
 function positiveNumber(value, fallback) {
@@ -320,7 +333,12 @@ export async function renderProductionProject({
   const validation = validateTimeline(timeline);
   const brand = resolveBrandAssets(assets);
   const palette = timeline.shots[0]?.palette || { primary: '#0E0E11', accent: '#7C3AED' };
-  brand.products = brand.products.map((product) => ({ ...product, graded: gradeProduct(product, palette) }));
+  const hasWindows = timeline.shots.some((shot) => (shot.spec.elements || []).some((element) => element.window));
+  brand.products = brand.products.map((product) => ({
+    ...product,
+    graded: gradeProduct(product, palette),
+    ...(hasWindows ? { windowGraded: gradeProduct(product, palette, { lift: true }) } : {}),
+  }));
   brand.panels = bakeProductPanels(timeline, brand);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
 
@@ -376,7 +394,7 @@ export async function renderProductionProject({
   const scorePath = path.join(outputDirectory, 'score.wav');
   if (scored) {
     score = composeScore(timeline, {
-      mood: MOOD_OPTIONS.includes(music) ? music : 'auto',
+      mood: scoreMood(music, storyboard),
       text: [storyboard?.title, storyboard?.narrativeConcept, storyboard?.creativeDirection].filter(Boolean).join(' '),
     });
     masterScore(score, { target: -14, ceiling: -2 });

@@ -5,6 +5,7 @@ import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
 import { ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
+import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 
 export { durationFromBrief };
 
@@ -802,7 +803,11 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   if ((reused.length || tooFew) && provider?.generateStoryboard) {
     const notes = [];
     if (reused.length) notes.push(`Shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`);
-    if (tooFew) notes.push(`This storyboard has only ${shotCount} shots for a ${seconds}-second film, so each shot holds too long. Use ${Math.max(5, Math.round(seconds / 2))} to ${Math.min(8, Math.round(seconds / 1.3))} shots, about one cut every 1.5 to 2 seconds${beatsFromBrief(prompt) ? ', with two or three shots inside each timecoded beat' : ''}.`);
+    if (tooFew) {
+      const target = Math.max(5, Math.min(8, Math.round(seconds / 1.6)));
+      const example = Array.from({ length: target }, () => Number((seconds / target).toFixed(2))).join(', ');
+      notes.push(`This storyboard has only ${shotCount} shots for a ${seconds}-second film, so each shot holds too long. Return exactly ${target} shots (durations such as ${example} seconds), each with its own short line${beatsFromBrief(prompt) ? ', with two or three shots inside each timecoded beat' : ''}.`);
+    }
     try {
       generatedStoryboard = await provider.generateStoryboard(`${prompt}\n\nRevision: ${notes.join(' ')}`, normalizedContext);
       rewriteNote = `The storyboard was rewritten once: ${[reused.length ? 'earlier shots reused the end card' : '', tooFew ? `${shotCount} shots was too few for ${seconds}s` : ''].filter(Boolean).join('; ')}.`;
@@ -816,6 +821,14 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     : generatedStoryboard;
   if (provider) ({ storyboard, repairs } = repairStoryboard(storyboard, normalizedContext));
   if (rewriteNote) repairs.unshift(rewriteNote);
+  // The music mood is part of the direction: the model's choice, or the brief's words.
+  if (storyboard && typeof storyboard === 'object') {
+    const mood = MOOD_OPTIONS.includes(generatedStoryboard?.musicMood) ? generatedStoryboard.musicMood : chooseMood(`${prompt} ${storyboard.creativeDirection || ''}`);
+    storyboard.musicMood = mood;
+    const reason = typeof generatedStoryboard?.musicReason === 'string' ? generatedStoryboard.musicReason.trim().slice(0, 160) : '';
+    if (reason && MOOD_OPTIONS.includes(generatedStoryboard?.musicMood)) storyboard.musicReason = reason;
+    else delete storyboard.musicReason;
+  }
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;
     if (normalizedContext.subheadline && storyboard.shots.length > 1) {

@@ -268,3 +268,14 @@ test('the studio has a chat history with New chat, and an attach button for the 
   assert.match(studio, /async function removeRecord[\s\S]*?cloud\.remove\('projects', `id=eq\./);
   assert.doesNotMatch(studio, /delete store\.records\[record\.id\];\s*if \(store\.activeId === record\.id\) store\.activeId = null;\s*persist\(\);\s*render\(\);/, 'no local-only delete left');
 });
+
+test('the studio picks a format before the shots are built, and can rebuild in another', () => {
+  const html = read(root, 'public', 'index.html');
+  const studio = read(root, 'public', 'studio.js');
+  for (const format of ['landscape', 'vertical', 'square']) assert.match(html, new RegExp(`<option value="${format}">`));
+  assert.match(studio, /landscape: \{ width: 1280, height: 720/);
+  assert.match(studio, /vertical: \{ width: 720, height: 1280/);
+  assert.match(studio, /square: \{ width: 960, height: 960/);
+  assert.match(studio, /function rebuildShots\(record\)/);
+  assert.match(studio, /if \(record\.project\.state === 'RENDERING'\) rebuildShots\(record\)/);
+});
