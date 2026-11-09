@@ -382,6 +382,9 @@ export async function renderProductionProject({
     timeline,
   }, null, 2)}\n`);
 
+  // Progress for the studio: stage, frames drawn and total.
+  const progress = (stage, done, total) => process.stdout.write(`FOLD_PROGRESS ${JSON.stringify({ stage, ...(total ? { done, total } : {}) })}\n`);
+  progress('drawing', 0, timeline.totalFrames);
   let shotIndex = 0;
   for (let frameIndex = 0; frameIndex < timeline.totalFrames; frameIndex += 1) {
     while (frameIndex > timeline.shots[shotIndex].endFrame) shotIndex += 1;
@@ -402,11 +405,13 @@ export async function renderProductionProject({
     // Each rasterizer holds native pixel memory that V8 can't see; collect regularly
     // so a long film doesn't climb toward a small server's memory limit.
     if (frameIndex % 12 === 11) globalThis.gc?.();
+    if (frameIndex % 6 === 5 || frameIndex === timeline.totalFrames - 1) progress('drawing', frameIndex + 1, timeline.totalFrames);
   }
 
   const manifest = generateFrameManifest(framesDirectory);
   await writeFile(path.join(framesDirectory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
+  progress('scoring');
   // FOLD Score: composed from this timeline, so every hit lands on its cut.
   const scored = music !== 'off';
   let score = null;
@@ -424,6 +429,7 @@ export async function renderProductionProject({
   const ffmpeg = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   const ffprobe = isWindows ? 'ffprobe.exe' : 'ffprobe';
   const videoPath = path.join(outputDirectory, 'production.mp4');
+  progress('encoding');
   await runCommand(ffmpeg, [
     '-y',
     '-framerate', String(timeline.fps),
