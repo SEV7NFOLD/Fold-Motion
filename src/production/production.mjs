@@ -843,7 +843,8 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   // Only when a length was asked for (in the brief or by the caller): a default
   // 8-second film with three shots is acceptable, and not worth another call.
   const lengthRequested = briefSeconds !== undefined || context.durationInSeconds !== undefined;
-  const tooFew = lengthRequested && seconds >= 8 && shotCount > 0 && shotCount < 4;
+  // At least one shot per 2.5 seconds: a 15-second film needs six or more.
+  const tooFew = lengthRequested && seconds >= 8 && shotCount > 0 && shotCount < Math.max(4, Math.ceil(seconds / 2.5));
   if ((reused.length || tooFew) && provider?.generateStoryboard) {
     const notes = [];
     if (reused.length) notes.push(`Shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`);
@@ -873,6 +874,13 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     if (reason && MOOD_OPTIONS.includes(generatedStoryboard?.musicMood)) storyboard.musicReason = reason;
     else delete storyboard.musicReason;
     storyboard.grade = GRADES.includes(generatedStoryboard?.grade) ? generatedStoryboard.grade : chooseGrade(`${prompt} ${storyboard.creativeDirection || ''}`);
+    // Products the brief wants shown that no uploaded photo shows: the studio warns
+    // before building, instead of the film improvising a text-only shot.
+    const missing = Array.isArray(generatedStoryboard?.missingPhotos)
+      ? generatedStoryboard.missingPhotos.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim().slice(0, 80)).slice(0, 5)
+      : [];
+    if (missing.length) storyboard.missingPhotos = missing;
+    else delete storyboard.missingPhotos;
   }
   if (storyboard && Array.isArray(storyboard.shots) && storyboard.shots.length > 0) {
     if (normalizedContext.headline) storyboard.shots[0].onScreenCopy = normalizedContext.headline;

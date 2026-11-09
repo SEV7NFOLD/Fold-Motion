@@ -71,6 +71,13 @@ export function resolveFont(font) {
   return { buffer, extension: tag === 'OTTO' ? 'otf' : 'ttf' };
 }
 
+function cropOf(crop) {
+  if (!crop || typeof crop !== 'object') return undefined;
+  const [x, y, w, h] = ['x', 'y', 'w', 'h'].map((key) => Number(crop[key]));
+  if (![x, y, w, h].every(Number.isFinite) || x < 0 || y < 0 || w < 0.05 || h < 0.05 || x + w > 1.001 || y + h > 1.001) return undefined;
+  return { x, y, w, h };
+}
+
 /** Product photo metadata from a planning context: [{ width, height }], at most three. */
 export function normalizeProductsMeta(products) {
   if (!Array.isArray(products)) return undefined;
@@ -82,6 +89,10 @@ export function normalizeProductsMeta(products) {
       width: Number(item?.width),
       height: Number(item?.height),
       ...(thumbOf(item) ? { thumb: thumbOf(item) } : {}),
+      // Measured in the studio: a packshot on a plain background, and the product's
+      // bounds (0 to 1), so type windows can be filled with the product itself.
+      ...(item?.plain === true ? { plain: true } : {}),
+      ...(cropOf(item?.crop) ? { crop: cropOf(item.crop) } : {}),
       // The file name ("side-view") lets a brief say which photo goes where.
       ...(typeof item?.name === 'string' && item.name.trim() ? { name: item.name.trim().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^\p{L}\p{N} ._-]/gu, ' ').slice(0, 40).trim() } : {}),
     }))

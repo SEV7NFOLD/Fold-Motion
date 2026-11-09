@@ -105,6 +105,20 @@ function countedLines(lines, p) {
   });
 }
 
+/**
+ * The photo inside a type window: the whole photo, or, for a packshot, just the
+ * product (its measured bounds), so the letters fill with the product, not white.
+ */
+function windowFill(window, product, box) {
+  const href = product.windowGraded || product.graded;
+  const crop = window.crop;
+  if (!crop || !product.width || !product.height) {
+    return `<image href="${href}" x="${f(box.x)}" y="${f(box.y)}" width="${f(box.width)}" height="${f(box.height)}" preserveAspectRatio="xMidYMid slice"/>`;
+  }
+  const view = [crop.x * product.width, crop.y * product.height, crop.w * product.width, crop.h * product.height].map(f).join(' ');
+  return `<svg x="${f(box.x)}" y="${f(box.y)}" width="${f(box.width)}" height="${f(box.height)}" viewBox="${view}" preserveAspectRatio="xMidYMid slice"><image href="${href}" width="${product.width}" height="${product.height}"/></svg>`;
+}
+
 function renderText(element, t, ctx) {
   if (element.reveal?.style === 'count') {
     // A stat: the number counts up, then the line settles exactly as written.
@@ -203,7 +217,7 @@ function renderText(element, t, ctx) {
         const drift = lerp(-0.04, 0.04, ease.inOutSine(clamp(t / ctx.duration))) * (bottom - top);
         defs.push(`<mask id="${element.id}-letters">${windowGlyphs.join('')}</mask>`);
         out.push(`<g mask="url(#${element.id}-letters)"><rect x="${f(minX - size * 0.1)}" y="${f(top)}" width="${f(maxX - minX + size * 0.2)}" height="${f(bottom - top)}" fill="url(#${underId})"/>`
-          + `<image href="${product.windowGraded || product.graded}" x="${f(minX - size * 0.2)}" y="${f(top - (bottom - top) * 0.1 + drift)}" width="${f(maxX - minX + size * 0.4)}" height="${f((bottom - top) * 1.2)}" preserveAspectRatio="xMidYMid slice"/></g>`
+          + windowFill(element.window, product, { x: minX - size * 0.2, y: top - (bottom - top) * 0.1 + drift, width: maxX - minX + size * 0.4, height: (bottom - top) * 1.2 }) + '</g>'
           + windowOutlines.join(''));
       }
     } else if (reveal.style === 'cascade' || reveal.style === 'type-on') {

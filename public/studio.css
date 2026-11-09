@@ -2807,3 +2807,13 @@ button.tool:hover,
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+.missing-photos {
+  margin: 0.6rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgb(255 180 80 / 0.35);
+  border-radius: var(--r-sm);
+  background: rgb(255 180 80 / 0.08);
+  color: #ffcf8a;
+  font-size: 0.8125rem;
+}

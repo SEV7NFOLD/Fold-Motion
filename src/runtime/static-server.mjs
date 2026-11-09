@@ -289,7 +289,7 @@ async function performRender({ body, fold, projectRoot, onProgress }) {
       ...(typeof body.music === 'string' ? { music: body.music } : {}),
       ...(typeof body.grade === 'string' ? { grade: body.grade } : {}),
       ...(['hd', 'fhd', '2k'].includes(body.resolution) ? { resolution: body.resolution } : {}),
-      ...(body.photoColor === 'original' ? { photoColor: 'original' } : {}),
+      ...(['original', 'palette'].includes(body.photoColor) ? { photoColor: body.photoColor } : {}),
     }));
     const renderResult = await runNodeScriptStreaming('scripts/render-production.mjs', ['--input', requestFile], projectRoot, {
       label: 'Rendering',
