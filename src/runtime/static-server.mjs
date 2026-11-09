@@ -100,15 +100,15 @@ async function handleGenerateRequest(request, response) {
   }
 
   const action = body.action || 'storyboard';
-  if (!['storyboard', 'compile'].includes(action)) {
-    sendJson(response, 400, { success: false, error: 'Action must be "storyboard" or "compile".' });
+  if (!['storyboard', 'compile', 'rebuild'].includes(action)) {
+    sendJson(response, 400, { success: false, error: 'Action must be "storyboard", "compile" or "rebuild".' });
     return;
   }
   if (action === 'storyboard' && (typeof body.prompt !== 'string' || !body.prompt.trim())) {
     sendJson(response, 400, { success: false, error: 'A valid text prompt is required.' });
     return;
   }
-  if (action === 'compile' && (!body.storyboard || typeof body.storyboard !== 'object' || Array.isArray(body.storyboard))) {
+  if ((action === 'compile' || action === 'rebuild') && (!body.storyboard || typeof body.storyboard !== 'object' || Array.isArray(body.storyboard))) {
     sendJson(response, 400, { success: false, error: 'A valid approved storyboard is required.' });
     return;
   }
@@ -125,6 +125,7 @@ async function handleGenerateRequest(request, response) {
       action,
       prompt: body.prompt,
       storyboard: body.storyboard,
+      shotSpecs: body.shotSpecs,
       context: body.context ?? DEFAULT_SCENE_CONTEXT,
       apiKeys: getGeminiKeyPool(),
     });

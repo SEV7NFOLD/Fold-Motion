@@ -824,3 +824,29 @@ test('a sparse photo list renders the photo the shot asked for', async () => {
   assert.match(renderTimelineFrame(timeline, 30, sparseBrand), /<image /);
   assert.throws(() => renderTimelineFrame({ ...timeline, shots: [{ ...timeline.shots[0], spec: { ...spec, elements: spec.elements.map((element) => (element.type === 'image' ? { ...element, product: 2 } : element)) } }] }, 30, { products }), /no product photo came with the render request/);
 });
+
+test('edits rebuild the shots with no AI call, and the same film re-lays out for another format', async () => {
+  const { rebuildTimeline } = await import('../src/production/production.mjs');
+  const { storyboard } = await createCreativePlan('A calm 8-second film for FOLD Motion', DARK, null);
+  const { timeline } = await compileCreativePlan(storyboard, DARK, null);
+  const edited = JSON.parse(JSON.stringify(storyboard));
+  edited.shots[0].onScreenCopy = 'Built for what comes next';
+  edited.shots[0].durationSeconds = 3.5;
+  const specs = timeline.shots.map((shot) => ({ ...shot.spec, elements: undefined }));
+  specs[0].transitionOut = 'zoom';
+  let called = false;
+  const result = await generateProductionAction({ action: 'rebuild', storyboard: edited, shotSpecs: specs, context: DARK, apiKeys: ['k'], logger: quiet, environment: {}, fetchImpl: async () => { called = true; throw new Error('no AI call expected'); } });
+  assert.equal(called, false, 'no AI call');
+  assert.equal(result.provider, 'rebuild');
+  assert.equal(result.timeline.shots[0].spec.elements.find((element) => element.role === 'title').content, 'Built for what comes next');
+  assert.equal(result.timeline.shots[0].durationSeconds, 3.5);
+  assert.equal(result.timeline.shots[0].spec.transitionOut, 'zoom');
+  assert.equal(result.acceptance.mandatoryContent[0].copy, 'Built for what comes next', 'the acceptance spec matches the edit');
+  const vertical = rebuildTimeline(edited, specs, { ...DARK, width: 720, height: 1280 });
+  assert.deepEqual([vertical.timeline.width, vertical.timeline.height], [720, 1280]);
+  assert.deepEqual(vertical.timeline.shots.map((shot) => shot.spec.recipe), result.timeline.shots.map((shot) => shot.spec.recipe), 'directing choices kept');
+  assert.equal(vertical.acceptance.technicalRequirements.width, 720);
+  assert.throws(() => rebuildTimeline(edited, specs.slice(1), DARK), /one shot direction for each/);
+  specs[1].recipe = 'type-window';
+  assert.notEqual(rebuildTimeline(edited, specs, DARK).timeline.shots[1].spec.recipe, 'type-window', 'the same rules apply to edits (no photos, no type window)');
+});
