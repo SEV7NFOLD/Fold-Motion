@@ -12,6 +12,14 @@ const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value))
 const lerp = (a, b, t) => a + (b - a) * t;
 const span = (t, start, end) => (end <= start ? (t >= end ? 1 : 0) : clamp((t - start) / (end - start)));
 const ease = {
+  // Overshoot then settle (slams), and a bounce (drops).
+  outBack: (x) => 1 + 2.70158 * (x - 1) ** 3 + 1.70158 * (x - 1) ** 2,
+  outBounce: (x) => {
+    if (x < 1 / 2.75) return 7.5625 * x * x;
+    if (x < 2 / 2.75) return 7.5625 * (x -= 1.5 / 2.75) * x + 0.75;
+    if (x < 2.5 / 2.75) return 7.5625 * (x -= 2.25 / 2.75) * x + 0.9375;
+    return 7.5625 * (x -= 2.625 / 2.75) * x + 0.984375;
+  },
   outCubic: (x) => 1 - (1 - x) ** 3,
   inOutCubic: (x) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2),
   outExpo: (x) => (x >= 1 ? 1 : 1 - 2 ** (-10 * x)),
@@ -119,7 +127,56 @@ function windowFill(window, product, box) {
   return `<svg x="${f(box.x)}" y="${f(box.y)}" width="${f(box.width)}" height="${f(box.height)}" viewBox="${view}" preserveAspectRatio="xMidYMid slice"><image href="${href}" width="${product.width}" height="${product.height}"/></svg>`;
 }
 
+/**
+ * Word beat: each word fills the frame in turn, punching in on its beat, then the
+ * words resolve into the line as written.
+ */
+function renderBeat(element, t, ctx) {
+  const words = String(element.shown || element.content).split(/\s+/).filter(Boolean);
+  const { start, interval } = element.reveal;
+  const index = Math.floor((t - start) / interval);
+  if (t < start) return { done: false, out: { defs: [], body: '' } };
+  if (index >= words.length) return { done: true };
+  const word = words[index];
+  const local = (t - start - index * interval) / interval;
+  const size = Math.min(ctx.height * 0.42, (ctx.width * 0.86) / Math.max(0.01, measure(element.font, word, 1, 0)));
+  const p = ease.outBack(clamp(local / 0.4));
+  const scale = 1.55 - 0.55 * p;
+  const cx = ctx.width / 2;
+  const cy = ctx.height / 2;
+  const emphasized = (element.emphasis?.words ?? []).includes(index);
+  const fill = emphasized ? element.emphasis.from : element.fill;
+  return {
+    done: false,
+    out: {
+      defs: [],
+      body: `<g opacity="${f(clamp(local * 6))}" transform="translate(${f(cx)} ${f(cy)}) scale(${scale.toFixed(4)}) translate(${f(-cx)} ${f(-cy)})"><text x="${f(cx)}" y="${f(cy + capHeight(element.font, size) / 2)}" text-anchor="middle" ${fontAttrs(element.font, size)} fill="${fill}">${esc(word)}</text></g>`,
+    },
+  };
+}
+
+/** Decorative echo: a giant outlined word, cropped by the frame, drifting slowly. */
+function renderEcho(element, t, ctx) {
+  const size = element.fontSize;
+  const travel = ctx.width * 0.06;
+  const dx = lerp(travel, -travel, ease.inOutSine(clamp(t / ctx.duration)));
+  const fade = ease.outCubic(span(t, 0, 0.8));
+  const line = element.lines[0];
+  const x0 = lineStart(element, line, size, element.tracking || 0) + dx;
+  return {
+    defs: [],
+    body: `<text x="${f(x0)}" y="${f(element.y)}" ${fontAttrs(element.font, size)} fill="none" stroke="${element.outline}" stroke-width="${f(Math.max(2, size * 0.011))}" opacity="${f((element.opacity ?? 0.34) * fade)}">${esc(line)}</text>`,
+  };
+}
+
 function renderText(element, t, ctx) {
+  if (element.role === 'decor' && element.outline) return renderEcho(element, t, ctx);
+  if (element.reveal?.style === 'beat') {
+    const beat = renderBeat(element, t, ctx);
+    if (!beat.done) return beat.out;
+    const end = element.reveal.start + String(element.shown || element.content).split(/\s+/).filter(Boolean).length * element.reveal.interval;
+    element = { ...element, reveal: { style: 'fade', unit: 'line', start: end, duration: 0.25, stagger: 0 } };
+  }
   if (element.reveal?.style === 'count') {
     // A stat: the number counts up, then the line settles exactly as written.
     const { start, duration } = element.reveal;
@@ -152,7 +209,39 @@ function renderText(element, t, ctx) {
   if (emphasis.size) {
     defs.push(`<linearGradient id="${gradientId}" gradientUnits="userSpaceOnUse" x1="${f(minX)}" y1="0" x2="${f(maxX)}" y2="0"><stop offset="0" stop-color="${element.emphasis.from}"/><stop offset="1" stop-color="${element.emphasis.to}"/></linearGradient>`);
   }
-  const fillFor = (wordIndex) => (emphasis.has(wordIndex) ? `url(#${gradientId})` : element.fill);
+  // Emphasis styles: gradient (default), outline, highlighter swipe, pill.
+  const emphasisStyle = element.emphasisStyle || 'gradient';
+  const fillFor = (wordIndex) => {
+    if (!emphasis.has(wordIndex)) return element.fill;
+    if (emphasisStyle === 'outline') return `none" stroke="${element.emphasis.from}" stroke-width="${f(Math.max(1.4, sizes[0] * 0.022))}`;
+    if (emphasisStyle === 'highlight' || emphasisStyle === 'pill') return element.emphasisInk || element.fill;
+    return `url(#${gradientId})`;
+  };
+  const under = [];
+  if ((emphasisStyle === 'highlight' || emphasisStyle === 'pill') && emphasis.size) {
+    let counted = 0;
+    element.lines.forEach((line, lineIndex) => {
+      const size = sizes[lineIndex];
+      const cap = capHeight(element.font, size);
+      layoutWords(element.font, line, size, tracking, lineStart(element, line, size, tracking)).forEach((word, i) => {
+        const order = counted + i;
+        if (!emphasis.has(order)) return;
+        const begin = (reveal.start || 0) + (reveal.stagger || 0) * order + (reveal.duration || 0.6) + 0.05;
+        const p = ease.outCubic(span(t, begin, begin + 0.45));
+        if (p <= 0) return;
+        const pad = size * 0.12;
+        const box = { x: word.x - pad, y: baselines[lineIndex] - cap - pad * 0.8, width: word.width + pad * 2, height: cap + pad * 1.8 };
+        if (emphasisStyle === 'highlight') {
+          under.push(`<rect x="${f(box.x)}" y="${f(box.y)}" width="${f(box.width * p)}" height="${f(box.height)}" fill="${element.emphasisPaint}"/>`);
+        } else {
+          const cx = box.x + box.width / 2;
+          const cy = box.y + box.height / 2;
+          under.push(`<rect x="${f(box.x)}" y="${f(box.y)}" width="${f(box.width)}" height="${f(box.height)}" rx="${f(box.height / 2)}" fill="${element.emphasisPaint}" opacity="${f(p)}" transform="translate(${f(cx)} ${f(cy)}) scale(${(0.6 + 0.4 * ease.outBack(p)).toFixed(4)}) translate(${f(-cx)} ${f(-cy)})"/>`);
+        }
+      });
+      counted += line.split(/\s+/).filter(Boolean).length;
+    });
+  }
 
   let wordIndex = 0;
   let letterIndex = 0;
@@ -188,6 +277,46 @@ function renderText(element, t, ctx) {
           out.push(text);
         }
       });
+    } else if (reveal.style === 'slam') {
+      // Each word punches in at three times its size and snaps into place.
+      words.forEach((word, i) => {
+        const order = wordIndex + i;
+        const begin = reveal.start + order * reveal.stagger;
+        const p = span(t, begin, begin + reveal.duration);
+        if (p <= 0) return;
+        const scale = 3 - 2 * ease.outBack(p);
+        const cx = word.x + word.width / 2;
+        const cy = baseline - cap / 2;
+        out.push(`<g opacity="${f(clamp(p * 3))}" transform="translate(${f(cx)} ${f(cy)}) scale(${scale.toFixed(4)}) translate(${f(-cx)} ${f(-cy)})"><text x="${f(word.x)}" y="${f(baseline)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" fill="${fillFor(order)}">${esc(word.word)}</text></g>`);
+      });
+    } else if (reveal.style === 'drop') {
+      // Letters fall into place one by one, with weight and a small bounce.
+      let localWord = 0;
+      for (const { character, x } of layoutCharacters(element.font, line, size, tracking, x0)) {
+        if (character === ' ') { localWord += 1; continue; }
+        const begin = reveal.start + letterIndex * reveal.stagger;
+        letterIndex += 1;
+        const p = span(t, begin, begin + reveal.duration);
+        if (p <= 0) continue;
+        const y = baseline - (1 - ease.outBounce(p)) * size * 0.9;
+        out.push(`<text x="${f(x)}" y="${f(y)}" ${fontAttrs(element.font, size)} fill="${fillFor(wordIndex + localWord)}" opacity="${f(clamp(p * 4))}">${esc(character)}</text>`);
+      }
+    } else if (reveal.style === 'split') {
+      // The line arrives as top and bottom halves from opposite sides.
+      const p = ease.outExpo(span(t, reveal.start + lineIndex * reveal.stagger, reveal.start + lineIndex * reveal.stagger + reveal.duration));
+      if (p > 0) {
+        const offset = (1 - p) * ctx.width * 0.28 * (lineIndex % 2 ? -1 : 1);
+        const lineText = (dx) => words.map((word, i) => `<text x="${f(word.x + dx)}" y="${f(baseline)}" ${fontAttrs(element.font, size)} letter-spacing="${spacing}" fill="${fillFor(wordIndex + i)}">${esc(word.word)}</text>`).join('');
+        if (p >= 1) out.push(lineText(0));
+        else {
+          const mid = baseline - cap / 2;
+          const topId = `${element.id}-st${lineIndex}`;
+          const bottomId = `${element.id}-sb${lineIndex}`;
+          defs.push(`<clipPath id="${topId}"><rect x="0" y="${f(baseline - cap - size * 0.35)}" width="${ctx.width}" height="${f(mid - (baseline - cap - size * 0.35))}"/></clipPath>`);
+          defs.push(`<clipPath id="${bottomId}"><rect x="0" y="${f(mid)}" width="${ctx.width}" height="${f(baseline + size * 0.35 - mid)}"/></clipPath>`);
+          out.push(`<g clip-path="url(#${topId})" opacity="${f(clamp(p * 2))}">${lineText(offset)}</g><g clip-path="url(#${bottomId})" opacity="${f(clamp(p * 2))}">${lineText(-offset)}</g>`);
+        }
+      }
     } else if (reveal.style === 'window') {
       // Each letter is a window onto the graded product photo, landing in turn.
       const product = ctx.brand?.products?.[element.window.product - 1];
@@ -263,7 +392,7 @@ function renderText(element, t, ctx) {
       });
     }
   }
-  return { defs, body: out.join('') };
+  return { defs, body: under.join('') + out.join('') };
 }
 
 function renderLine(element, t) {

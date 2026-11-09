@@ -8,9 +8,13 @@
  * timing; the renderer (src/render/frame-v2.mjs) animates them deterministically.
  */
 import { capHeight, fitBlock, measure, registerBrandFont } from '../render/typography.mjs';
-import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
+import { contrastRatio, ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
-export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window', 'stat', 'quote', 'product-grid', 'split']);
+export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window', 'stat', 'quote', 'product-grid', 'split', 'word-beat']);
+
+/** How a headline moves in, and how its emphasized words are treated. */
+export const TEXT_MOTIONS = Object.freeze(['rise', 'slam', 'drop', 'split']);
+export const EMPHASIS_STYLES = Object.freeze(['gradient', 'outline', 'highlight', 'pill']);
 
 /** Recipes that put an uploaded product photo on screen. */
 export const PRODUCT_RECIPES = Object.freeze(['product-hero', 'type-window', 'product-grid', 'split']);
@@ -36,6 +40,7 @@ export const RECIPE_DESCRIPTIONS = Object.freeze({
   quote: 'a testimonial or striking quote: a large quotation mark, the line in a calm weight word by word, and the kicker beneath as the attribution ("Vogue", "A customer")',
   'product-grid': 'two to four uploaded product photos in a grid, each emerging in turn, with the line beneath; "product" is the first photo; only with two or more photos',
   split: 'a split screen: an uploaded product photo fills one half edge to edge, the line sits on the other half beside an accent divider; only when product photos are uploaded',
+  'word-beat': 'kinetic poster: each word of a two- to five-word line fills the frame in turn, punching in on the beat, then the words resolve into the line',
 });
 
 export const TRANSITION_DESCRIPTIONS = Object.freeze({
@@ -387,6 +392,24 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, maxWidth: W * 0.88, palette, start: 1.1 * k }));
       break;
     }
+    case 'word-beat': {
+      // Kinetic poster: each word fills the frame in turn, then the line resolves.
+      const shown = display(copy, textCase === 'as-written' && spec.textCase === undefined ? 'upper' : textCase);
+      const count = shown.split(/\s+/).filter(Boolean).length;
+      const unit = Math.min(W, H);
+      const block = fitBlock(DISPLAY, shown, { maxWidth: W * 0.8, maxSize: unit * 0.22, minSize: unit * 0.06, maxLines: 3, tracking: 0.01 });
+      const lineHeight = block.size * 1.0;
+      const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, DISPLAY);
+      const interval = Math.min(0.5, Math.max(0.26, (spec.durationInSeconds * 0.55) / Math.max(1, count)));
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: DISPLAY, size: block.size, tracking: 0.01,
+        lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+        reveal: { style: 'beat', start: 0.05 * k, interval },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: y + (block.lines.length - 1) * lineHeight + unit * 0.05, width: W * 0.1, accent: palette.accent, start: 0.05 * k + count * interval, duration: 0.4 }));
+      break;
+    }
     case 'stat': {
       // The number counts up; the words around it sit beneath as the label.
       const match = STAT_NUMBER.exec(copy);
@@ -524,18 +547,27 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     case 'lockup':
     default: {
       const shown = display(copy, textCase);
-      const block = fitBlock('bold', shown, { maxWidth: W * 0.72, maxSize: H * 0.09, minSize: H * 0.045, maxLines: 2, tracking: -0.015 });
-      const lineHeight = block.size * 1.18;
+      // The payoff: a campaign line of up to six words is the biggest moment in the
+      // film, in the display face, with words slamming in; longer lines stay calm.
+      const payoff = shown.split(/\s+/).length <= 6;
+      const titleFont = payoff ? DISPLAY : 'bold';
+      const unit = Math.min(W, H);
+      const block = payoff
+        ? fitBlock(DISPLAY, shown, { maxWidth: W * (W < H ? 0.84 : 0.8), maxSize: unit * 0.2, minSize: unit * 0.06, maxLines: 2, tracking: 0.01 })
+        : fitBlock('bold', shown, { maxWidth: W * 0.72, maxSize: H * 0.09, minSize: H * 0.045, maxLines: 2, tracking: -0.015 });
+      const lineHeight = block.size * (payoff ? 1.02 : 1.18);
       if (context.logo) {
         elements.push(logoElement({ id: `shot-${n}-logo`, meta: context.logo, cx: W / 2, cy: H * 0.3, maxWidth: W * 0.3, maxHeight: H * 0.16, start: 0.05 * k, duration: 0.9 * k, glintAt: 1.5 * k }));
       }
-      const y = blockBaseline(context.logo ? H * 0.53 : H * 0.43, block.size, block.lines.length, lineHeight, 'bold');
+      const y = blockBaseline(context.logo ? H * 0.53 : H * 0.43, block.size, block.lines.length, lineHeight, titleFont);
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
       const letters = [...shown].filter((character) => character !== ' ').length;
       elements.push(textElement({
-        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'bold', size: block.size, tracking: -0.015,
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: titleFont, size: block.size, tracking: payoff ? 0.01 : -0.015,
         lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
-        reveal: { style: 'cascade', unit: 'letter', start: 0.2 * k, duration: 0.55 * k, stagger: Math.min(0.03, (0.8 * k) / Math.max(1, letters)) },
+        reveal: payoff
+          ? { style: 'slam', start: 0.3 * k, duration: 0.5, stagger: Math.min(0.18, (0.9 * k) / Math.max(1, shown.split(/\s+/).length)) }
+          : { style: 'cascade', unit: 'letter', start: 0.2 * k, duration: 0.55 * k, stagger: Math.min(0.03, (0.8 * k) / Math.max(1, letters)) },
         sweep: spec.sweep === false ? undefined : { start: 1.6 * k, duration: 0.9 },
         emphasis: emphasisFor(shown),
       }));
@@ -657,8 +689,13 @@ export function fallbackDirection(seed, index, count, copy, productCount = 0) {
   // Offline films still show the newer effects: one headline effect on the second shot.
   const seedValue = [...String(seed)].reduce((sum, character) => sum + character.codePointAt(0), 0);
   const typeEffect = count >= 4 && index === 1 && !['product-hero', 'type-window'].includes(recipe) ? TYPE_EFFECTS[seedValue % TYPE_EFFECTS.length] : undefined;
+  // Offline films vary their text motion too, with an echo on the opening and end card.
+  const textRecipes = ['title-reveal', 'kicker-title', 'statement', 'type-stack', 'product-hero', 'split', 'product-grid'];
+  const textMotion = textRecipes.includes(recipe) && !typeEffect ? TEXT_MOTIONS[(seedValue + index) % TEXT_MOTIONS.length] : undefined;
   return {
     ...(typeEffect ? { typeEffect } : {}),
+    ...(textMotion ? { textMotion } : {}),
+    echo: index === 0 || index === count - 1,
     ...(productCount ? { product: (index % productCount) + 1 } : {}),
     recipe,
     transitionOut: index === count - 1 ? 'cut' : direction.transitions[index % direction.transitions.length],
@@ -688,6 +725,10 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
   if (PRODUCT_RECIPES.includes(recipe) && !productCount) {
     changes.push(`${recipe} needs an uploaded product photo; used "${fallback.recipe === recipe ? 'title-reveal' : fallback.recipe}"`);
     recipe = PRODUCT_RECIPES.includes(fallback.recipe) ? 'title-reveal' : fallback.recipe;
+  }
+  if (recipe === 'word-beat' && (words.length < 2 || words.length > 5)) {
+    changes.push('word-beat needs a line of two to five words; used "title-reveal"');
+    recipe = 'title-reveal';
   }
   if (recipe === 'stat' && !STAT_NUMBER.test(String(copy))) {
     changes.push('stat needs a number in the line; used "title-reveal"');
@@ -762,6 +803,9 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
       recipe,
       ...(product ? { product } : {}),
       ...(TYPE_EFFECTS.includes(source.typeEffect) ? { typeEffect: source.typeEffect } : {}),
+      ...(TEXT_MOTIONS.includes(source.textMotion) ? { textMotion: source.textMotion } : {}),
+      ...(EMPHASIS_STYLES.includes(source.emphasisStyle) ? { emphasisStyle: source.emphasisStyle } : {}),
+      ...(typeof source.echo === 'boolean' ? { echo: source.echo } : {}),
       ...(typeof source.reason === 'string' && source.reason.trim() ? { reason: source.reason.trim().replace(/\s+/g, ' ').slice(0, 160) } : {}),
       ...(textCase ? { textCase } : {}),
       kicker,
@@ -783,6 +827,7 @@ export function limitFolds(specs, labels = []) {
   let folds = 0;
   let zooms = 0;
   let effects = 0;
+  let echoes = 0;
   specs.forEach((spec, index) => {
     if (spec?.version !== 2) return;
     const label = labels[index] || `shot ${index + 1}`;
@@ -798,12 +843,70 @@ export function limitFolds(specs, labels = []) {
       spec.transitionOut = 'push';
       changes.push(`${label}: one zoom through a letter per film; this one became a push.`);
     }
+    // No motion twice in a row, and at most two echoes per film.
+    if (spec.textMotion && spec.textMotion !== 'rise' && specs[index - 1]?.textMotion === spec.textMotion) {
+      changes.push(`${label}: the same text motion twice in a row; this one rises instead.`);
+      spec.textMotion = 'rise';
+    }
+    if (spec.echo && (echoes += 1) > 2) delete spec.echo;
     if (spec.typeEffect && (effects += 1) > 2) {
       changes.push(`${label}: at most two headline effects per film; dropped "${spec.typeEffect}".`);
       delete spec.typeEffect;
     }
   });
   return changes;
+}
+
+/**
+ * Applies a shot's text motion (slam, drop, split), emphasis style (outline,
+ * highlighter, pill) and decorative echo to its laid-out elements.
+ */
+export function applyTextMotion(elements, spec, context = {}) {
+  const title = elements.find((element) => element.type === 'text' && element.role === 'title');
+  if (!title) return elements;
+  const k = Math.min(1.6, Math.max(1, (spec.durationInSeconds || 2.5) / 2.5));
+  const shown = String(title.shown || title.content);
+  const wordCount = shown.split(/\s+/).filter(Boolean).length;
+  const ownMotion = ['type-window', 'logo-reveal', 'stat', 'word-beat', 'quote'].includes(spec.recipe) || TYPE_EFFECTS.includes(spec.typeEffect);
+  if (!ownMotion && TEXT_MOTIONS.includes(spec.textMotion) && spec.textMotion !== 'rise') {
+    const letters = shown.replace(/\s/g, '').length;
+    title.reveal = spec.textMotion === 'slam'
+      ? { style: 'slam', start: 0.15 * k, duration: 0.5, stagger: Math.min(0.16, (0.9 * k) / Math.max(1, wordCount)) }
+      : spec.textMotion === 'drop'
+        ? { style: 'drop', start: 0.1 * k, duration: 0.55, stagger: Math.min(0.06, (0.9 * k) / Math.max(1, letters)) }
+        : { style: 'split', start: 0.1 * k, duration: 0.7 * k, stagger: 0.1 * k };
+  }
+  if (EMPHASIS_STYLES.includes(spec.emphasisStyle) && spec.emphasisStyle !== 'gradient' && title.emphasis?.words?.length && context.accentColor) {
+    // Highlighters and pills sit behind the word: its ink must read on the accent.
+    const paint = context.accentColor;
+    const ink = readableTextColor(paint);
+    if (spec.emphasisStyle === 'outline' || contrastRatio(ink, paint) >= MIN_TEXT_CONTRAST) {
+      title.emphasisStyle = spec.emphasisStyle;
+      title.emphasisPaint = paint;
+      title.emphasisInk = ink;
+    }
+  }
+  if (spec.echo && context.width && context.height && context.primaryColor && context.accentColor) {
+    const words = shown.split(/\s+/).filter(Boolean);
+    const chosen = title.emphasis?.words?.length ? words[title.emphasis.words[0]] : words.reduce((best, word) => (word.length > best.length ? word : best), '');
+    const key = String(chosen || '').replace(/[^\p{L}\p{N}&]/gu, '').toUpperCase();
+    if (key.length >= 2) {
+      // Wider than the frame on purpose: the echo is cropped by both edges.
+      const size = Math.min(context.height * 0.62, (context.width * 1.3) / Math.max(0.01, measure(title.font, key, 1)));
+      const echo = textElement({
+        id: `${title.id}-echo`, role: 'decor', content: key, shown: key, font: title.font, size, tracking: 0,
+        lines: [key], lineHeight: size, x: context.width / 2, y: context.height * 0.5 + capHeight(title.font, size) / 2, fill: 'none',
+        reveal: { style: 'fade', unit: 'line', start: 0, duration: 0.8, stagger: 0 },
+      });
+      // Present but quiet: felt behind the line, never competing with it.
+      echo.outline = mix(context.accentColor, '#FFFFFF', 0.15);
+      echo.opacity = 0.34;
+      // Above every full-frame background (a later one would paint over it).
+      const background = elements.findLastIndex((element) => element.type === 'rect' && element.x === 0 && element.y === 0 && element.width >= context.width && element.height >= context.height);
+      elements.splice(background + 1, 0, echo);
+    }
+  }
+  return elements;
 }
 
 /** Applies a shot's headline effect (decode or outline) to its title. */

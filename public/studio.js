@@ -94,7 +94,7 @@ const MOTION_LABELS = {
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
-const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window', stat: 'Stat', quote: 'Quote', 'product-grid': 'Product grid', split: 'Split screen' };
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window', stat: 'Stat', quote: 'Quote', 'product-grid': 'Product grid', split: 'Split screen', 'word-beat': 'Word beat' };
 const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold', zoom: 'Zoom through a letter' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
@@ -922,11 +922,13 @@ function shotEditor(record) {
     const syncPhoto = () => { photo.hidden = !PHOTO_RECIPES.includes(recipe.value); };
     recipe.addEventListener('change', syncPhoto);
     syncPhoto();
+    const motion = h('select', { class: 'edit-motion', 'aria-label': `Shot ${index + 1} text motion` }, ...[['rise', 'Text: Rise'], ['slam', 'Text: Slam'], ['drop', 'Text: Drop'], ['split', 'Text: Split']].map(([value, label]) => h('option', { value, text: label, ...((spec.textMotion || 'rise') === value ? { selected: true } : {}) })));
+    const emphasisStyle = h('select', { class: 'edit-emphasis', 'aria-label': `Shot ${index + 1} emphasis style` }, ...[['gradient', 'Emphasis: Gradient'], ['outline', 'Emphasis: Outline'], ['highlight', 'Emphasis: Highlighter'], ['pill', 'Emphasis: Pill']].map(([value, label]) => h('option', { value, text: label, ...((spec.emphasisStyle || 'gradient') === value ? { selected: true } : {}) })));
     const last = index === timeline.shots.length - 1;
     const transition = last ? null : h('select', { class: 'edit-transition', 'aria-label': `Shot ${index + 1} transition` }, ...Object.entries(TRANSITION_LABELS).map(([value, label]) => h('option', { value, text: `Then: ${label}`, ...((spec.transitionOut || 'cut') === value ? { selected: true } : {}) })));
-    return { line, seconds, recipe, photo, transition, node: h('div', { class: 'edit-row' },
+    return { line, seconds, recipe, photo, transition, motion, emphasisStyle, node: h('div', { class: 'edit-row' },
       h('span', { class: 'edit-index', text: String(index + 1) }),
-      h('div', { class: 'edit-fields' }, line, h('div', { class: 'edit-controls' }, seconds, h('span', { class: 'edit-unit', text: 's' }), recipe, photo, transition)),
+      h('div', { class: 'edit-fields' }, line, h('div', { class: 'edit-controls' }, seconds, h('span', { class: 'edit-unit', text: 's' }), recipe, photo, motion, emphasisStyle, transition)),
     ) };
   });
   const apply = h('button', { class: 'pill pill-go', type: 'button', text: 'Apply changes' });
@@ -946,6 +948,8 @@ function shotEditor(record) {
       specs[index].recipe = row.recipe.value;
       if (!row.photo.hidden) specs[index].product = Number(row.photo.value);
       if (row.transition) specs[index].transitionOut = row.transition.value;
+      specs[index].textMotion = row.motion.value;
+      specs[index].emphasisStyle = row.emphasisStyle.value;
     }
     editShots(record, edited, specs);
   });

@@ -29,6 +29,7 @@ and this file disagree about current behavior, this file and the code win.
 | `quote` | A testimonial: a large quotation mark, the line in Montserrat Medium word by word, and the kicker beneath as the attribution |
 | `product-grid` | Two to four product photos in a grid (a row in landscape, two by two in vertical and square), each emerging in turn, with the line beneath. Only with two or more photos |
 | `split` | A split screen: a product photo fills one half edge to edge (top half in vertical), the line sits on the other half beside an accent divider. Only with product photos |
+| `word-beat` | Kinetic poster: each word of a two- to five-word line fills the frame in turn, punching in on its beat (FOLD Score hits every word), then the words resolve into the line |
 | `logo-reveal` | The uploaded logo as the hero: an SVG strokes itself on along each shape's measured length and fills with its own colors, a PNG wipes in; a glint crosses its exact silhouette; the line sits small beneath. Only with an uploaded logo (`normalizeDirection` swaps it out otherwise) |
 
 Transitions between shots: `cut`, `wipe` (accent panel with a lighter stripe),
@@ -86,6 +87,20 @@ renders (`assets.font`, checked by `resolveFont`) so the rasterizer draws it.
 WOFF/WOFF2 and font collections are refused with a clear message. Signed in,
 the font is kept in the brand kit row (`supabase/migrations/20261110000000_brand_font.sql`
 adds the column).
+
+### Kinetic type and text color
+
+Every direction can set `textMotion` (`rise`, `slam`: words punch in at three
+times their size and snap into place with overshoot, `drop`: letters fall in with
+a bounce, `split`: each line arrives as top and bottom halves from opposite
+sides), `emphasisStyle` for the emphasized word (`gradient`, `outline`,
+`highlight`: a marker swipe behind it, `pill`: a color capsule; highlighter and
+pill only when the ink reads on the accent at 4.5:1) and `echo`: a giant outlined
+copy of the key word behind the shot, deliberately cropped by the frame and
+drifting slowly (decoration, so exempt from Fit and contrast). `applyTextMotion`
+applies them after a recipe lays out. No motion repeats on consecutive shots,
+and a film has at most two echoes. End cards with lines of up to six words are
+the payoff: the display face at up to a fifth of the frame, slamming in.
 
 ### Headline effects and film looks
 

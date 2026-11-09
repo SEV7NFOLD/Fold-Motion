@@ -83,10 +83,13 @@ export function extractCues(timeline) {
         if (reveal.style === 'window') {
           const letters = [...(element.shown || element.content || '')].filter((c) => c !== ' ').length;
           for (let i = 0; i < letters; i += 1) add(start + reveal.start + i * reveal.stagger + reveal.duration * 0.25, 'letter', { index: i });
-        } else if (reveal.style === 'mask-rise' && reveal.unit === 'word') {
+        } else if (reveal.style === 'beat') {
+          const words = String(element.shown || element.content || '').split(/\s+/).filter(Boolean).length;
+          for (let i = 0; i < words; i += 1) add(start + reveal.start + i * reveal.interval, 'letter', { index: i });
+        } else if ((reveal.style === 'mask-rise' && reveal.unit === 'word') || reveal.style === 'slam') {
           const words = String(element.shown || element.content || '').split(/\s+/).filter(Boolean).length;
           for (let i = 0; i < Math.min(words, 6); i += 1) add(start + reveal.start + i * reveal.stagger + reveal.duration * 0.2, 'word', { index: i });
-        } else if (['cascade', 'mask-rise', 'fade', 'slide', 'count', 'decode', 'outline'].includes(reveal.style)) {
+        } else if (['cascade', 'mask-rise', 'fade', 'slide', 'count', 'decode', 'outline', 'drop', 'split'].includes(reveal.style)) {
           add(start + reveal.start, 'reveal');
         }
         if (element.sweep) add(start + element.sweep.start, 'sweep');
