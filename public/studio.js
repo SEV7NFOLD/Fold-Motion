@@ -1627,6 +1627,7 @@ function qaChecks(report) {
     ['Contrast', creative.contrast, (c) => `${number(c.minimumRatio, 1)}:1, needs ${c.requiredRatio}:1`],
     ['Legibility', creative.legibility, (c) => `Smallest text ${c.minimumFontSize}px`],
     ['Brand colors', creative.brandFidelity, (c) => `${String(c.primaryColor).toUpperCase()}, ${String(c.accentColor).toUpperCase()}`],
+    ['Fit', creative.frameFit, (c) => (c.pass ? 'All text inside the frame' : `${c.failures.length} line${c.failures.length === 1 ? '' : 's'} outside the frame: “${c.failures[0]?.line}”`)],
     ['Loudness', production.audio?.loudness, (c) => `${number(c.actual, 1)} LUFS, target ${c.target}`],
     ['Peaks', production.audio?.truePeak, (c) => `${number(c.actual, 1)} dB, limit ${c.limit}`],
     ['Sync', production.audio?.sync, (c) => `${c.onTime} of ${c.checked} hits within ${c.tolerance}`],

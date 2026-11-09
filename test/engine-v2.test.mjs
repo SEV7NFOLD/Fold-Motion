@@ -759,3 +759,26 @@ test('Gemini sees the product photos as images, picks one per shot, and gives a 
   assert.equal(hero.elements.find((element) => element.type === 'image').product, 2, 'the chosen photo');
   assert.equal(hero.reason, 'Photo 2 shows the bottle side-on, the clearest silhouette.');
 });
+
+test('every line fits the frame in every format, and QA fails a line that spills over', async () => {
+  const { measureFrameFit } = await import('../src/production/production.mjs');
+  const lines = ['Written in leather, every inch of it', 'Every detail, deliberate', 'Inscribed', 'Obsidian'];
+  for (const [width, height] of [[1280, 720], [720, 1280], [960, 960]]) {
+    const context = { ...DARK, width, height, logo: { kind: 'svg', width: 412, height: 512 } };
+    for (const recipe of ['kicker-title', 'title-reveal', 'statement', 'type-stack', 'lockup']) {
+      const spec = { version: 2, recipe, kicker: 'Embossed leather, gold horsebit, hand finished', kickerExact: recipe === 'lockup', durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+      for (const copy of lines) {
+        spec.elements = expandRecipe(spec, { copy, context, shotIndex: 1 });
+        const timeline = { width, height, fps: 24, totalFrames: 72, shots: [{ shotId: 's', startFrame: 0, endFrame: 71, durationFrames: 72, palette: {}, spec }] };
+        const fit = measureFrameFit(timeline);
+        assert.equal(fit.pass, true, `${width}x${height} ${recipe} "${copy}": ${JSON.stringify(fit.failures)}`);
+      }
+    }
+  }
+  const spill = { width: 720, height: 1280, fps: 24, totalFrames: 1, shots: [{ shotId: 's', startFrame: 0, endFrame: 0, durationFrames: 1, spec: { elements: [
+    { type: 'text', id: 'wide', font: 'display', fontSize: 51.2, tracking: 0.04, lines: ['Embossed leather. Gold horsebit.'], x: 360, y: 800, anchor: 'middle' },
+  ] } }] };
+  assert.equal(measureFrameFit(spill).pass, false, 'the old end card line is caught');
+  spill.shots[0].spec.elements[0].fontSize = undefined;
+  assert.match(JSON.stringify(measureFrameFit(spill)), /could not be measured/, 'an unmeasurable line fails instead of passing');
+});
