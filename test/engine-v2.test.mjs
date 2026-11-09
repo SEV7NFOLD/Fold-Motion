@@ -1055,3 +1055,62 @@ test('kinetic type: slam, drop, split, word beat, emphasis styles, echo and the 
   assert.deepEqual([kept.textMotion, kept.emphasisStyle, kept.echo], ['split', 'pill', true]);
   assert.equal(normalizeDirection({ recipe: 'word-beat', transitionOut: 'cut' }, { copy: 'One', index: 1, count: 3, seed: 's' }).direction.recipe, 'title-reveal');
 });
+
+test('style kits: chosen from the brief, enforced in code, overridable, and a gallery of five briefs complies', async () => {
+  const { chooseStyle, enforceStyleKit, STYLE_KITS } = await import('../src/production/style-kits.mjs');
+  const { rebuildTimeline, measureFrameFit } = await import('../src/production/production.mjs');
+  const { limitFolds } = await import('../src/production/recipes.mjs');
+  assert.equal(chooseStyle('A luxurious, refined fragrance film'), 'editorial-luxury');
+  assert.equal(chooseStyle('A playful, bright snack drop for Gen Z'), 'playful-dtc');
+  assert.equal(chooseStyle('A precise film for a smart device app'), 'tech-ui');
+  assert.equal(chooseStyle('Streetwear sneaker drop, loud and bold'), 'bold-street');
+  assert.equal(chooseStyle('Hand-poured candles from a small batch workshop'), 'warm-craft');
+  assert.equal(chooseStyle('A film', 'energetic'), 'bold-street', 'the music mood breaks ties');
+  // Enforcement: the kit wins over the model's choices.
+  const specs = [
+    { version: 2, textMotion: 'drop', emphasisStyle: 'pill', echo: true, graphics: [{ kind: 'emoji', name: 'fire' }, { kind: 'icon', name: 'leaf' }] },
+    { version: 2, textMotion: 'slam', graphics: [{ kind: 'badge', name: 'seal', text: 'NEW' }, { kind: 'sign', name: 'sparkle' }] },
+  ];
+  const changes = enforceStyleKit(specs, 'editorial-luxury');
+  assert.equal(specs[0].textMotion, 'rise', 'luxury has no drops');
+  assert.equal(specs[0].emphasisStyle, 'gradient', 'or pills');
+  assert.deepEqual(specs[0].graphics.map((g) => g.kind), ['icon'], 'no emojis in luxury');
+  assert.deepEqual(specs[1].graphics.map((g) => g.kind), ['sign'], 'no badges either');
+  assert.ok(changes.length >= 4);
+  const warm = [{ version: 2, textMotion: 'slam', typeEffect: 'decode' }];
+  enforceStyleKit(warm, 'warm-craft');
+  assert.deepEqual([warm[0].textMotion, warm[0].typeEffect], ['rise', undefined]);
+  const budget = Array.from({ length: 5 }, () => ({ version: 2, graphics: [{ kind: 'icon', name: 'leaf' }] }));
+  enforceStyleKit(budget, 'warm-craft');
+  assert.equal(budget.reduce((sum, spec) => sum + spec.graphics.length, 0), STYLE_KITS['warm-craft'].maxGraphics);
+  // Variety: no shot type three times in a row.
+  const same = [1, 2, 3].map(() => ({ version: 2, recipe: 'statement' }));
+  limitFolds(same);
+  assert.deepEqual(same.map((spec) => spec.recipe), ['statement', 'statement', 'title-reveal']);
+  // A gallery of five briefs, one per kit: chosen right, compliant, inside the frame.
+  const gallery = {
+    'editorial-luxury': 'A refined, luxurious 10-second film for a jewelled fragrance',
+    'playful-dtc': 'A playful, bright 10-second film for a juicy snack drop',
+    'tech-ui': 'A precise 10-second film for a smart home app',
+    'bold-street': 'A loud 10-second streetwear sneaker drop',
+    'warm-craft': 'A cosy 10-second film for hand-poured candles',
+  };
+  for (const [style, brief] of Object.entries(gallery)) {
+    const { storyboard } = await createCreativePlan(brief, DARK, null);
+    assert.equal(storyboard.style, style, brief);
+    const { timeline } = await compileCreativePlan(storyboard, DARK, null);
+    assert.equal(timeline.style, style);
+    const kit = STYLE_KITS[style];
+    for (const shot of timeline.shots) {
+      const spec = shot.spec;
+      if (spec.textMotion) assert.ok(kit.textMotions.includes(spec.textMotion), `${style}: ${spec.textMotion}`);
+      if (spec.echo) assert.ok(kit.echo, `${style}: echo`);
+      if (spec.typeEffect) assert.ok(kit.typeEffects.includes(spec.typeEffect), `${style}: ${spec.typeEffect}`);
+    }
+    assert.equal(measureFrameFit(timeline).pass, true, style);
+    // The studio's Style picker: the same film rebuilt under another kit.
+    const other = style === 'playful-dtc' ? 'editorial-luxury' : 'playful-dtc';
+    const rebuilt = rebuildTimeline(storyboard, timeline.shots.map((shot) => ({ ...shot.spec, elements: undefined })), { ...DARK, style: other });
+    assert.equal(rebuilt.timeline.style, other);
+  }
+});

@@ -886,7 +886,7 @@ function withBrand(context, record = activeRecord(), format = formatOf(record)) 
     return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}), ...(productLooks.get(product.id) || {}) };
   }) : undefined;
   const { width, height } = FORMATS[format];
-  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics };
+  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics, ...(record?.style && record.style !== 'auto' ? { style: record.style } : {}) };
 }
 
 /** Rebuilds the shots in a new format before rendering (same storyboard). */
@@ -1691,7 +1691,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), sizePicker(record), musicPicker(record), lookPicker(record), ...photoColorPicker(record), changesButton(), shotEditor(record));
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), stylePicker(record), sizePicker(record), musicPicker(record), lookPicker(record), ...photoColorPicker(record), changesButton(), shotEditor(record));
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1745,6 +1745,7 @@ function storyboardView(message) {
         h('h2', { class: 'block-title', text: storyboard.title }),
         h('span', { class: 'block-badge', text: `${shots.length} shots` })),
       h('p', { class: 'block-lede', text: storyboard.narrativeConcept }),
+      STYLE_LABELS[storyboard.style] ? h('p', { class: 'music-line', text: `Style: ${STYLE_LABELS[storyboard.style]}${storyboard.styleReason ? `. ${storyboard.styleReason}` : ''}` }) : null,
       storyboard.missingPhotos?.length ? h('p', { class: 'missing-photos', role: 'note', text: `No photo shows ${storyboard.missingPhotos.join(', ')}. Add ${storyboard.missingPhotos.length === 1 ? 'a photo of it' : 'photos of them'} to the brand kit before building, or ask for changes.` }) : null,
       MOOD_LABELS[storyboard.musicMood] ? h('p', { class: 'music-line', text: `Music: ${MOOD_LABELS[storyboard.musicMood]}${storyboard.musicReason ? `. ${storyboard.musicReason}` : ''}${LOOK_LABELS[storyboard.grade] ? ` Look: ${LOOK_LABELS[storyboard.grade]}.` : ''}` }) : null,
       ...filmstrip(shots.map((shot) => ({
@@ -1821,7 +1822,7 @@ function directorNotes(timeline) {
   }).filter((note) => note.reason);
   if (notes.length === 0) return null;
   return h('details', { class: 'director-notes' },
-    h('summary', { text: `Director’s notes (${notes.length})` }),
+    h('summary', { text: `Director’s notes (${notes.length})${STYLE_LABELS[timeline.style] ? ` · ${STYLE_LABELS[timeline.style]}` : ''}` }),
     h('ol', {}, ...notes.map((note) => h('li', {},
       h('span', { class: 'director-shot', text: `Shot ${note.index + 1} · ${note.recipe}${note.photo ? ` · photo ${note.photo}` : ''}` }),
       h('span', { class: 'director-reason', text: note.reason })))));
@@ -1831,6 +1832,7 @@ function directorNotes(timeline) {
 // ------------------------------------------------------------------ music (FOLD Score)
 
 const MOOD_LABELS = { premium: 'Premium calm', energetic: 'Energetic', editorial: 'Editorial', warm: 'Warm' };
+const STYLE_LABELS = { 'editorial-luxury': 'Editorial luxury', 'playful-dtc': 'Playful DTC', 'tech-ui': 'Tech & UI', 'bold-street': 'Bold street', 'warm-craft': 'Warm craft' };
 const MUSIC_CHOICES = [
   ['auto', 'Music: Auto'],
   ['premium', 'Music: Premium calm'],
@@ -1868,6 +1870,20 @@ function lookPicker(record) {
 }
 
 const SIZES = { hd: 'HD', fhd: 'Full HD', '2k': '2K' };
+
+/** The film's visual language; changing it rebuilds the shots under the new kit (no AI call). */
+function stylePicker(record) {
+  const directed = STYLE_LABELS[record.project?.storyboard?.style];
+  const choices = [['auto', directed ? `Style: Auto (${directed})` : 'Style: Auto'], ...Object.entries(STYLE_LABELS).map(([value, label]) => [value, `Style: ${label}`])];
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Style kit', title: 'Each style kit has its own text motions, emphasis styles and graphics.' },
+    ...choices.map(([value, label]) => h('option', { value, text: label, ...((record.style || 'auto') === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => {
+    record.style = select.value;
+    persist();
+    if (record.project.state === 'RENDERING') rebuildShots(record);
+  });
+  return select;
+}
 
 /** Output resolution: the layout is the same, only the frames are drawn larger. */
 function sizePicker(record) {

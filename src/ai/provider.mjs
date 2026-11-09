@@ -1,3 +1,4 @@
+import { STYLE_KITS } from '../production/style-kits.mjs';
 import { EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
 import { MOTION_OPTIONS } from '../production/motion.mjs';
@@ -134,6 +135,7 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    ...(STYLE_KITS[context.style] ? [`- This film\'s style kit is ${STYLE_KITS[context.style].label} (${STYLE_KITS[context.style].feel}). Use only its vocabulary: text motions ${STYLE_KITS[context.style].textMotions.join(', ')}; emphasis ${STYLE_KITS[context.style].emphasisStyles.join(', ')}; graphics ${STYLE_KITS[context.style].graphics.join(', ')} (${STYLE_KITS[context.style].maxGraphics} per film at most); ${STYLE_KITS[context.style].echo ? 'echoes welcome' : 'no echoes'}; headline effects ${STYLE_KITS[context.style].typeEffects.join(', ') || 'none'}.`] : []),
     '- Typography is FOLD Motion\'s power: vary it. "textMotion" is how the line moves in: "rise" (calm, word by word), "slam" (words punch in large and snap into place: launches, bold claims, end cards), "drop" (letters fall in with a bounce: playful) or "split" (halves slide in from opposite sides: editorial). Never the same motion twice in a row.',
     '- "emphasisStyle" treats the emphasized word: "gradient", "outline", "highlight" (a marker swipe behind it) or "pill" (a color capsule). "echo" puts a giant outlined copy of the key word behind the shot, cropped by the frame: for the opening and the payoff, at most twice per film.',
     `- "graphics" (up to two per shot, and none on most shots) support the type, never decorate for their own sake. Icons illustrate a word (a leaf for natural, a droplet for hydration): ${ICON_NAMES.join(', ')}. Signs point and punctuate (an arrow at the key word, a sparkle on the payoff): ${SIGN_NAMES.join(', ')}. Emojis are for playful, social briefs only, never luxury or premium ones: ${EMOJI_NAMES.join(', ')}. Badges (seal, pill, tag) carry a short word from the line itself, or NEW, OUT NOW, SHOP NOW; never invent offers or discounts. "place" is relative to the headline.`,
@@ -488,6 +490,8 @@ export class GeminiAIProvider extends BaseAIProvider {
         musicMood: { type: 'STRING', enum: ['premium', 'energetic', 'editorial', 'warm'] },
         musicReason: { type: 'STRING' },
         missingPhotos: { type: 'ARRAY', items: { type: 'STRING' } },
+        style: { type: 'STRING', enum: ['editorial-luxury', 'playful-dtc', 'tech-ui', 'bold-street', 'warm-craft'] },
+        styleReason: { type: 'STRING' },
         grade: { type: 'STRING', enum: ['clean', 'cinematic', 'matte', 'noir'] },
         shots: { type: 'ARRAY', items: shotSchema },
         hardConstraints: { type: 'ARRAY', items: { type: 'STRING' } },
@@ -513,6 +517,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
         ...(context.products?.length ? [`${context.products.length} product photo${context.products.length === 1 ? ' is' : 's are'} uploaded${productImages(context).length ? ' and attached in order (photo 1 first)' : ''}, listed in the production context by number and file name. Follow any instructions in the brief about which photo goes where (by number, file name or what the photo shows). Otherwise, choose photos for the product moments yourself and use different photos across them when several fit. In each product shot's mainVisual, name the photo, for example "photo 2 (side view)".`] : []),
+        `Choose the film's visual language in style, with one short sentence of reason in styleReason: ${Object.entries(STYLE_KITS).map(([key, kit]) => `"${key}" (${kit.label}: ${kit.feel})`).join('; ')}.`,
         'If the brief asks to show a product that none of the uploaded photos shows, list it in missingPhotos, named as the brief names it, and never make a shot that names a product without showing it.',
         `Creative brief:\n${prompt}`,
         `Production context:\n${JSON.stringify(promptContext(context))}`,
