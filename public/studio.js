@@ -4,6 +4,7 @@ import { sanitizeSvg, serializeSvgTree } from './svg-sanitize.mjs';
 import { createSupabaseClient } from './supabase-client.mjs';
 import { analyzeLogoPixels, removePlainBackground } from './logo-check.mjs';
 import { readFontMetrics } from './font-metrics.mjs';
+import { EMOJIS, ICONS as GRAPHIC_ICONS } from './graphics-library.mjs';
 
 /*
  * FOLD Motion Studio: one conversation per production.
@@ -126,6 +127,8 @@ function h(tag, attributes = {}, ...children) {
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
 function svgEl(tag, attributes = {}) {
   const element = document.createElementNS(SVG_NS, tag);
   for (const [key, value] of Object.entries(attributes)) {
@@ -924,11 +927,14 @@ function shotEditor(record) {
     syncPhoto();
     const motion = h('select', { class: 'edit-motion', 'aria-label': `Shot ${index + 1} text motion` }, ...[['rise', 'Text: Rise'], ['slam', 'Text: Slam'], ['drop', 'Text: Drop'], ['split', 'Text: Split']].map(([value, label]) => h('option', { value, text: label, ...((spec.textMotion || 'rise') === value ? { selected: true } : {}) })));
     const emphasisStyle = h('select', { class: 'edit-emphasis', 'aria-label': `Shot ${index + 1} emphasis style` }, ...[['gradient', 'Emphasis: Gradient'], ['outline', 'Emphasis: Outline'], ['highlight', 'Emphasis: Highlighter'], ['pill', 'Emphasis: Pill']].map(([value, label]) => h('option', { value, text: label, ...((spec.emphasisStyle || 'gradient') === value ? { selected: true } : {}) })));
+    const GRAPHIC_CHOICES = [['', 'Graphic: none'], ['sign:sparkle', 'Graphic: sparkle'], ['sign:arrow-right', 'Graphic: arrow'], ['sign:asterisk', 'Graphic: asterisk'], ['icon:leaf', 'Graphic: leaf icon'], ['icon:droplet', 'Graphic: droplet icon'], ['icon:sun', 'Graphic: sun icon'], ['icon:heart', 'Graphic: heart icon'], ['icon:gift', 'Graphic: gift icon'], ['emoji:sparkles', 'Graphic: ✨ emoji'], ['emoji:fire', 'Graphic: 🔥 emoji'], ['badge:seal:NEW', 'Graphic: NEW seal'], ['badge:pill:NEW', 'Graphic: NEW pill']];
+    const currentGraphic = spec.graphics?.[0] ? [spec.graphics[0].kind, spec.graphics[0].name, ...(spec.graphics[0].kind === 'badge' ? [spec.graphics[0].text] : [])].join(':') : '';
+    const graphic = h('select', { class: 'edit-graphic', 'aria-label': `Shot ${index + 1} graphic` }, ...GRAPHIC_CHOICES.map(([value, label]) => h('option', { value, text: label, ...(currentGraphic === value ? { selected: true } : {}) })));
     const last = index === timeline.shots.length - 1;
     const transition = last ? null : h('select', { class: 'edit-transition', 'aria-label': `Shot ${index + 1} transition` }, ...Object.entries(TRANSITION_LABELS).map(([value, label]) => h('option', { value, text: `Then: ${label}`, ...((spec.transitionOut || 'cut') === value ? { selected: true } : {}) })));
-    return { line, seconds, recipe, photo, transition, motion, emphasisStyle, node: h('div', { class: 'edit-row' },
+    return { line, seconds, recipe, photo, transition, motion, emphasisStyle, graphic, node: h('div', { class: 'edit-row' },
       h('span', { class: 'edit-index', text: String(index + 1) }),
-      h('div', { class: 'edit-fields' }, line, h('div', { class: 'edit-controls' }, seconds, h('span', { class: 'edit-unit', text: 's' }), recipe, photo, motion, emphasisStyle, transition)),
+      h('div', { class: 'edit-fields' }, line, h('div', { class: 'edit-controls' }, seconds, h('span', { class: 'edit-unit', text: 's' }), recipe, photo, motion, emphasisStyle, graphic, transition)),
     ) };
   });
   const apply = h('button', { class: 'pill pill-go', type: 'button', text: 'Apply changes' });
@@ -950,6 +956,8 @@ function shotEditor(record) {
       if (row.transition) specs[index].transitionOut = row.transition.value;
       specs[index].textMotion = row.motion.value;
       specs[index].emphasisStyle = row.emphasisStyle.value;
+      const [graphicKind, graphicName, graphicText] = row.graphic.value.split(':');
+      specs[index].graphics = graphicKind ? [{ kind: graphicKind, name: graphicName, place: graphicKind === 'sign' && graphicName.startsWith('arrow') ? 'left' : 'top-right', ...(graphicText ? { text: graphicText } : {}) }] : [];
     }
     editShots(record, edited, specs);
   });
@@ -1434,6 +1442,15 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x: element.x, y: element.y, width: element.width, height: element.height, fill }));
     } else if (element.type === 'circle') {
       stage.append(svgEl('circle', { cx: element.x, cy: element.y, r: element.radius ?? 12, fill }));
+    } else if (element.type === 'graphic') {
+      // A still of the graphic as it lands (the film animates it in).
+      const g = svgEl('g', { transform: `translate(${element.x} ${element.y})` });
+      const s = element.size;
+      if (element.kind === 'icon') g.innerHTML = `<g transform="scale(${s / 24}) translate(-12 -12)" fill="none" stroke="${element.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${GRAPHIC_ICONS[element.name] || ''}</g>`;
+      else if (element.kind === 'emoji') g.innerHTML = `<g transform="scale(${s / 36}) translate(-18 -18)">${EMOJIS[element.name] || ''}</g>`;
+      else if (element.kind === 'badge') g.innerHTML = `<circle r="${s / 2}" fill="${element.paint}"/><text text-anchor="middle" y="${s * 0.08}" font-family="Montserrat" font-weight="600" font-size="${s * 0.22}" fill="${element.ink}">${escapeHtml(element.text || '')}</text>`;
+      else g.innerHTML = `<circle r="${s * 0.12}" fill="${element.color}"/>`;
+      stage.append(g);
     } else if (element.type === 'logo') {
       stage.append(logoPreview(element, primary));
     } else if (element.type === 'image') {

@@ -98,6 +98,7 @@ export function extractCues(timeline) {
         add(start + reveal.start, 'logo-draw', { duration: reveal.duration });
         if (element.glint) add(start + element.glint.start, 'glint');
       }
+      if (element.type === 'graphic' && element.reveal) add(start + element.reveal.start, 'glint');
       if (element.type === 'image') {
         add(start + (element.reveal?.start || 0), 'product');
         if (element.glint) add(start + element.glint.start, 'glint');

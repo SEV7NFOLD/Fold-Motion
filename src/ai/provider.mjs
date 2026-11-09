@@ -1,3 +1,4 @@
+import { EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
 import { MOTION_OPTIONS } from '../production/motion.mjs';
 import { RECIPE_OPTIONS, TEXT_CASE_OPTIONS, TRANSITION_OPTIONS } from '../production/recipes.mjs';
@@ -135,6 +136,7 @@ function sceneRules(context = {}) {
     '- "beam" and "sweep" are true or false.',
     '- Typography is FOLD Motion\'s power: vary it. "textMotion" is how the line moves in: "rise" (calm, word by word), "slam" (words punch in large and snap into place: launches, bold claims, end cards), "drop" (letters fall in with a bounce: playful) or "split" (halves slide in from opposite sides: editorial). Never the same motion twice in a row.',
     '- "emphasisStyle" treats the emphasized word: "gradient", "outline", "highlight" (a marker swipe behind it) or "pill" (a color capsule). "echo" puts a giant outlined copy of the key word behind the shot, cropped by the frame: for the opening and the payoff, at most twice per film.',
+    `- "graphics" (up to two per shot, and none on most shots) support the type, never decorate for their own sake. Icons illustrate a word (a leaf for natural, a droplet for hydration): ${ICON_NAMES.join(', ')}. Signs point and punctuate (an arrow at the key word, a sparkle on the payoff): ${SIGN_NAMES.join(', ')}. Emojis are for playful, social briefs only, never luxury or premium ones: ${EMOJI_NAMES.join(', ')}. Badges (seal, pill, tag) carry a short word from the line itself, or NEW, OUT NOW, SHOP NOW; never invent offers or discounts. "place" is relative to the headline.`,
     '- "word-beat" is a kinetic poster for a two- to five-word line: each word fills the frame on the beat, then the line resolves.',
     '- "reason" is one short sentence (under 20 words) on why the shot is staged this way, for the client to read; when it shows a product photo, say why that photo.',
     '- "typeEffect" is "decode" (letters scramble through code-like glyphs, then lock in: tech, editorial, reveals), "outline" (letters trace as outlines, then fill: elegant, premium) or "none". Use it on one or two hero lines at most.',
@@ -284,7 +286,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
       'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
-      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, textMotion, emphasisStyle, echo, reason, beam and sweep.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, textMotion, emphasisStyle, echo, graphics, reason, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -545,6 +547,7 @@ export class GeminiAIProvider extends BaseAIProvider {
         textMotion: { type: 'STRING', enum: ['rise', 'slam', 'drop', 'split'] },
         emphasisStyle: { type: 'STRING', enum: ['gradient', 'outline', 'highlight', 'pill'] },
         echo: { type: 'BOOLEAN' },
+        graphics: { type: 'ARRAY', items: { type: 'OBJECT', properties: { kind: { type: 'STRING', enum: ['icon', 'emoji', 'sign', 'badge'] }, name: { type: 'STRING' }, text: { type: 'STRING' }, place: { type: 'STRING', enum: ['above', 'below', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'] } }, required: ['kind', 'name'] } },
         reason: { type: 'STRING' },
         beam: { type: 'BOOLEAN' },
         sweep: { type: 'BOOLEAN' },

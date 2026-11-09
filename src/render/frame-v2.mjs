@@ -7,6 +7,7 @@ import { mix, readableTextColor } from '../production/color.mjs';
 import { isDrawable, serializeSvgTree } from '../../public/svg-sanitize.mjs';
 import { normalizeMotion } from '../production/motion.mjs';
 import { capHeight, fontFace, layoutCharacters, layoutWords, measure } from './typography.mjs';
+import { EMOJIS, ICONS } from '../../public/graphics-library.mjs';
 
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -153,6 +154,57 @@ function renderBeat(element, t, ctx) {
       body: `<g opacity="${f(clamp(local * 6))}" transform="translate(${f(cx)} ${f(cy)}) scale(${scale.toFixed(4)}) translate(${f(-cx)} ${f(-cy)})"><text x="${f(cx)}" y="${f(cy + capHeight(element.font, size) / 2)}" text-anchor="middle" ${fontAttrs(element.font, size)} fill="${fill}">${esc(word)}</text></g>`,
     },
   };
+}
+
+/**
+ * A graphic beside the type: an icon (pops in with a slight turn), an emoji (pops
+ * and floats), a sign (arrows grow from their tail) or a badge (a seal turns slowly).
+ */
+function renderGraphic(element, t) {
+  const { x, y, size, reveal, kind, name } = element;
+  const p = span(t, reveal.start, reveal.start + reveal.duration);
+  if (p <= 0) return '';
+  const since = t - reveal.start;
+  const float = kind === 'emoji' ? Math.sin(since * 2.2) * size * 0.04 : 0;
+  const rotate = kind === 'badge' && name === 'seal' ? since * 10 : (1 - ease.outCubic(p)) * -12;
+  const scale = kind === 'sign' && name.startsWith('arrow') ? 1 : 0.55 + 0.45 * ease.outBack(p);
+  const color = element.color;
+  const stroke = f(Math.max(2, size * 0.075));
+  let inner = '';
+  if (kind === 'icon') {
+    inner = `<g transform="scale(${f(size / 24)}) translate(-12 -12)" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</g>`;
+  } else if (kind === 'emoji') {
+    inner = `<g transform="scale(${f(size / 36)}) translate(-18 -18)">${EMOJIS[name] || ''}</g>`;
+  } else if (kind === 'sign') {
+    const h = size / 2;
+    const grow = ease.outCubic(p);
+    if (name === 'arrow-right' || name === 'arrow-up-right') {
+      const angle = name === 'arrow-up-right' ? -45 : 0;
+      const tip = -h + size * grow;
+      inner = `<g transform="rotate(${angle})" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"><path d="M ${f(-h)} 0 L ${f(tip)} 0"/>${grow > 0.6 ? `<path d="M ${f(tip - size * 0.28)} ${f(-size * 0.28)} L ${f(tip)} 0 L ${f(tip - size * 0.28)} ${f(size * 0.28)}"/>` : ''}</g>`;
+    } else if (name === 'asterisk') {
+      inner = `<g stroke="${color}" stroke-width="${stroke}" stroke-linecap="round">${[0, 60, 120].map((a) => `<path d="M 0 ${f(-h)} L 0 ${f(h)}" transform="rotate(${a})"/>`).join('')}</g>`;
+    } else if (name === 'sparkle') {
+      const k = h * 0.22;
+      inner = `<path d="M 0 ${f(-h)} C ${f(k)} ${f(-k)} ${f(k)} ${f(-k)} ${f(h)} 0 C ${f(k)} ${f(k)} ${f(k)} ${f(k)} 0 ${f(h)} C ${f(-k)} ${f(k)} ${f(-k)} ${f(k)} ${f(-h)} 0 C ${f(-k)} ${f(-k)} ${f(-k)} ${f(-k)} 0 ${f(-h)} Z" fill="${color}"/>`;
+    } else if (name === 'plus') {
+      inner = `<g stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"><path d="M ${f(-h)} 0 L ${f(h)} 0"/><path d="M 0 ${f(-h)} L 0 ${f(h)}"/></g>`;
+    } else {
+      const glyph = name === 'ampersand' ? '&' : String(element.text || '01');
+      const font = name === 'ampersand' ? 'display' : 'semibold';
+      const fs = name === 'ampersand' ? size * 1.15 : size * 0.6;
+      inner = `<text x="0" y="${f(capHeight(font, fs) / 2)}" text-anchor="middle" ${fontAttrs(font, fs)} fill="${color}">${esc(glyph)}</text>`;
+    }
+  } else if (kind === 'badge') {
+    const text = String(element.text || '');
+    const fs = name === 'seal' ? size * 0.22 : size * 0.42;
+    const width = measure('semibold', text, fs, 0.08) + fs * 1.6;
+    const label = `<text x="0" y="${f(capHeight('semibold', fs) / 2)}" text-anchor="middle" ${fontAttrs('semibold', fs)} letter-spacing="${f(fs * 0.08)}" fill="${element.ink}">${esc(text)}</text>`;
+    if (name === 'seal') inner = `<circle r="${f(size / 2)}" fill="${element.paint}"/><circle r="${f(size / 2 - size * 0.06)}" fill="none" stroke="${element.ink}" stroke-width="${f(size * 0.015)}" stroke-dasharray="${f(size * 0.04)} ${f(size * 0.03)}" opacity="0.6"/>${label}`;
+    else if (name === 'tag') inner = `<path d="M ${f(-width / 2)} ${f(-size / 2)} L ${f(width / 2)} ${f(-size / 2)} L ${f(width / 2 + size * 0.35)} 0 L ${f(width / 2)} ${f(size / 2)} L ${f(-width / 2)} ${f(size / 2)} Z" fill="${element.paint}"/>${label}`;
+    else inner = `<rect x="${f(-width / 2)}" y="${f(-size / 2)}" width="${f(width)}" height="${f(size)}" rx="${f(size / 2)}" fill="${element.paint}"/>${label}`;
+  }
+  return `<g opacity="${f(clamp(p * 3))}" transform="translate(${f(x)} ${f(y + float)}) rotate(${f(rotate)}) scale(${scale.toFixed(4)})">${inner}</g>`;
 }
 
 /** Decorative echo: a giant outlined word, cropped by the frame, drifting slowly. */
@@ -800,6 +852,8 @@ function shotLayers(timeline, index, t, extraScale = 1, brand = {}) {
       layers.push(rendered.body);
     } else if (element.type === 'line') {
       layers.push(renderLine(element, t));
+    } else if (element.type === 'graphic') {
+      layers.push(renderGraphic(element, t));
     } else if (element.type === 'image') {
       const rendered = renderProduct(element, t, brand, duration);
       defs.push(...rendered.defs);
