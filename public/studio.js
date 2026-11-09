@@ -1889,7 +1889,8 @@ function renderView(message) {
       safeOutputUrl(video) ? h('video', { class: 'player', src: video, controls: true, preload: 'metadata', playsinline: true, ...(report?.artifacts?.film?.path ? { 'data-film-path': report.artifacts.film.path } : {}) }) : null,
       musicLine(report),
       h('p', { class: `qa-summary${failed ? ' is-fail' : ''}` },
-        h('span', { class: 'qa-summary-dot', 'aria-hidden': 'true', text: failed ? String(failed) : '✓' }),
+        // A symbol, not the count: "1" next to "1 of 11…" read (and copied) as "11 of 11".
+        h('span', { class: 'qa-summary-dot', 'aria-hidden': 'true', text: failed ? '✕' : '✓' }),
         failed ? `${failed} of ${checks.length} QA checks failed` : `All ${checks.length} QA checks passed`),
       h('ul', { class: 'checks' }, checks.map((check) => h('li', { class: `check${check.pass ? '' : ' is-fail'}` },
         h('strong', { text: check.name }), h('span', { text: check.detail })))),

@@ -218,10 +218,15 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const lineY = lastBaseline + H * 0.05;
       elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.08, accent: palette.accent, start: 0.8 * k, duration: 0.5 * k }));
       if (support) {
-        const size = Math.max(16, H * 0.032);
+        // Sized from the frame's shorter side and drawn at the size that fits (the
+        // line was measured small but drawn at a height-based size, so long lines
+        // spilled out of vertical frames).
+        const unit = Math.min(W, H);
+        const block = fitBlock('medium', support, { maxWidth: W * (W < H ? 0.86 : 0.7), maxSize: Math.max(16, Math.min(H * 0.032, unit * 0.04)), minSize: 16, maxLines: 2 });
+        const size = block.size;
         elements.push(textElement({
           id: `shot-${n}-support`, role: 'support', content: support, shown: support, font: 'medium', size,
-          lines: fitBlock('medium', support, { maxWidth: W * 0.7, maxSize: size, minSize: 16, maxLines: 2 }).lines,
+          lines: block.lines,
           lineHeight: size * 1.35, x: W / 2, y: lineY + H * 0.065, fill: palette.muted,
           reveal: { style: 'fade', unit: 'line', start: 1.0 * k, duration: 0.6 * k },
         }));
@@ -546,10 +551,15 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
         nextY += Math.max(H * 0.06, block.size * 1.05 * block.lines.length + unit * 0.02);
       }
       if (support) {
-        const size = Math.max(16, H * 0.028);
+        // The end card's supporting line: sized from the frame's shorter side and
+        // drawn at the size that fits (it used to be measured small but drawn at a
+        // height-based size, so long lines spilled out of vertical frames).
+        const unit = Math.min(W, H);
+        const block = fitBlock('medium', support, { maxWidth: W * (W < H ? 0.86 : 0.7), maxSize: Math.max(16, Math.min(H * 0.028, unit * 0.036)), minSize: 16, maxLines: 2 });
+        const size = block.size;
         elements.push(textElement({
           id: `shot-${n}-support`, role: 'support', content: support, shown: support, font: 'medium', size,
-          lines: fitBlock('medium', support, { maxWidth: W * 0.7, maxSize: size, minSize: 16, maxLines: 2 }).lines,
+          lines: block.lines,
           lineHeight: size * 1.35, x: W / 2, y: nextY, fill: palette.muted,
           reveal: { style: 'fade', unit: 'line', start: 1.2 * k, duration: 0.6 * k },
         }));
