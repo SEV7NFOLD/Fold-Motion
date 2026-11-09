@@ -88,7 +88,32 @@ function renderTypeEffect(element, t, ctx) {
   return { defs: [], body: out.join('') };
 }
 
+/** The line with its first number at value * p, keeping decimals and separators. */
+function countedLines(lines, p) {
+  let done = false;
+  return lines.map((line) => {
+    if (done) return line;
+    const match = /\d[\d,]*(?:\.\d+)?/.exec(line);
+    if (!match) return line;
+    done = true;
+    const token = match[0];
+    const decimals = (token.split('.')[1] || '').length;
+    const value = Number.parseFloat(token.replace(/,/g, '')) * p;
+    let text = value.toFixed(decimals);
+    if (token.includes(',')) text = text.replace(/^(\d+)/, (digits) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+    return line.slice(0, match.index) + text + line.slice(match.index + token.length);
+  });
+}
+
 function renderText(element, t, ctx) {
+  if (element.reveal?.style === 'count') {
+    // A stat: the number counts up, then the line settles exactly as written.
+    const { start, duration } = element.reveal;
+    const settled = { style: 'fade', unit: 'line', start: -10, duration: 0.01, stagger: 0 };
+    element = t < start + duration
+      ? { ...element, lines: countedLines(element.lines, ease.outCubic(span(t, start, start + duration))), reveal: settled }
+      : { ...element, reveal: settled };
+  }
   if (element.reveal?.style === 'decode' || element.reveal?.style === 'outline') {
     if (t < element.reveal.start + element.reveal.duration) return renderTypeEffect(element, t, ctx);
     // Finished: draw as settled text, with emphasis and sweeps.

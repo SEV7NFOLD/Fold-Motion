@@ -93,7 +93,7 @@ const MOTION_LABELS = {
 };
 const DEFAULT_MOTION = { camera: 'static', entrance: 'rise-glitch', atmosphere: 'orbit' };
 // Mirror RECIPE_OPTIONS and TRANSITION_OPTIONS in src/production/recipes.mjs (drift-tested).
-const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window' };
+const RECIPE_LABELS = { 'title-reveal': 'Title reveal', statement: 'Statement', 'kicker-title': 'Opening card', 'type-stack': 'Type stack', lockup: 'End card', 'logo-reveal': 'Logo reveal', 'product-hero': 'Product hero', 'type-window': 'Type window', stat: 'Stat', quote: 'Quote', 'product-grid': 'Product grid', split: 'Split screen' };
 const TRANSITION_LABELS = { cut: 'Cut', wipe: 'Wipe', fade: 'Fade', push: 'Push through', fold: 'The Fold', zoom: 'Zoom through a letter' };
 const PREVIEW_FONTS = {
   display: ['Anton, Impact, sans-serif', 400],
@@ -826,10 +826,12 @@ function rebuildRequest(record, storyboard, shotSpecs, format = formatOf(record)
 // ------------------------------------------------------------------ edit shots in place
 
 /** Inline editor for the built shots: line, seconds, shot type, photo, transition. */
+const PHOTO_RECIPES = ['product-hero', 'type-window', 'product-grid', 'split'];
+
 function shotEditor(record) {
   const { storyboard, timeline } = record.project;
   const photoCount = brandKit.products.length;
-  const recipes = Object.keys(RECIPE_LABELS).filter((recipe) => (!['product-hero', 'type-window'].includes(recipe) || photoCount) && (recipe !== 'logo-reveal' || brandKit.logo));
+  const recipes = Object.keys(RECIPE_LABELS).filter((recipe) => (!PHOTO_RECIPES.includes(recipe) || photoCount) && (recipe !== 'product-grid' || photoCount >= 2) && (recipe !== 'logo-reveal' || brandKit.logo));
   const rows = timeline.shots.map((shot, index) => {
     const spec = shot.spec;
     const line = h('input', { class: 'edit-line', type: 'text', value: storyboard.shots[index].onScreenCopy, 'aria-label': `Shot ${index + 1} line`, maxlength: '90' });
@@ -837,7 +839,7 @@ function shotEditor(record) {
     const recipe = h('select', { class: 'edit-recipe', 'aria-label': `Shot ${index + 1} shot type` }, ...recipes.map((value) => h('option', { value, text: RECIPE_LABELS[value], ...(spec.recipe === value ? { selected: true } : {}) })));
     const currentPhoto = spec.elements?.find((element) => element.type === 'image')?.product || spec.elements?.find((element) => element.window)?.window?.product || spec.product || 1;
     const photo = h('select', { class: 'edit-photo', 'aria-label': `Shot ${index + 1} photo` }, ...brandKit.products.map((_, i) => h('option', { value: String(i + 1), text: `Photo ${i + 1}`, ...(currentPhoto === i + 1 ? { selected: true } : {}) })));
-    const syncPhoto = () => { photo.hidden = !['product-hero', 'type-window'].includes(recipe.value); };
+    const syncPhoto = () => { photo.hidden = !PHOTO_RECIPES.includes(recipe.value); };
     recipe.addEventListener('change', syncPhoto);
     syncPhoto();
     const last = index === timeline.shots.length - 1;

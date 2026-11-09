@@ -10,10 +10,13 @@
 import { capHeight, fitBlock, measure } from '../render/typography.mjs';
 import { ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 
-export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window']);
+export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window', 'stat', 'quote', 'product-grid', 'split']);
 
 /** Recipes that put an uploaded product photo on screen. */
-export const PRODUCT_RECIPES = Object.freeze(['product-hero', 'type-window']);
+export const PRODUCT_RECIPES = Object.freeze(['product-hero', 'type-window', 'product-grid', 'split']);
+
+/** The first number in a line ("98%", "3x", "$1,299"), for the stat recipe. */
+export const STAT_NUMBER = /\d[\d,]*(?:\.\d+)?/;
 export const TRANSITION_OPTIONS = Object.freeze(['cut', 'wipe', 'fade', 'push', 'fold', 'zoom']);
 
 /** Headline effects a direction can ask for. */
@@ -29,6 +32,10 @@ export const RECIPE_DESCRIPTIONS = Object.freeze({
   'logo-reveal': 'the uploaded logo as the hero: it draws itself on and fills (an SVG) or wipes in (a PNG), a glint crosses it, and the line sits small beneath; only when a logo is uploaded',
   'product-hero': 'an uploaded product photo, graded into the brand palette, emerges from darkness as a feathered panel on one side with a slow push-in and a pass of light, while the line rises huge in the display face on the other side; only when product photos are uploaded',
   'type-window': 'giant display letters filled with an uploaded product photo, landing one by one; for one or two short words; only when product photos are uploaded',
+  stat: 'a number in the line counts up from zero, huge in the display face, with the rest of the line beneath ("98% recycled", "3x faster", "$49"); only when the line contains a number',
+  quote: 'a testimonial or striking quote: a large quotation mark, the line in a calm weight word by word, and the kicker beneath as the attribution ("Vogue", "A customer")',
+  'product-grid': 'two to four uploaded product photos in a grid, each emerging in turn, with the line beneath; "product" is the first photo; only with two or more photos',
+  split: 'a split screen: an uploaded product photo fills one half edge to edge, the line sits on the other half beside an accent divider; only when product photos are uploaded',
 });
 
 export const TRANSITION_DESCRIPTIONS = Object.freeze({
@@ -367,6 +374,140 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: lineY + H * 0.06, height: H, maxWidth: W * 0.88, palette, start: 1.1 * k }));
       break;
     }
+    case 'stat': {
+      // The number counts up; the words around it sit beneath as the label.
+      const match = STAT_NUMBER.exec(copy);
+      if (!match) return expandRecipe({ ...spec, recipe: 'title-reveal' }, { copy, context, shotIndex, support });
+      const shown = display(copy, textCase === 'as-written' ? 'as-written' : textCase);
+      const unit = Math.min(W, H);
+      // When the line opens with its number ("98% recycled leather"), the number
+      // stands alone, huge, with the rest beneath as the label: one element, so the
+      // copy stays exact.
+      const words = shown.split(/\s+/);
+      const opensWithNumber = STAT_NUMBER.test(words[0]) && words.length > 1;
+      let lines;
+      let lineSizes;
+      let lineHeight;
+      if (opensWithNumber) {
+        const label = words.slice(1).join(' ');
+        const big = fitBlock('display', words[0], { maxWidth: W * 0.8, maxSize: unit * (W < H ? 0.42 : 0.36), minSize: unit * 0.1, maxLines: 1, tracking: 0.01 });
+        const small = fitBlock('display', label, { maxWidth: W * 0.8, maxSize: big.size * 0.3, minSize: unit * 0.04, maxLines: 1, tracking: 0.01 });
+        lines = [words[0], label];
+        lineSizes = [big.size, small.size];
+        // With per-line sizes the renderer steps each baseline by this gap plus the
+        // next line's cap height (as in type stacks).
+        lineHeight = unit * 0.055;
+      } else {
+        const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 });
+        lines = block.lines;
+        lineSizes = undefined;
+        lineHeight = block.size * 1.02;
+      }
+      const firstSize = lineSizes ? lineSizes[0] : fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: unit * 0.3, minSize: unit * 0.07, maxLines: 2, tracking: 0.01 }).size;
+      const caps = (lineSizes || lines.map(() => firstSize)).map((size) => capHeight('display', size));
+      const totalHeight = lineSizes ? caps.reduce((sum, cap) => sum + cap, 0) + lineHeight * (lines.length - 1) : caps[0] + (lines.length - 1) * lineHeight;
+      const y = H * 0.5 - totalHeight / 2 + caps[0];
+      const lastBaseline = lineSizes ? y + caps.slice(1).reduce((sum, cap) => sum + cap + lineHeight, 0) : y + (lines.length - 1) * lineHeight;
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: W / 2, y: y - capHeight('display', firstSize) - unit * 0.06, height: H, maxWidth: W * 0.88, palette, start: 0.2 * k }));
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: Math.min(...(lineSizes || [firstSize])), tracking: 0.01,
+        lines, lineHeight, ...(lineSizes ? { lineSizes } : {}), x: W / 2, y, fill: palette.text,
+        reveal: { style: 'count', start: 0.1 * k, duration: Math.min(1.6, 0.55 * spec.durationInSeconds) },
+        sweep: spec.sweep === false ? undefined : { start: Math.max(1.8 * k, spec.durationInSeconds * 0.7), duration: 0.8 },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lastBaseline + unit * 0.05, width: W * 0.1, accent: palette.accent, start: 0.9 * k, duration: 0.5 * k }));
+      break;
+    }
+    case 'quote': {
+      const shown = display(copy, textCase === 'upper' ? 'upper' : 'as-written');
+      const unit = Math.min(W, H);
+      const block = fitBlock('medium', shown, { maxWidth: W * 0.78, maxSize: unit * 0.075, minSize: unit * 0.035, maxLines: 4, tracking: 0 });
+      const lineHeight = block.size * 1.32;
+      const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, 'medium');
+      const lastBaseline = y + (block.lines.length - 1) * lineHeight;
+      const markSize = unit * 0.24;
+      elements.push(textElement({
+        id: `shot-${n}-mark`, role: 'decor', content: '“', shown: '“', font: 'display', size: markSize, lines: ['“'], lineHeight: markSize,
+        x: W / 2, y: y - capHeight('medium', block.size) - unit * 0.03 + markSize * 0.42, fill: palette.emphasis.from,
+        reveal: { style: 'fade', unit: 'line', start: 0, duration: 0.6 * k, stagger: 0 },
+      }));
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'medium', size: block.size, tracking: 0,
+        lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+        reveal: { style: 'mask-rise', unit: 'word', start: 0.35 * k, duration: 0.6 * k, stagger: Math.min(0.09, 1.2 / Math.max(1, shown.split(/\s+/).length)) * k },
+        emphasis: emphasisFor(shown),
+      }));
+      const lineY = lastBaseline + unit * 0.06;
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: lineY, width: W * 0.06, accent: palette.accent, start: 1.0 * k, duration: 0.5 * k }));
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker: `— ${kicker}`, x: W / 2, y: lineY + unit * 0.06, height: H, maxWidth: W * 0.88, palette, start: 1.15 * k }));
+      break;
+    }
+    case 'product-grid': {
+      const products = context.products || [];
+      if (products.length < 2) return expandRecipe({ ...spec, recipe: 'product-hero' }, { copy, context, shotIndex, support, productOrdinal });
+      const first = Number.isInteger(spec.product) && spec.product >= 1 ? spec.product : 1;
+      const count = Math.min(4, products.length);
+      const picks = Array.from({ length: count }, (_, i) => ((first - 1 + i) % products.length) + 1);
+      const tall = W / H < 1.2;
+      const columns = tall ? 2 : count;
+      const rows = Math.ceil(count / columns);
+      const gap = Math.min(W, H) * 0.025;
+      const areaW = W * (tall ? 0.86 : 0.88);
+      const areaH = H * (tall ? 0.58 : 0.56);
+      const tileW = (areaW - gap * (columns - 1)) / columns;
+      const tileH = (areaH - gap * (rows - 1)) / rows;
+      const left = (W - areaW) / 2;
+      const top = H * 0.07;
+      picks.forEach((product, i) => {
+        const column = i % columns;
+        const row = Math.floor(i / columns);
+        elements.push({
+          id: `shot-${n}-product-${i + 1}`, type: 'image', role: 'product', product, x: left + column * (tileW + gap), y: top + row * (tileH + gap), width: tileW, height: tileH,
+          feather: { left: 0.07, right: 0.07, top: 0.07, bottom: 0.1 },
+          reveal: { style: 'emerge', start: (0.1 + i * 0.14) * k, duration: 0.8 * k }, push: 0.03,
+        });
+      });
+      const shown = display(copy, textCase);
+      const block = fitBlock('display', shown, { maxWidth: W * 0.86, maxSize: Math.min(W, H) * 0.11, minSize: Math.min(W, H) * 0.045, maxLines: 2, tracking: 0.03 });
+      const lineHeight = block.size * 1.02;
+      const y = top + areaH + H * 0.06 + capHeight('display', block.size);
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        lines: block.lines, lineHeight, x: W / 2, y, fill: palette.text,
+        reveal: { style: 'mask-rise', unit: 'word', start: (0.3 + count * 0.12) * k, duration: 0.7 * k, stagger: 0.08 * k },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(hairline({ id: `shot-${n}-accent`, x: W / 2, y: y + (block.lines.length - 1) * lineHeight + H * 0.035, width: W * 0.1, accent: palette.accent, start: 1.2 * k, duration: 0.5 * k }));
+      break;
+    }
+    case 'split': {
+      const product = productFor(spec, context);
+      if (!product) return expandRecipe({ ...spec, recipe: 'statement' }, { copy, context, shotIndex, support });
+      const tall = W / H < 1.2;
+      const photoOnRight = (productOrdinal ?? shotIndex) % 2 === 0;
+      // The photo fills one half edge to edge; only its inner edge softens.
+      const photo = tall
+        ? { x: 0, y: 0, width: W, height: H * 0.5, feather: { left: 0, right: 0, top: 0, bottom: 0.14 } }
+        : { x: photoOnRight ? W / 2 : 0, y: 0, width: W / 2, height: H, feather: photoOnRight ? { left: 0.14, right: 0, top: 0, bottom: 0 } : { left: 0, right: 0.14, top: 0, bottom: 0 } };
+      elements.push({ id: `shot-${n}-product`, type: 'image', role: 'product', product: product.index, ...photo, reveal: { style: 'emerge', start: 0, duration: 0.9 * k }, push: 0.035, glint: { start: Math.max(1.3 * k, spec.durationInSeconds * 0.5), duration: 0.8 } });
+      const half = tall ? { x: W / 2, width: W * 0.84, centerY: H * 0.74 } : { x: photoOnRight ? W * 0.25 : W * 0.75, width: W * 0.4, centerY: H * 0.5 };
+      const shown = display(copy, textCase);
+      const block = fitBlock('display', shown, { maxWidth: half.width, maxSize: Math.min(W, H) * 0.16, minSize: Math.min(W, H) * 0.05, maxLines: 3, tracking: 0.03 });
+      const lineHeight = block.size * 1.02;
+      const y = blockBaseline(half.centerY, block.size, block.lines.length, lineHeight, 'display');
+      if (kicker) elements.push(kickerElement({ id: `shot-${n}-kicker`, kicker, x: half.x, y: y - capHeight('display', block.size) - Math.min(W, H) * 0.05, height: H, maxWidth: half.width, palette, start: 0.4 * k }));
+      elements.push(textElement({
+        id: `shot-${n}-copy`, role: 'title', content: copy, shown, font: 'display', size: block.size, tracking: 0.015,
+        lines: block.lines, lineHeight, x: half.x, y, fill: palette.text,
+        reveal: { style: 'mask-rise', unit: 'word', start: 0.5 * k, duration: 0.7 * k, stagger: 0.09 * k },
+        emphasis: emphasisFor(shown),
+      }));
+      elements.push(tall
+        ? hairline({ id: `shot-${n}-accent`, x: W / 2, y: H * 0.5, width: W, accent: palette.accent, start: 0.3 * k, duration: 0.6 * k })
+        : { id: `shot-${n}-accent`, type: 'rect', x: W / 2 - 1, y: H * 0.12, width: 2, height: H * 0.76, fill: palette.accent, opacity: 0.85 });
+      break;
+    }
     case 'lockup':
     default: {
       const shown = display(copy, textCase);
@@ -444,6 +585,7 @@ const RECIPE_ALIASES = Object.freeze({
   logo: 'logo-reveal', 'logo-sting': 'logo-reveal', 'brand-reveal': 'logo-reveal', 'logo-reveal': 'logo-reveal',
   product: 'product-hero', packshot: 'product-hero', 'pack-shot': 'product-hero', 'hero-product': 'product-hero', 'product-shot': 'product-hero',
   window: 'type-window', 'letters-window': 'type-window', 'photo-type': 'type-window', 'image-type': 'type-window',
+  number: 'stat', counter: 'stat', statistic: 'stat', 'stat-reveal': 'stat', testimonial: 'quote', 'pull-quote': 'quote', grid: 'product-grid', 'photo-grid': 'product-grid', collage: 'product-grid', 'split-screen': 'split', 'half-split': 'split',
 });
 const TRANSITION_ALIASES = Object.freeze({
   'zoom-through': 'zoom', 'letter-zoom': 'zoom', 'zoom-in': 'zoom', 'zoom-through-letter': 'zoom',
@@ -491,7 +633,8 @@ export function fallbackDirection(seed, index, count, copy, productCount = 0) {
   else if (index === 0) recipe = direction.openers[0] === 'type-stack' && (words.length < 2 || words.length > 4) ? 'title-reveal' : direction.openers[0];
   else recipe = direction.middle;
   if (recipe === 'kicker-title') recipe = 'title-reveal';
-  if (productCount && count >= 2 && index === 1) recipe = 'product-hero';
+  if (index > 0 && index < count - 1 && STAT_NUMBER.test(String(copy)) && String(copy).length <= 28) recipe = 'stat';
+  else if (productCount && count >= 2 && index === 1) recipe = productCount >= 3 && count >= 5 ? 'product-grid' : 'product-hero';
   else if (productCount && count >= 4 && index === count - 2 && words.length <= 2 && String(copy).length <= 16) recipe = 'type-window';
   // Offline films still show the newer effects: one headline effect on the second shot.
   const seedValue = [...String(seed)].reduce((sum, character) => sum + character.codePointAt(0), 0);
@@ -527,6 +670,14 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
   if (PRODUCT_RECIPES.includes(recipe) && !productCount) {
     changes.push(`${recipe} needs an uploaded product photo; used "${fallback.recipe === recipe ? 'title-reveal' : fallback.recipe}"`);
     recipe = PRODUCT_RECIPES.includes(fallback.recipe) ? 'title-reveal' : fallback.recipe;
+  }
+  if (recipe === 'stat' && !STAT_NUMBER.test(String(copy))) {
+    changes.push('stat needs a number in the line; used "title-reveal"');
+    recipe = 'title-reveal';
+  }
+  if (recipe === 'product-grid' && productCount < 2) {
+    changes.push('product-grid needs two or more photos; used "product-hero"');
+    recipe = 'product-hero';
   }
   if (recipe === 'type-window' && (words.length > 2 || String(copy).length > 16)) {
     changes.push('type-window suits one or two short words; used "product-hero"');
