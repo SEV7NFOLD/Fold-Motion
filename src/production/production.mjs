@@ -2,10 +2,11 @@ import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
-import { applyTextMotion, applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { applyGraphics, applyTextMotion, applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { fontFace, measure } from '../render/typography.mjs';
+import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 
 export { durationFromBrief };
@@ -28,6 +29,11 @@ function safeSlug(value) {
 }
 
 function isRenderableElement(element, context) {
+  if (element.type === 'graphic') {
+    const names = { icon: ICON_NAMES, emoji: EMOJI_NAMES, sign: SIGN_NAMES, badge: BADGE_SHAPES }[element.kind];
+    return Boolean(names?.includes(element.name)) && [element.x, element.y, element.size].every(Number.isFinite) && element.size > 0
+      && element.x >= 0 && element.y >= 0 && element.x <= context.width && element.y <= context.height;
+  }
   // A decorative echo is wider than the frame by design: it needs real numbers, an
   // outline color and a single line, not to fit.
   if (element.type === 'text' && element.role === 'decor' && element.outline) {
@@ -442,7 +448,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
       const productOrdinal = shotSpecs.slice(0, index).filter((spec) => spec?.recipe === 'product-hero').length;
       sourceSpec = {
         ...expanded,
-        elements: applyTextMotion(applyTypeEffect(expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }), expanded), expanded, normalizedContext),
+        elements: applyGraphics(applyTextMotion(applyTypeEffect(expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }), expanded), expanded, normalizedContext), { ...expanded, copy: shot.onScreenCopy }, normalizedContext),
       };
     }
     const validation = validateSceneSpec(sourceSpec);
@@ -700,6 +706,13 @@ export function measureFrameFit(timeline) {
         else if (left < -1 || left + width > W + 1) failures.push({ shotId: shot.shotId, element: element.id, line, left: Math.round(left), right: Math.round(left + width) });
       });
       if (!(element.y > 0 && element.y < H + 1)) failures.push({ shotId: shot.shotId, element: element.id, line: element.lines[0], y: element.y });
+    }
+  }
+  for (const shot of timeline.shots) {
+    for (const element of shot.spec.elements || []) {
+      if (element.type !== 'graphic') continue;
+      const r = element.size / 2;
+      if (element.x - r < -1 || element.x + r > W + 1 || element.y - r < -1 || element.y + r > H + 1) failures.push({ shotId: shot.shotId, element: element.id, line: `${element.kind} ${element.name}` });
     }
   }
   return { pass: failures.length === 0, checkedWidth: W, failures: failures.slice(0, 6) };

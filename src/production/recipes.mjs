@@ -9,11 +9,84 @@
  */
 import { capHeight, fitBlock, measure, registerBrandFont } from '../render/typography.mjs';
 import { contrastRatio, ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
+import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 
 export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'logo-reveal', 'product-hero', 'type-window', 'stat', 'quote', 'product-grid', 'split', 'word-beat']);
 
 /** How a headline moves in, and how its emphasized words are treated. */
 export const TEXT_MOTIONS = Object.freeze(['rise', 'slam', 'drop', 'split']);
+
+/** Graphics that support the type, placed relative to the headline. */
+export const GRAPHIC_PLACES = Object.freeze(['above', 'below', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
+const GRAPHIC_NAMES = { icon: ICON_NAMES, emoji: EMOJI_NAMES, sign: SIGN_NAMES, badge: BADGE_SHAPES };
+// Badge words that make no claim; anything else must come from the shot's own copy.
+const NEUTRAL_BADGE_WORDS = ['NEW', 'NEW IN', 'OUT NOW', 'JUST LANDED', 'SHOP NOW'];
+
+/**
+ * A direction's graphics, checked: at most two, known names only, and badge words
+ * taken from the shot's copy (or a neutral word), so a film never invents an offer.
+ */
+export function normalizeGraphics(graphics, copy = '') {
+  if (!Array.isArray(graphics)) return [];
+  const words = String(copy).toUpperCase();
+  return graphics.flatMap((item) => {
+    const kind = String(item?.kind || '').toLowerCase();
+    const name = String(item?.name || '').toLowerCase();
+    if (!GRAPHIC_NAMES[kind]?.includes(name)) return [];
+    const place = GRAPHIC_PLACES.includes(item?.place) ? item.place : 'top-right';
+    const text = String(item?.text || '').toUpperCase().trim().slice(0, 14);
+    if (kind === 'badge' && (!text || (!NEUTRAL_BADGE_WORDS.includes(text) && !words.includes(text)))) return [];
+    if (kind === 'sign' && name === 'index' && !/^\d{1,2}$/.test(text)) return [{ kind, name, place, text: '01' }];
+    return [{ kind, name, place, ...(text && ['badge', 'sign'].includes(kind) ? { text } : {}) }];
+  }).slice(0, 2);
+}
+
+/** Places a shot's graphics around its headline, sized from the type and kept in frame. */
+export function applyGraphics(elements, spec, context = {}) {
+  const graphics = normalizeGraphics(spec.graphics, spec.copy || elements.find((element) => element.role === 'title')?.content);
+  const title = elements.find((element) => element.type === 'text' && element.role === 'title');
+  if (!graphics.length || !title || !context.width || !context.height) return elements;
+  const W = context.width;
+  const H = context.height;
+  const unit = Math.min(W, H);
+  const sizes = title.lines.map((_, i) => title.lineSizes?.[i] ?? title.fontSize);
+  const widths = title.lines.map((line, i) => measure(title.font, line, sizes[i], title.tracking || 0));
+  const lefts = widths.map((width) => (title.anchor === 'start' ? title.x : title.anchor === 'end' ? title.x - width : title.x - width / 2));
+  const top = title.y - capHeight(title.font, sizes[0]);
+  const bottom = title.y + (title.lines.length - 1) * (title.lineHeight || sizes[0]);
+  const box = { left: Math.min(...lefts), right: Math.max(...lefts.map((left, i) => left + widths[i])), top, bottom };
+  const cap = capHeight(title.font, sizes[0]);
+  const ink = readableTextColor(context.primaryColor);
+  const color = mix(context.accentColor, ink, 0.2);
+  const reveal = title.reveal || { start: 0, duration: 0.6 };
+  const landed = (reveal.start || 0) + (reveal.duration || 0.6) + (reveal.stagger || 0) * Math.min(6, title.lines.join(' ').split(/\s+/).length);
+  graphics.forEach((graphic, index) => {
+    const size = graphic.kind === 'badge' ? unit * (graphic.name === 'seal' ? 0.16 : 0.085) : Math.min(unit * 0.16, Math.max(unit * 0.06, cap * 1.1));
+    const gap = unit * 0.03;
+    const midX = (box.left + box.right) / 2;
+    const midY = (box.top + box.bottom) / 2;
+    const at = {
+      above: [midX, box.top - gap - size / 2], below: [midX, box.bottom + gap * 2 + size / 2],
+      left: [box.left - gap - size / 2, midY], right: [box.right + gap + size / 2, midY],
+      'top-left': [box.left - size * 0.15, box.top - size * 0.35], 'top-right': [box.right + size * 0.15, box.top - size * 0.35],
+      'bottom-left': [box.left - size * 0.15, box.bottom + size * 0.35], 'bottom-right': [box.right + size * 0.15, box.bottom + size * 0.35],
+    }[graphic.place];
+    // Kept inside the frame with a margin, whatever the layout.
+    const half = graphic.kind === 'badge' && graphic.name !== 'seal' ? size * 2.2 : size / 2;
+    const margin = unit * 0.03;
+    const x = Math.min(W - margin - half, Math.max(margin + half, at[0]));
+    const y = Math.min(H - margin - size / 2, Math.max(margin + size / 2, at[1]));
+    const element = { id: `${title.id}-graphic-${index + 1}`, type: 'graphic', kind: graphic.kind, name: graphic.name, x, y, size, color, reveal: { start: landed + 0.1 + index * 0.18, duration: 0.5 }, ...(graphic.text ? { text: graphic.text } : {}) };
+    if (graphic.kind === 'badge') {
+      const badgeInk = readableTextColor(context.accentColor);
+      if (contrastRatio(badgeInk, context.accentColor) < MIN_TEXT_CONTRAST) return;
+      element.paint = context.accentColor;
+      element.ink = badgeInk;
+    }
+    elements.push(element);
+  });
+  return elements;
+}
 export const EMPHASIS_STYLES = Object.freeze(['gradient', 'outline', 'highlight', 'pill']);
 
 /** Recipes that put an uploaded product photo on screen. */
@@ -806,6 +879,7 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
       ...(TEXT_MOTIONS.includes(source.textMotion) ? { textMotion: source.textMotion } : {}),
       ...(EMPHASIS_STYLES.includes(source.emphasisStyle) ? { emphasisStyle: source.emphasisStyle } : {}),
       ...(typeof source.echo === 'boolean' ? { echo: source.echo } : {}),
+      ...(normalizeGraphics(source.graphics, copy).length ? { graphics: normalizeGraphics(source.graphics, copy) } : {}),
       ...(typeof source.reason === 'string' && source.reason.trim() ? { reason: source.reason.trim().replace(/\s+/g, ' ').slice(0, 160) } : {}),
       ...(textCase ? { textCase } : {}),
       kicker,

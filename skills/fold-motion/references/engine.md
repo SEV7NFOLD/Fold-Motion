@@ -102,6 +102,21 @@ applies them after a recipe lays out. No motion repeats on consecutive shots,
 and a film has at most two echoes. End cards with lines of up to six words are
 the payoff: the display face at up to a fifth of the frame, slamming in.
 
+### Graphics: icons, emojis, signs and badges
+
+A direction's `graphics` (at most two per shot) support the type.
+`public/graphics-library.mjs` holds 55 Lucide icons (ISC) and 52 Twemoji emojis
+(CC BY 4.0, credited in the studio), packed as plain shapes only; signs (arrows,
+asterisk, sparkle, plus, index numbers, ampersand) and badges (seal, pill, tag)
+are drawn by the engine. `applyGraphics` places them relative to the headline
+(above, below, beside, or overlapping a corner like a sticker), sized from the
+type, kept inside the frame, and timed to arrive after the headline lands. Badge
+words must come from the shot's copy or a neutral word (NEW, OUT NOW, SHOP NOW),
+so a film never invents an offer; a badge whose ink wouldn't read on the accent
+is dropped. Fit checks graphics too, and FOLD Score chimes as each appears.
+Emojis are for playful briefs only (a rule for the model now; style kits will
+enforce it in code).
+
 ### Headline effects and film looks
 
 A direction's `typeEffect` gives a shot's title `decode` (each letter cycles

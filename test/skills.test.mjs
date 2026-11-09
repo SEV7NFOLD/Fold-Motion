@@ -322,3 +322,18 @@ test('the studio measures photos, keeps original colors by default, and warns ab
   assert.match(studio, /photoColor: record\.photoColor \|\| 'original'/);
   assert.match(studio, /storyboard\.missingPhotos\?\.length/);
 });
+
+test('the studio previews graphics, offers a Graphic picker and credits the artwork', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /import \{ EMOJIS, ICONS as GRAPHIC_ICONS \} from '\.\/graphics-library\.mjs'/);
+  assert.match(studio, /'Graphic: none'/);
+  assert.match(read(root, 'public', 'index.html'), /Twemoji by Twitter and contributors \(CC BY 4\.0\)/);
+});
+
+test('every browser module parses (the studio would fail to load otherwise)', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { readdirSync } = await import('node:fs');
+  for (const file of readdirSync(path.join(root, 'public')).filter((name) => name.endsWith('.js') || name.endsWith('.mjs'))) {
+    execFileSync(process.execPath, ['--check', path.join(root, 'public', file)], { stdio: 'pipe' });
+  }
+});
