@@ -133,6 +133,9 @@ function sceneRules(context = {}) {
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',
+    '- Typography is FOLD Motion\'s power: vary it. "textMotion" is how the line moves in: "rise" (calm, word by word), "slam" (words punch in large and snap into place: launches, bold claims, end cards), "drop" (letters fall in with a bounce: playful) or "split" (halves slide in from opposite sides: editorial). Never the same motion twice in a row.',
+    '- "emphasisStyle" treats the emphasized word: "gradient", "outline", "highlight" (a marker swipe behind it) or "pill" (a color capsule). "echo" puts a giant outlined copy of the key word behind the shot, cropped by the frame: for the opening and the payoff, at most twice per film.',
+    '- "word-beat" is a kinetic poster for a two- to five-word line: each word fills the frame on the beat, then the line resolves.',
     '- "reason" is one short sentence (under 20 words) on why the shot is staged this way, for the client to read; when it shows a product photo, say why that photo.',
     '- "typeEffect" is "decode" (letters scramble through code-like glyphs, then lock in: tech, editorial, reveals), "outline" (letters trace as outlines, then fill: elegant, premium) or "none". Use it on one or two hero lines at most.',
     '- "zoom" as a transition flies the camera into a letter of the line and reveals the next shot through it: a signature move, once per film at most, on a shot whose line has a bold display word.',
@@ -281,7 +284,7 @@ export class OpenAICompatibleAIProvider extends BaseAIProvider {
   async compileStoryboard(storyboard, context = {}) {
     const result = await this.generateStructuredJson([
       'Direct the approved FOLD Motion storyboard: one shot direction per storyboard shot.',
-      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, reason, beam and sweep.',
+      'Return a JSON object with a "shotSpecs" array containing one direction per storyboard shot, in the same order. Each direction has id, title, recipe, textCase, kicker, emphasis, motion, transitionOut, product, typeEffect, textMotion, emphasisStyle, echo, reason, beam and sweep.',
       SHOT_COMPILER,
       sceneRules(context),
       `Approved storyboard:\n${JSON.stringify(storyboard)}`,
@@ -539,6 +542,9 @@ export class GeminiAIProvider extends BaseAIProvider {
         transitionOut: { type: 'STRING', enum: [...TRANSITION_OPTIONS] },
         product: { type: 'INTEGER' },
         typeEffect: { type: 'STRING', enum: ['none', 'decode', 'outline'] },
+        textMotion: { type: 'STRING', enum: ['rise', 'slam', 'drop', 'split'] },
+        emphasisStyle: { type: 'STRING', enum: ['gradient', 'outline', 'highlight', 'pill'] },
+        echo: { type: 'BOOLEAN' },
         reason: { type: 'STRING' },
         beam: { type: 'BOOLEAN' },
         sweep: { type: 'BOOLEAN' },

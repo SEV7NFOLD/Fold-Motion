@@ -994,3 +994,64 @@ test('quick wins: a shot every 2.5 seconds, missing photos flagged, type windows
   const frame = renderTimelineFrame({ width: 1280, height: 720, fps: 24, totalFrames: 48, shots: [{ shotId: 's', startFrame: 0, endFrame: 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] }, 40, brand);
   assert.match(frame, /<svg [^>]*viewBox="90 45 120 360"/, 'the letters show the product region');
 });
+
+test('kinetic type: slam, drop, split, word beat, emphasis styles, echo and the payoff, in every format', async () => {
+  const { applyTextMotion, limitFolds, normalizeDirection } = await import('../src/production/recipes.mjs');
+  const { measureFrameFit, evaluateCreativeQA } = await import('../src/production/production.mjs');
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const [width, height] of [[1280, 720], [720, 1280], [960, 960]]) {
+    const context = { ...DARK, width, height, accentColor: '#C9A24A' };
+    const plan = [
+      { recipe: 'title-reveal', copy: 'Written in leather', textMotion: 'slam', emphasis: 'leather', emphasisStyle: 'highlight', echo: true },
+      { recipe: 'statement', copy: 'Every detail, deliberate', textMotion: 'drop', emphasis: 'deliberate', emphasisStyle: 'pill' },
+      { recipe: 'kicker-title', copy: 'Made to last', textMotion: 'split', emphasis: 'last', emphasisStyle: 'outline' },
+      { recipe: 'word-beat', copy: 'Slow. Calm. Pure.' },
+      { recipe: 'lockup', copy: 'Bring the Lakes home.', emphasis: 'Lakes', echo: true },
+    ];
+    let start = 0;
+    const shots = plan.map((item, index) => {
+      const spec = { version: 2, ...item, width, height, durationInSeconds: 2.5, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+      // The real build puts a background rect first; contrast is measured against it.
+      const background = { id: `s${index}-bg`, type: 'rect', x: 0, y: 0, width, height, fill: DARK.primaryColor };
+      spec.elements = applyTextMotion([background, ...expandRecipe(spec, { copy: item.copy, context, shotIndex: index })], spec, context);
+      const shot = { shotId: `s${index}`, startFrame: start, endFrame: start + 59, durationFrames: 60, palette: { primary: DARK.primaryColor, accent: '#C9A24A' }, spec };
+      start += 60;
+      return shot;
+    });
+    const timeline = { width, height, fps: 24, totalFrames: start, shots, palette: { primary: DARK.primaryColor, accent: '#C9A24A' } };
+    const title = (index) => shots[index].spec.elements.find((element) => element.role === 'title');
+    assert.deepEqual([0, 1, 2, 3].map((i) => title(i).reveal.style), ['slam', 'drop', 'split', 'beat']);
+    assert.deepEqual([0, 1, 2].map((i) => title(i).emphasisStyle), ['highlight', 'pill', 'outline']);
+    assert.ok(shots[0].spec.elements.some((element) => element.role === 'decor' && element.outline), 'an echo behind the opening');
+    assert.equal(measureFrameFit(timeline).pass, true, `${width}x${height}: echoes are exempt, readable lines fit`);
+    assert.equal(evaluateCreativeQA(timeline, context).contrast.pass, true, 'contrast ignores the echo');
+    assert.equal(title(4).font, 'display', 'the payoff uses the display face');
+    for (const frame of [4, 12, 30, 59, 66, 100, 130, 150, 190, 230, 250, 270, 299]) {
+      const png = new Resvg(renderTimelineFrame(timeline, frame, {}), { fitTo: { mode: 'width', value: width / 4 }, font }).render();
+      assert.equal(png.width, width / 4);
+    }
+    const beatMid = renderTimelineFrame(timeline, 180 + 8, {});
+    assert.match(beatMid, />SLOW\.</, 'one word fills the frame');
+    assert.doesNotMatch(beatMid, />CALM\.</);
+    assert.match(renderTimelineFrame(timeline, 299, {}), /Lakes/, 'the payoff settles on the copy');
+    assert.match(renderTimelineFrame(timeline, 119, {}), /rx=/, 'the pill sits behind its word');
+  }
+  // Highlighters and pills pick the ink (black or white) that reads on the accent:
+  // that always clears 4.5:1, whatever the brand's accent is.
+  const { contrastRatio, readableTextColor } = await import('../src/production/color.mjs');
+  for (const accent of ['#808080', '#757575', '#C9A24A', '#7C3AED', '#183B35', '#E9A962', '#FF0055']) {
+    const styled = applyTextMotion(expandRecipe({ version: 2, recipe: 'title-reveal', emphasis: 'leather', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy: 'Written in leather', context: { ...DARK, accentColor: accent }, shotIndex: 0 }), { emphasisStyle: 'highlight', durationInSeconds: 2 }, { ...DARK, accentColor: accent })
+      .find((element) => element.role === 'title');
+    // Used only where its ink reads; refused only where it genuinely wouldn't.
+    if (styled.emphasisStyle === 'highlight') assert.ok(contrastRatio(styled.emphasisInk, accent) >= 4.5, accent);
+    else assert.ok(contrastRatio(readableTextColor(accent), accent) < 4.5, `${accent} was refused but reads`);
+    if (['#C9A24A', '#7C3AED', '#E9A962', '#FF0055'].includes(accent)) assert.equal(styled.emphasisStyle, 'highlight', accent);
+  }
+  const specs = [{ version: 2, textMotion: 'slam', echo: true }, { version: 2, textMotion: 'slam', echo: true }, { version: 2, textMotion: 'drop', echo: true }];
+  limitFolds(specs);
+  assert.deepEqual(specs.map((spec) => spec.textMotion), ['slam', 'rise', 'drop']);
+  assert.equal(specs.filter((spec) => spec.echo).length, 2);
+  const kept = normalizeDirection({ recipe: 'title-reveal', textMotion: 'split', emphasisStyle: 'pill', echo: true, transitionOut: 'cut' }, { copy: 'Made to last', index: 1, count: 3, seed: 's' }).direction;
+  assert.deepEqual([kept.textMotion, kept.emphasisStyle, kept.echo], ['split', 'pill', true]);
+  assert.equal(normalizeDirection({ recipe: 'word-beat', transitionOut: 'cut' }, { copy: 'One', index: 1, count: 3, seed: 's' }).direction.recipe, 'title-reveal');
+});

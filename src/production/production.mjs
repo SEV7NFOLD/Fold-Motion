@@ -2,7 +2,7 @@ import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
-import { applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
+import { applyTextMotion, applyTypeEffect, ensureProductShot, expandRecipe, fallbackDirection, limitFolds, normalizeDirection, RECIPES_WITH_SUPPORT } from './recipes.mjs';
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { fontFace, measure } from '../render/typography.mjs';
@@ -28,6 +28,14 @@ function safeSlug(value) {
 }
 
 function isRenderableElement(element, context) {
+  // A decorative echo is wider than the frame by design: it needs real numbers, an
+  // outline color and a single line, not to fit.
+  if (element.type === 'text' && element.role === 'decor' && element.outline) {
+    return /^#[\da-f]{6}$/i.test(element.outline)
+      && [element.x, element.y, element.fontSize].every(Number.isFinite)
+      && element.fontSize > 0
+      && Array.isArray(element.lines) && element.lines.length === 1;
+  }
   const hasColor = typeof element.fill === 'string' && /^#[\da-f]{6}$/i.test(element.fill);
   if (element.type === 'rect') {
     return hasColor
@@ -434,7 +442,7 @@ export function buildTimeline(storyboard, shotSpecs, context = {}) {
       const productOrdinal = shotSpecs.slice(0, index).filter((spec) => spec?.recipe === 'product-hero').length;
       sourceSpec = {
         ...expanded,
-        elements: applyTypeEffect(expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }), expanded),
+        elements: applyTextMotion(applyTypeEffect(expandRecipe(expanded, { copy: shot.onScreenCopy, context: normalizedContext, shotIndex: index, support, productOrdinal }), expanded), expanded, normalizedContext),
       };
     }
     const validation = validateSceneSpec(sourceSpec);
@@ -636,7 +644,7 @@ export function validateTimeline(timeline) {
 export function evaluateCreativeQA(timeline, context = {}) {
   const normalizedContext = normalizeProductionContext(context);
   const textElements = timeline.shots.flatMap((shot) => shot.spec.elements
-    .filter((element) => element.type === 'text')
+    .filter((element) => element.type === 'text' && !(element.role === 'decor' && element.outline))
     .map((element) => ({ shotId: shot.shotId, element })));
   const contrastResults = textElements.map(({ shotId, element }) => {
     const background = shotBackground(timeline.shots.find((shot) => shot.shotId === shotId)?.spec);
@@ -680,7 +688,8 @@ export function measureFrameFit(timeline) {
   const failures = [];
   for (const shot of timeline.shots) {
     for (const element of shot.spec.elements || []) {
-      if (element.type !== 'text' || !Array.isArray(element.lines) || !fontFace(element.font)) continue;
+      // Decorative echoes are cropped by the frame on purpose; readable text must fit.
+      if (element.type !== 'text' || element.role === 'decor' || !Array.isArray(element.lines) || !fontFace(element.font)) continue;
       const size = element.size || element.fontSize;
       const tracking = Math.max(element.tracking || 0, element.settle?.from || 0);
       element.lines.forEach((line) => {
