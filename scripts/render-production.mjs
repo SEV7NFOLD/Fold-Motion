@@ -353,11 +353,11 @@ export async function renderProductionProject({
   const brand = resolveBrandAssets(assets);
   const palette = timeline.shots[0]?.palette || { primary: '#0E0E11', accent: '#7C3AED' };
   const hasWindows = timeline.shots.some((shot) => (shot.spec.elements || []).some((element) => element.window));
-  brand.products = brand.products.map((product) => ({
+  brand.products = brand.products.map((product) => (product ? {
     ...product,
     graded: gradeProduct(product, palette),
     ...(hasWindows ? { windowGraded: gradeProduct(product, palette, { lift: true }) } : {}),
-  }));
+  } : null));
   brand.panels = bakeProductPanels(timeline, brand);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
 

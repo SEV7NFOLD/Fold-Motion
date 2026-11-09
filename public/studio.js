@@ -467,7 +467,8 @@ function composeBrief(briefs) {
 // Stored in IndexedDB (images are too big for localStorage). Like the colors, the
 // brand kit carries over to every new production.
 const BRAND_DB = 'fold-motion-brand';
-const BRAND_LIMITS = { logoPngBytes: 1_500_000, productBytes: 2_000_000, products: 3 };
+// Product photos: as many as a production needs (the ceiling protects the server).
+const BRAND_LIMITS = { logoPngBytes: 1_500_000, productBytes: 2_000_000, products: 40 };
 let brandKit = { logo: null, products: [] };
 let logoTree = null;
 
@@ -686,7 +687,7 @@ async function addProducts(files) {
   showAssetError('');
   for (const file of files) {
     if (brandKit.products.length >= BRAND_LIMITS.products) {
-      showAssetError(`Up to ${BRAND_LIMITS.products} product photos.`);
+      showAssetError(`That’s ${BRAND_LIMITS.products} product photos, the most one brand kit holds. Remove some to add others.`);
       break;
     }
     try {
@@ -700,11 +701,12 @@ async function addProducts(files) {
   await saveBrandKit();
 }
 
-function assetThumb({ src, name, onRemove, label }) {
+function assetThumb({ src, name, onRemove, label, caption }) {
   const image = h('img', { class: 'asset-thumb', alt: name || label, src });
   const remove = h('button', { class: 'asset-remove', type: 'button', 'aria-label': `Remove ${label}`, text: '×' });
   remove.addEventListener('click', onRemove);
-  return h('span', { class: 'asset-item', title: name || label }, image, remove);
+  return h('span', { class: 'asset-item', title: name ? `${caption ? `${caption}: ` : ''}${name}` : label }, image, remove,
+    caption ? h('span', { class: 'asset-caption', text: caption }) : null);
 }
 
 function renderBrandTray() {
@@ -722,7 +724,7 @@ function renderBrandTray() {
     } }));
   }
   productSlots.replaceChildren(...brandKit.products.map((product, index) => assetThumb({
-    src: product.dataUri, name: product.name, label: `product photo ${index + 1}`,
+    src: product.dataUri, name: product.name, label: `photo ${index + 1}`, caption: `Photo ${index + 1}`,
     onRemove: async () => {
       brandKit.products = brandKit.products.filter((item) => item.id !== product.id);
       await saveBrandKit();
@@ -774,7 +776,7 @@ function withBrand(context, record = activeRecord()) {
   const logo = brandKit.logo ? { kind: brandKit.logo.kind, width: brandKit.logo.width, height: brandKit.logo.height } : undefined;
   const products = brandKit.products.length ? brandKit.products.map((product) => {
     const thumb = thumbFor(product);
-    return { width: product.width, height: product.height, ...(thumb ? { thumb } : {}) };
+    return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}) };
   }) : undefined;
   const { width, height } = FORMATS[formatOf(record)];
   return { ...context, logo, products, width, height };
@@ -827,6 +829,19 @@ $('format-pick').addEventListener('change', () => {
 });
 
 /** Render requests carry the logo itself. */
+/** Photo numbers a timeline shows (product heroes and type windows), or null. */
+function photosUsed(timeline) {
+  if (!timeline?.shots) return null;
+  const used = new Set();
+  for (const shot of timeline.shots) {
+    for (const element of shot.spec?.elements || []) {
+      if (element.type === 'image' && element.product) used.add(element.product);
+      if (element.window?.product) used.add(element.window.product);
+    }
+  }
+  return used;
+}
+
 function brandAssets() {
   if (!brandKit.logo && brandKit.products.length === 0) return undefined;
   const assets = {};
@@ -836,7 +851,13 @@ function brandAssets() {
       : brandKit.logo.kind === 'svg' ? { kind: 'svg', svg: brandKit.logo.svg } : { kind: 'png', dataUri: brandKit.logo.dataUri };
   }
   if (brandKit.products.length) {
-    assets.products = brandKit.products.map((product) => (cloud && product.path ? { path: product.path } : { dataUri: product.dataUri }));
+    // Only the photos this film shows travel with the render (the rest stay null,
+    // keeping every photo's number), so a big brand kit costs nothing extra.
+    const used = photosUsed(activeRecord()?.project?.timeline);
+    assets.products = brandKit.products.map((product, index) => {
+      if (used && !used.has(index + 1)) return null;
+      return cloud && product.path ? { path: product.path } : { dataUri: product.dataUri };
+    });
   }
   return assets;
 }
@@ -2404,13 +2425,16 @@ function renderComposerAttachments() {
       if (cloud && path) cloud.removeObject('brand-assets', path).catch(() => {});
     } });
   }
-  brandKit.products.forEach((product, index) => items.push({ src: product.dataUri, label: `Product ${index + 1}`, name: product.name, remove: async () => {
+  brandKit.products.forEach((product, index) => items.push({ src: product.dataUri, label: `Photo ${index + 1}`, name: product.name, remove: async () => {
     brandKit.products = brandKit.products.filter((item) => item.id !== product.id);
     await saveBrandKit();
     if (cloud && product.path) cloud.removeObject('brand-assets', product.path).catch(() => {});
   } }));
   strip.hidden = items.length === 0;
-  strip.replaceChildren(...items.map((item) => {
+  // A big brand kit shows its first photos and a chip for the rest.
+  const shown = items.length > 8 ? items.slice(0, 7) : items;
+  const more = items.length - shown.length;
+  strip.replaceChildren(...shown.map((item) => {
     const remove = h('button', { class: 'attachment-remove', type: 'button', 'aria-label': `Remove ${item.label.toLowerCase()}`, text: '×' });
     remove.addEventListener('click', item.remove);
     return h('span', { class: 'attachment', title: item.name || item.label },
@@ -2418,6 +2442,11 @@ function renderComposerAttachments() {
       h('span', { class: 'attachment-label', text: item.label }),
       remove);
   }));
+  if (more > 0) {
+    const chip = h('button', { class: 'attachment attachment-more', type: 'button', text: `+${more} more`, title: 'See every photo in the brand kit' });
+    chip.addEventListener('click', () => { if ($('brief-details').hidden) $('details-toggle').click(); });
+    strip.append(chip);
+  }
 }
 
 // ------------------------------------------------------------------ sign-in (Supabase)
