@@ -141,6 +141,16 @@ fresh builds the end card keeps at least three seconds (or a fifth of the film),
 taken from the longest shots; edits are left alone. Statements of up to three
 words are set larger.
 
+### The brief's words are binding
+
+`applyBriefWords` reads each storyboard shot's description: slams, letters drop,
+splits in, traces in as an outline, decodes, highlighter, pill, outlined word,
+echo, word beat, count-up and quote card set the effect in code. Those typography
+choices are marked `briefLocked`, so the style kit doesn't overwrite them (the
+user asked for them); graphics stay guarded by the kit. Headline effects never
+apply to word beats, count-ups, type windows or logo reveals (they'd replace the
+shot's own animation). With timecoded beats, the brief sets the shot count.
+
 ### Style kits
 
 Each film has a visual language from `src/production/style-kits.mjs`:

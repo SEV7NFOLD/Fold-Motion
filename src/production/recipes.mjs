@@ -81,7 +81,8 @@ export function applyGraphics(elements, spec, context = {}) {
   const reveal = title.reveal || { start: 0, duration: 0.6 };
   const landed = (reveal.start || 0) + (reveal.duration || 0.6) + (reveal.stagger || 0) * Math.min(6, title.lines.join(' ').split(/\s+/).length);
   graphics.forEach((graphic, index) => {
-    const size = graphic.kind === 'badge' ? unit * (graphic.name === 'seal' ? 0.16 : 0.085) : Math.min(unit * 0.16, Math.max(unit * 0.06, cap * 1.1));
+    // Emojis read as stickers: never smaller than a tenth of the frame's short side.
+    const size = graphic.kind === 'badge' ? unit * (graphic.name === 'seal' ? 0.16 : 0.085) : Math.min(unit * 0.16, Math.max(unit * (graphic.kind === 'emoji' ? 0.1 : 0.06), cap * (graphic.kind === 'emoji' ? 1.4 : 1.1)));
     const gap = unit * 0.03;
     const midX = (box.left + box.right) / 2;
     const midY = (box.top + box.bottom) / 2;
@@ -553,7 +554,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     case 'quote': {
       const shown = display(copy, textCase === 'upper' ? 'upper' : 'as-written');
       const unit = Math.min(W, H);
-      const block = fitBlock('medium', shown, { maxWidth: W * 0.78, maxSize: unit * 0.075, minSize: unit * 0.035, maxLines: 4, tracking: 0 });
+      const block = fitBlock('medium', shown, { maxWidth: W * 0.78, maxSize: unit * 0.085, minSize: unit * 0.035, maxLines: 4, tracking: 0 });
       const lineHeight = block.size * 1.32;
       const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, 'medium');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
@@ -648,7 +649,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const titleFont = payoff ? DISPLAY : 'bold';
       const unit = Math.min(W, H);
       const block = payoff
-        ? fitBlock(DISPLAY, shown, { maxWidth: W * (W < H ? 0.84 : 0.8), maxSize: unit * 0.2, minSize: unit * 0.06, maxLines: 2, tracking: 0.01 })
+        ? fitBlock(DISPLAY, shown, { maxWidth: W * (W < H ? 0.84 : 0.8), maxSize: unit * 0.2, minSize: unit * 0.06, maxLines: 2, tracking: 0.01, maxHeight: H * (context.logo ? 0.26 : 0.32), lineHeight: 1.02 })
         : fitBlock('bold', shown, { maxWidth: W * 0.72, maxSize: H * 0.09, minSize: H * 0.045, maxLines: 2, tracking: -0.015 });
       const lineHeight = block.size * (payoff ? 1.02 : 1.18);
       if (context.logo) {
@@ -904,7 +905,7 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
     direction: {
       recipe,
       ...(product ? { product } : {}),
-      ...(TYPE_EFFECTS.includes(source.typeEffect) ? { typeEffect: source.typeEffect } : {}),
+      ...(TYPE_EFFECTS.includes(source.typeEffect) && !['word-beat', 'stat'].includes(recipe) ? { typeEffect: source.typeEffect } : {}),
       ...(TEXT_MOTIONS.includes(source.textMotion) ? { textMotion: source.textMotion } : {}),
       ...(EMPHASIS_STYLES.includes(source.emphasisStyle) ? { emphasisStyle: source.emphasisStyle } : {}),
       ...(typeof source.echo === 'boolean' ? { echo: source.echo } : {}),
@@ -1027,7 +1028,9 @@ export function applyTextMotion(elements, spec, context = {}) {
 
 /** Applies a shot's headline effect (decode or outline) to its title. */
 export function applyTypeEffect(elements, spec) {
-  if (!TYPE_EFFECTS.includes(spec?.typeEffect) || ['type-window', 'logo-reveal'].includes(spec.recipe)) return elements;
+  // Shot types with their own animation keep it: a decode would replace a word
+  // beat's beats or a count-up's count.
+  if (!TYPE_EFFECTS.includes(spec?.typeEffect) || ['type-window', 'logo-reveal', 'word-beat', 'stat'].includes(spec.recipe)) return elements;
   const k = Math.min(1.6, Math.max(1, (spec.durationInSeconds || 2.5) / 2.5));
   for (const element of elements) {
     if (element.type !== 'text' || element.role !== 'title') continue;

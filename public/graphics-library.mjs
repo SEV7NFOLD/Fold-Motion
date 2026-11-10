@@ -122,6 +122,9 @@ export const EMOJIS = Object.freeze({
  "white-heart": "<path fill=\"#E6E7E8\" d=\"M35.885 11.833c0-5.45-4.418-9.868-9.867-9.868-3.308 0-6.227 1.633-8.018 4.129-1.791-2.496-4.71-4.129-8.017-4.129-5.45 0-9.868 4.417-9.868 9.868 0 .772.098 1.52.266 2.241C1.751 22.587 11.216 31.568 18 34.034c6.783-2.466 16.249-11.447 17.617-19.959.17-.721.268-1.469.268-2.242z\"/>"
 });
 
+/** Each emoji's character, so a brief that types "👀" gets the eyes emoji. */
+export const EMOJI_CHARS = Object.freeze({"✨": "sparkles", "🌿": "herb", "🍊": "orange", "🍋": "lemon", "🌸": "blossom", "💧": "droplet", "🔥": "fire", "⭐": "star", "❤": "red-heart", "🎁": "gift", "🛍": "shopping-bags", "🕯": "candle", "🌙": "moon", "☀": "sun", "🌊": "wave", "🏔": "mountain", "🍃": "leaves", "🧴": "lotion", "💄": "lipstick", "👟": "sneaker", "⚡": "lightning", "💯": "hundred", "✅": "check", "🎉": "party", "🥂": "cheers", "☕": "coffee", "🍫": "chocolate", "🍓": "strawberry", "🌱": "seedling", "💎": "gem", "🖤": "black-heart", "🤍": "white-heart", "👀": "eyes", "🙌": "raised-hands", "📦": "package", "🚚": "delivery", "⏰": "alarm", "📱": "phone", "🏷": "label", "🆕": "new", "💫": "dizzy", "🌹": "rose", "🫧": "bubbles", "🍇": "grapes", "🥑": "avocado", "🍯": "honey", "🧼": "soap", "🛁": "bath", "👑": "crown", "🌈": "rainbow", "🎶": "music", "🚀": "rocket"});
+
 export const ICON_NAMES = Object.freeze(Object.keys(ICONS));
 export const EMOJI_NAMES = Object.freeze(Object.keys(EMOJIS));
 

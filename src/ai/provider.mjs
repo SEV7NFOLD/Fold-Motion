@@ -131,7 +131,7 @@ function sceneRules(context = {}) {
     `- "recipe": one of ${RECIPE_OPTIONS.join(' | ')}.`,
     `- "transitionOut": one of ${TRANSITION_OPTIONS.join(' | ')}. The last shot's transition is ignored.`,
     `- "motion": { "camera": ${MOTION_OPTIONS.camera.join(' | ')}, "atmosphere": ${MOTION_OPTIONS.atmosphere.join(' | ')} }.`,
-    '- "kicker" (optional): at most 32 characters, one specific fact from the brief that the line doesn\'t say (a name, a date, a place, a category or a call to action). Never a generic label, never a repeat of the line. Leave it empty rather than pad.',
+    '- "kicker" (optional): at most 32 characters, one specific fact from the brief that the line doesn\'t say (a name, a date, a place, a category or a call to action), in the brief\'s own words. Never invent a description, tagline or claim about the brand ("PRECISION STUDIO", "DAILY RITUAL"), never a generic label, never a repeat of the line. Leave it empty rather than pad.',
     "- \"emphasis\" (optional): one to three words copied exactly from the shot's onScreenCopy.",
     '- "textCase": "upper" or "as-written". Keep "as-written" when the copy has deliberate casing, such as brand or product names.',
     '- "beam" and "sweep" are true or false.',

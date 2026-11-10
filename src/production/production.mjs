@@ -6,7 +6,7 @@ import { applyGraphics, applyTextMotion, applyTypeEffect, ensureProductShot, exp
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { fontFace, measure } from '../render/typography.mjs';
-import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
+import { BADGE_SHAPES, EMOJI_CHARS, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 import { chooseStyle, enforceStyleKit, resolveStyle, STYLE_KITS, STYLE_OPTIONS } from './style-kits.mjs';
 
@@ -400,11 +400,109 @@ function isLegacyScene(raw) {
 }
 
 /** Turns the model's direction for one shot into a v2 spec, listing what was repaired. */
+/**
+ * The brief's own words for how a shot moves are binding. When the storyboard
+ * shot says the line "slams in", "letters drop", "splits in", "traces itself in as
+ * an outline" or "decodes", or asks for a highlighter, pill, outlined word, echo,
+ * word beat, count-up or quote card, the direction uses exactly that.
+ */
+export function applyBriefWords(direction, shot, label = shot.id) {
+  // The shot's own line is taken out first: "Your next ad drops in minutes" is copy,
+  // not an instruction to drop the letters in.
+  const copy = String(shot.onScreenCopy || '').toLowerCase().trim();
+  const full = [shot.mainVisual, shot.motion, shot.purpose].filter(Boolean).join(' ').toLowerCase();
+  const text = copy ? full.split(copy).join(' ') : full;
+  if (!text.trim()) return [];
+  const changes = [];
+  const set = (field, value, why) => {
+    // Marked as the brief's own choice, so the style kit doesn't overwrite it.
+    if (['textMotion', 'emphasisStyle', 'typeEffect', 'echo'].includes(field)) direction.briefLocked = [...new Set([...(direction.briefLocked || []), field])];
+    if (direction[field] === value) return;
+    direction[field] = value;
+    changes.push(`${label}: the brief says ${why}; used ${field} "${value}".`);
+  };
+  const traced = /traces? (?:itself |themselves )?in as (?:an )?outline|outline,? then fills?/.test(text);
+  if (traced) set('typeEffect', 'outline', 'it traces in as an outline');
+  else if (/\bdecod(?:e|es|ed|ing)\b|code glyphs/.test(text)) set('typeEffect', 'decode', 'it decodes');
+  const motion = /\bslam(?:s|med|ming)?\b/.test(text) ? 'slam' : /\bletters? (?:drop|fall)|\bdrops? in\b/.test(text) ? 'drop' : /\bsplits? in\b|\bsplit(?:s)? (?:in )?from both sides/.test(text) ? 'split' : undefined;
+  if (motion && !traced && !/\bdecod/.test(text)) {
+    if (direction.typeEffect) { delete direction.typeEffect; changes.push(`${label}: the brief asks for a ${motion}, not a headline effect.`); }
+    set('textMotion', motion, `the line ${motion === 'slam' ? 'slams' : motion === 'drop' ? 'drops' : 'splits'} in`);
+  }
+  if (/\bhighlighter\b|\bmarker highlight/.test(text)) set('emphasisStyle', 'highlight', 'a highlighter');
+  else if (/\bpill\b/.test(text)) set('emphasisStyle', 'pill', 'a pill');
+  else if (/\b[a-z]+ is outlined\b|\bis outlined\b/.test(text)) set('emphasisStyle', 'outline', 'an outlined word');
+  if (/\becho(?:es|ing)?\b/.test(text)) set('echo', true, 'an echo');
+  // Graphics the brief names: emoji characters, a NEW seal or pill, a sparkle, an
+  // arrow, an asterisk, a named icon. The style kit still guards them afterwards.
+  const raw = full;
+  const placeNear = (index) => {
+    const around = text.slice(Math.max(0, index - 30), index + 40);
+    return /\babove\b/.test(around) ? 'above' : /\bbelow\b|\bunder\b/.test(around) ? 'below' : /\bbeside\b|\bnext to\b|\bpoints?\b/.test(around) ? 'right' : 'top-right';
+  };
+  const asked = [];
+  for (const [char, name] of Object.entries(EMOJI_CHARS)) {
+    const at = raw.indexOf(char);
+    if (at >= 0) asked.push({ kind: 'emoji', name, place: placeNear(text.indexOf(char.toLowerCase()) >= 0 ? text.indexOf(char.toLowerCase()) : 0) });
+  }
+  const badge = /\b(new|out now|shop now)\s+(seal|pill|tag|sticker|badge)\b/.exec(text);
+  if (badge) asked.push({ kind: 'badge', name: badge[2] === 'pill' ? 'pill' : badge[2] === 'tag' ? 'tag' : 'seal', text: badge[1].toUpperCase(), place: 'top-right' });
+  if (/\bsparkle\b/.test(text)) asked.push({ kind: 'sign', name: 'sparkle', place: placeNear(text.indexOf('sparkle')) });
+  if (/\barrow\b/.test(text)) asked.push({ kind: 'sign', name: 'arrow-right', place: 'left' });
+  if (/\basterisk\b/.test(text)) asked.push({ kind: 'sign', name: 'asterisk', place: 'top-right' });
+  for (const match of text.matchAll(/\b([a-z-]+) icon\b/g)) if (ICON_NAMES.includes(match[1])) asked.push({ kind: 'icon', name: match[1], place: placeNear(match.index) });
+  if (asked.length) {
+    const existing = Array.isArray(direction.graphics) ? direction.graphics : [];
+    const merged = [...asked, ...existing.filter((item) => !asked.some((a) => a.kind === item.kind && a.name === item.name))].slice(0, 2);
+    direction.graphics = merged;
+    changes.push(`${label}: the brief asks for ${asked.map((a) => `${a.kind} "${a.name}"`).join(', ')}.`);
+  }
+  const words = String(shot.onScreenCopy || '').trim().split(/\s+/).length;
+  if (/\bword beat\b/.test(text) && words >= 2 && words <= 5) {
+    set('recipe', 'word-beat', 'a word beat');
+    if (direction.typeEffect) { delete direction.typeEffect; changes.push(`${label}: a word beat keeps its own animation; dropped the headline effect.`); }
+  }
+  else if (/\bcount-?up\b|\bcounts? (?:up|from zero)/.test(text) && /\d/.test(String(shot.onScreenCopy))) set('recipe', 'stat', 'a count-up');
+  else if (/\bquote card\b/.test(text)) set('recipe', 'quote', 'a quote card');
+  return changes;
+}
+
+/**
+ * Transitions the brief names are binding. Out of a shot: "flies through a letter"
+ * (zoom), "then The Fold", "then a wipe", "pushes into". Into a shot: "The Fold
+ * opens onto", "a second Fold resolves into" set the previous shot's transition.
+ * The limits (one zoom, two Folds) apply afterwards.
+ */
+export function applyBriefTransitions(specs, shots) {
+  const changes = [];
+  const textOf = (shot) => {
+    const copy = String(shot.onScreenCopy || '').toLowerCase().trim();
+    const full = [shot.mainVisual, shot.motion, shot.transition, shot.purpose].filter(Boolean).join(' ').toLowerCase();
+    return copy ? full.split(copy).join(' ') : full;
+  };
+  const set = (index, value, why) => {
+    const spec = specs[index];
+    if (!spec || index >= specs.length - 1 || spec.transitionOut === value) return;
+    spec.transitionOut = value;
+    changes.push(`${shots[index].id}: the brief says ${why}; used "${value}".`);
+  };
+  shots.forEach((shot, index) => {
+    const text = textOf(shot);
+    if (index > 0 && /\b(?:the |a second |another )?fold (?:opens onto|resolves into|opens|unfolds)/.test(text)) set(index - 1, 'fold', 'The Fold opens this shot');
+    if (/fl(?:y|ies|ying) through a letter|through a letter into/.test(text)) set(index, 'zoom', 'the camera flies through a letter');
+    else if (/\bthen (?:the |a )?fold\b|\bfolds? (?:into|to) the next/.test(text)) set(index, 'fold', 'then The Fold');
+    else if (/\bthen (?:a )?wipe\b|\bwipes? (?:to|into) the next/.test(text)) set(index, 'wipe', 'a wipe');
+    else if (/\bpush(?:es)? into the next|\bthen (?:a )?push\b/.test(text)) set(index, 'push', 'a push');
+  });
+  return changes;
+}
+
 function directedShotSpec(raw, shot, index, count, context, seed) {
   const label = shot.id;
   const repairs = [];
   const { direction, changes } = normalizeDirection(raw, { copy: shot.onScreenCopy, index, count, seed, hasLogo: Boolean(context.logo), productCount: context.products?.length || 0 });
   repairs.push(...changes.map((change) => `${label}: ${change}.`));
+  repairs.push(...applyBriefWords(direction, shot, label));
   let motion;
   if (raw?.motion === undefined) {
     motion = fallbackMotion(seed, index);
@@ -781,15 +879,18 @@ function earlierShotsReusing(storyboard, onScreenText) {
  * the shots on either side. The first and last shots (headline and subheadline) always stay,
  * and a film never drops below two shots. Returns the removed shots.
  */
-function removeRepeatedLines(storyboard) {
-  const key = (shot) => String(shot.onScreenCopy || '').trim().toLowerCase();
+function removeRepeatedLines(storyboard, endCardLines = []) {
+  // Compared without case or punctuation: "CREATIVITY AT SCALE." repeats "Creativity at scale".
+  const plain = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const key = (shot) => plain(shot.onScreenCopy);
+  const endCard = new Set(endCardLines.map(plain).filter(Boolean));
   const shots = storyboard.shots;
   const removed = [];
   const kept = [];
   shots.forEach((shot, index) => {
     // The last shot always stays; the first stays unless it repeats the end card.
     const isEdge = index === shots.length - 1 || (index === 0 && key(shot) !== key(shots.at(-1)));
-    const repeats = kept.some((other) => key(other) === key(shot)) || key(shot) === key(shots.at(-1));
+    const repeats = kept.some((other) => key(other) === key(shot)) || key(shot) === key(shots.at(-1)) || (index < shots.length - 1 && endCard.has(key(shot)));
     if (!isEdge && repeats && shots.length - removed.length > 2) {
       if (index === 0) {
         removed.push(shot);
@@ -868,15 +969,22 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   // Only when a length was asked for (in the brief or by the caller): a default
   // 8-second film with three shots is acceptable, and not worth another call.
   const lengthRequested = briefSeconds !== undefined || context.durationInSeconds !== undefined;
-  // At least one shot per 2.5 seconds: a 15-second film needs six or more.
-  const tooFew = lengthRequested && seconds >= 8 && shotCount > 0 && shotCount < Math.max(4, Math.ceil(seconds / 2.5));
+  // Timecoded beats set the structure: one shot per three seconds of each middle
+  // beat (at least one) plus the end card. Without beats, one shot per 2.5 seconds.
+  const briefBeats = beatsFromBrief(prompt)?.beats;
+  const minShots = briefBeats
+    ? briefBeats.slice(0, -1).reduce((sum, length) => sum + Math.max(1, Math.ceil(length / 3)), 0) + 1
+    : Math.max(4, Math.ceil(seconds / 2.5));
+  const tooFew = lengthRequested && seconds >= 8 && shotCount > 0 && shotCount < minShots;
   if ((reused.length || tooFew) && provider?.generateStoryboard) {
     const notes = [];
     if (reused.length) notes.push(`Shots ${reused.join(', ')} reused the end card's text ("${onScreenText.join(' / ')}"). FOLD Motion places that text on the final shot. Write new, different lines for every earlier shot.`);
     if (tooFew) {
-      const target = Math.max(5, Math.min(8, Math.round(seconds / 1.6)));
+      const target = briefBeats ? minShots : Math.max(5, Math.min(8, Math.round(seconds / 1.6)));
       const example = Array.from({ length: target }, () => Number((seconds / target).toFixed(2))).join(', ');
-      notes.push(`This storyboard has only ${shotCount} shots for a ${seconds}-second film, so each shot holds too long. Return exactly ${target} shots (durations such as ${example} seconds), each with its own short line${beatsFromBrief(prompt) ? ', with two or three shots inside each timecoded beat' : ''}.`);
+      notes.push(briefBeats
+        ? `This storyboard has only ${shotCount} shots for the brief's ${briefBeats.length} timecoded beats. Return exactly ${target} shots: one per beat, two in beats of four seconds or longer, and the final beat as the end card alone. Every shot uses the brief's own lines; never invent new ones.`
+        : `This storyboard has only ${shotCount} shots for a ${seconds}-second film, so each shot holds too long. Return exactly ${target} shots (durations such as ${example} seconds), each with its own short line.`);
     }
     try {
       generatedStoryboard = await provider.generateStoryboard(`${prompt}\n\nRevision: ${notes.join(' ')}`, normalizedContext);
@@ -929,12 +1037,13 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
       repairs.push(`The final shot uses the brief's On-Screen Text exactly: "${onScreen[0]}"${rest ? `, with "${rest}" beneath it` : ''}.`);
     }
     // Every shot gets its own line: a middle shot that repeats one is dropped.
-    for (const shot of removeRepeatedLines(storyboard)) {
+    for (const shot of removeRepeatedLines(storyboard, onScreen)) {
       if (provider) repairs.push(`${shot.id} repeated "${shot.onScreenCopy}"; removed, and its time shared with the shots around it.`);
     }
     // Three or more one-word shots in a row become one word beat.
     for (const merged of mergeWordRuns(storyboard)) repairs.push(`${merged.ids.join(', ')} were one word each; merged into a word beat: "${merged.copy}".`);
   }
+  if (!beatsFromBrief(prompt)) for (const change of protectPayoff(storyboard.shots)) if (provider) repairs.push(change);
   const validation = validateStoryboard(storyboard);
   if (!validation.valid) {
     const error = new Error(`Generated storyboard is invalid: ${validation.errors.join(' ')}`);
@@ -1033,6 +1142,9 @@ export function mergeWordRuns(storyboard) {
     while (end + 1 < shots.length - 1 && oneWord(shots[end + 1]) && end + 1 - start < 5) end += 1;
     if (!oneWord(shots[start]) || end - start + 1 < 3) continue;
     const run = shots.slice(start, end + 1);
+    // A word beat flashes a word about every half second: a long run would play its
+    // words and then sit on the line, so only runs of up to five seconds merge.
+    if (run.reduce((sum, item) => sum + (Number(item.durationSeconds) || 0), 0) > 5) continue;
     const copy = run.map((shot) => shot.onScreenCopy.trim()).map((word) => (/[.!?]$/.test(word) ? word : `${word}.`)).join(' ');
     const shot = {
       ...run[0],
@@ -1051,22 +1163,24 @@ export function mergeWordRuns(storyboard) {
  * fifth of the film, if shorter), taken from the longest other shots, never
  * leaving one under 1.2 seconds. The total length doesn't change.
  */
-export function protectPayoff(specs) {
-  const last = specs.at(-1);
-  if (!last || !['lockup', 'logo-reveal'].includes(last.recipe) || specs.length < 3) return [];
-  const total = specs.reduce((sum, spec) => sum + spec.durationInSeconds, 0);
+export function protectPayoff(shots, key = 'durationSeconds') {
+  // Durations live on the storyboard: the timeline is built from them (a change
+  // made later, to compiled shots, would be reset to the storyboard's).
+  const last = shots.at(-1);
+  if (!last || shots.length < 3 || (last.recipe && !['lockup', 'logo-reveal'].includes(last.recipe))) return [];
+  const total = shots.reduce((sum, shot) => sum + shot[key], 0);
   const target = Math.min(3, total * 0.2);
-  let need = Number((target - last.durationInSeconds).toFixed(2));
+  let need = Number((target - last[key]).toFixed(2));
   if (need <= 0.05) return [];
   const taken = need;
-  const donors = specs.slice(0, -1).map((spec, index) => ({ spec, index })).sort((a, b) => b.spec.durationInSeconds - a.spec.durationInSeconds);
-  for (const { spec } of donors) {
+  const donors = shots.slice(0, -1).slice().sort((a, b) => b[key] - a[key]);
+  for (const shot of donors) {
     if (need <= 0) break;
-    const give = Math.min(need, Math.max(0, spec.durationInSeconds - 1.2), spec.durationInSeconds * 0.35);
-    spec.durationInSeconds = Number((spec.durationInSeconds - give).toFixed(2));
+    const give = Math.min(need, Math.max(0, shot[key] - 1.2), shot[key] * 0.35);
+    shot[key] = Number((shot[key] - give).toFixed(2));
     need = Number((need - give).toFixed(2));
   }
-  last.durationInSeconds = Number((last.durationInSeconds + taken - Math.max(0, need)).toFixed(2));
+  last[key] = Number((last[key] + taken - Math.max(0, need)).toFixed(2));
   return [`The end card got ${(taken - Math.max(0, need)).toFixed(1)}s more so the payoff can land.`];
 }
 
@@ -1081,7 +1195,6 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
     strengthenDirection(shotSpecs, storyboard);
     enforceStyleKit(shotSpecs, normalizedContext.style);
-    protectPayoff(shotSpecs);
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;
     return { timeline, provider: 'mock-provider' };
@@ -1104,11 +1217,12 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     repairs.push(...result.repairs);
     return result.spec;
   });
+  // The brief's named transitions first, then the limits (one zoom, two Folds).
+  repairs.push(...applyBriefTransitions(shotSpecs, storyboard.shots));
   repairs.push(...limitFolds(shotSpecs, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...ensureProductShot(shotSpecs, normalizedContext.products?.length || 0, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...strengthenDirection(shotSpecs, storyboard));
   repairs.push(...enforceStyleKit(shotSpecs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
-  repairs.push(...protectPayoff(shotSpecs));
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;

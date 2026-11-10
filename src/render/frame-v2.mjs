@@ -766,15 +766,19 @@ export function renderTimelineFrame(timeline, frameIndex, brand = {}) {
   if (outgoing === 'fade' && tail < TRANSITION_SECONDS.fade[0]) overlays.push(veil(ease.inOutCubic(1 - clamp(tail / TRANSITION_SECONDS.fade[0]))));
   if (incoming === 'fade' && t < TRANSITION_SECONDS.fade[1]) overlays.push(veil(1 - ease.inOutCubic(clamp(t / TRANSITION_SECONDS.fade[1]))));
   const stripeColor = mix(accent, '#FFFFFF', 0.4);
+  // The panel is a deep tint of the accent (a full-frame saturated accent flashed
+  // harshly); the bright stripe at its leading edge keeps the energy.
+  const panel = mix(accent, primary, 0.55);
   if (outgoing === 'wipe' && tail < TRANSITION_SECONDS.wipe[0]) {
     const right = W * ease.inOutCubic(1 - clamp(tail / TRANSITION_SECONDS.wipe[0]));
-    overlays.push(`<rect x="0" y="0" width="${f(right)}" height="${H}" fill="${accent}"/>`);
+    overlays.push(`<rect x="0" y="0" width="${f(right)}" height="${H}" fill="${panel}"/>`);
+    if (right > 1 && right < W - 1) overlays.push(`<rect x="${f(Math.max(0, right - W * 0.012))}" y="0" width="${f(W * 0.012)}" height="${H}" fill="${stripeColor}"/>`);
   }
   if (incoming === 'wipe' && t < TRANSITION_SECONDS.wipe[1]) {
     const p = clamp(t / TRANSITION_SECONDS.wipe[1]);
     const left = W * ease.inOutCubic(p);
     const stripe = W * 0.07 * Math.sin(Math.PI * p);
-    overlays.push(`<rect x="${f(left)}" y="0" width="${f(W - left)}" height="${H}" fill="${accent}"/>`);
+    overlays.push(`<rect x="${f(left)}" y="0" width="${f(W - left)}" height="${H}" fill="${panel}"/>`);
     if (stripe > 0.5) overlays.push(`<rect x="${f(Math.max(0, left - stripe))}" y="0" width="${f(Math.min(stripe, left))}" height="${H}" fill="${stripeColor}"/>`);
   }
 

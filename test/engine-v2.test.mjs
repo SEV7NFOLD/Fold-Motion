@@ -143,11 +143,14 @@ test('v2 frames are deterministic', () => {
   for (const frame of [0, 17, 40, 77, 110, 160]) assert.equal(renderTimelineFrame(timeline, frame), renderTimelineFrame(timeline, frame));
 });
 
-test('transitions draw at shot boundaries', () => {
+test('transitions draw at shot boundaries', async () => {
   const timeline = sampleTimeline();
   const [one, two, three] = timeline.shots;
-  assert.match(renderTimelineFrame(timeline, one.endFrame - 2), /fill="#7C3AED"\/>/, 'wipe panel enters at the end of shot 1');
-  assert.match(renderTimelineFrame(timeline, two.startFrame + 2), new RegExp(`<rect x="[\\d.]+" y="0" width="[\\d.]+" height="720" fill="#7C3AED"/>`), 'wipe panel exits at the start of shot 2');
+  // The wipe panel is a deep tint of the accent (mixed 55% toward the primary).
+  const { mix: mixColor } = await import('../src/production/color.mjs');
+  const panel = mixColor('#7C3AED', timeline.shots[0].palette.primary, 0.55);
+  assert.ok(renderTimelineFrame(timeline, one.endFrame - 2).includes(`fill="${panel}"/>`), 'wipe panel enters at the end of shot 1');
+  assert.match(renderTimelineFrame(timeline, two.startFrame + 2), new RegExp(`<rect x="[\\d.]+" y="0" width="[\\d.]+" height="720" fill="${panel}"/>`), 'wipe panel exits at the start of shot 2');
   assert.match(renderTimelineFrame(timeline, two.endFrame - 1), /scale\(1\.\d+\)/, 'push scales up at the end of shot 2');
   assert.match(renderTimelineFrame(timeline, three.endFrame - 1), /fill="#0E0E11" opacity="0\.\d+"/, 'fade veils the end of shot 3');
   const middle = renderTimelineFrame(timeline, one.startFrame + 18);
@@ -607,9 +610,9 @@ test('too few shots for the film gets one rewrite asking for more cuts', async (
     },
   });
   assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /only 3 shots for a 10-second film/);
-  assert.match(prompts[1], /Return exactly 6 shots/);
-  assert.match(prompts[1], /two or three shots inside each timecoded beat/);
+  // Beats of 3, 4 and 3 seconds: one shot, two shots (four seconds or longer) and the end card.
+  assert.match(prompts[1], /only 3 shots for the brief's 3 timecoded beats/);
+  assert.match(prompts[1], /Return exactly 4 shots: one per beat, two in beats of four seconds or longer/);
   assert.equal(result.storyboard.shots.length, 6);
   let elapsed = 0;
   const cuts = result.storyboard.shots.map((shot) => { elapsed += shot.durationSeconds; return Math.round(elapsed * 1000) / 1000; });
@@ -1125,6 +1128,8 @@ test('film polish: one-word runs become word beats, color words light up, the pa
   assert.deepEqual(storyboard.shots.map((s) => s.onScreenCopy), ['Ruby. Sapphire. Emerald.', 'Every ritual, sealed with a jewel', 'Calm.', 'Glow.', 'Results worth the ritual.']);
   assert.equal(storyboard.shots[0].durationSeconds, 3.9, 'the run keeps its time');
   assert.equal(merged.length, 1, 'pairs and the end card stay as they are');
+  const longRun = { shots: [shot('l1', 'Ruby.', 3), shot('l2', 'Sapphire.', 3), shot('l3', 'Emerald.', 3), shot('l4', 'The end.', 3)] };
+  assert.equal(mergeWordRuns(longRun).length, 0, 'a nine-second run would sit on the line: not merged');
   assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow. Calm. Pure.', index: 1, count: 4, seed: 's' }).direction.recipe, 'word-beat');
   assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow and calm', index: 1, count: 4, seed: 's' }).direction.recipe, 'title-reveal');
   // Color words light up, readable on the background.
@@ -1145,11 +1150,150 @@ test('film polish: one-word runs become word beats, color words light up, the pa
   assert.equal(gold.emphasis.from, colorForWord('gold', purple), 'an emphasized color word takes its color');
   // The payoff gets time; the film keeps its length; nothing drops under 1.2s.
   const specs = [3.4, 3.2, 3.0, 2.4, 1.5].map((durationInSeconds, i) => ({ version: 2, recipe: i === 4 ? 'lockup' : 'statement', durationInSeconds }));
-  protectPayoff(specs);
+  protectPayoff(specs, 'durationInSeconds');
   assert.ok(specs[4].durationInSeconds >= 2.7, `end card ${specs[4].durationInSeconds}`);
   assert.equal(Number(specs.reduce((sum, s) => sum + s.durationInSeconds, 0).toFixed(2)), 13.5);
   assert.ok(specs.every((s) => s.durationInSeconds >= 1.2));
   // Short statements grow.
   const statement = (copy) => expandRecipe({ version: 2, recipe: 'statement', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy, context, shotIndex: 1 }).find((e) => e.role === 'title').fontSize;
   assert.ok(statement('Radiance, renewed.') > 720 * 0.105 + 1, 'two words fill the space');
+});
+
+test('brief adherence: beats set the shot count, end-card lines stay on the end card, the brief\'s motion words bind', async () => {
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  const shot = (id, copy, durationSeconds, mainVisual = 'v') => ({ id, onScreenCopy: copy, durationSeconds, purpose: 'p', mainVisual, motion: 'm', transition: 't', audioCue: 'a' });
+  const run = async (prompt, shots) => {
+    const prompts = [];
+    const base = (await createCreativePlan('A film', DARK, null)).storyboard;
+    const result = await generateProductionAction({
+      action: 'storyboard', prompt, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+      fetchImpl: async (_url, options) => { prompts.push(JSON.parse(options.body).contents[0].parts[0].text); return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify({ ...base, shots }) }] } }] }; } }; },
+    });
+    return { prompts, storyboard: result.storyboard };
+  };
+  // Test 1's brief: three beats (3, 2, 3 seconds) are three shots; no padding asked for.
+  const test1 = ['SEV7NFOLD | Hello', '', 'An 8-second brand intro.', '', '0:00 - 0:03 | Arrival', 'The line slams in: Ideas into motion.', '', '0:03 - 0:05 | Promise', 'Made with craft.', '', '0:05 - 0:08 | Signature', '• On-Screen Text:', 'SEV7NFOLD', 'Creativity at scale.'].join('\n');
+  const three = await run(test1, [shot('s1', 'Ideas into motion.', 3), shot('s2', 'Made with craft.', 2), shot('s3', 'SEV7NFOLD', 3)]);
+  assert.equal(three.prompts.length, 1, 'three beats, three shots: no rewrite');
+  assert.equal(three.storyboard.shots.at(-1).durationSeconds, 3, 'the end card keeps its beat');
+  // A padded shot repeating the end card's second line is removed, its time shared.
+  const padded = await run(test1, [shot('s1', 'Ideas into motion.', 3), shot('s2', 'Made with craft.', 2), shot('s3', 'CREATIVITY AT SCALE.', 1.7), shot('s4', 'SEV7NFOLD', 1.3)]);
+  assert.deepEqual(padded.storyboard.shots.map((s) => s.onScreenCopy), ['Ideas into motion.', 'Made with craft.', 'SEV7NFOLD']);
+  // Long middle beats want two shots each; the end card's beat stays one.
+  const long = ['0:00 - 0:04 | A', 'One', '0:04 - 0:08 | B', 'Two', '0:08 - 0:11 | C', 'Three', '0:11 - 0:15 | D', '• On-Screen Text:', 'END.'].join('\n');
+  const four = await run(long, [shot('s1', 'One', 4), shot('s2', 'Two', 4), shot('s3', 'Three', 3), shot('s4', 'END.', 4)]);
+  assert.equal(four.prompts.length, 2);
+  assert.match(four.prompts[1], /Return exactly 6 shots: one per beat, two in beats of four seconds or longer/);
+  // No timecodes: the payoff gets its time on the storyboard, where it sticks.
+  const untimed = await run('A 10-second film for FOLD Motion', [shot('s1', 'Ideas into motion', 2.6), shot('s2', 'Made with craft', 2.6), shot('s3', 'Every frame measured', 2.6), shot('s4', 'Built to move', 1.2), shot('s5', 'The end card.', 1.0)]);
+  assert.ok(untimed.storyboard.shots.at(-1).durationSeconds >= 1.99, `end card ${untimed.storyboard.shots.at(-1).durationSeconds}`);
+  // The brief's motion words bind.
+  const bind = (mainVisual, copy = 'Ideas into motion.', direction = { typeEffect: 'outline', recipe: 'title-reveal' }) => { applyBriefWords(direction, shot('s', copy, 2, mainVisual)); return direction; };
+  assert.deepEqual([bind('The line slams in: Ideas into motion.').textMotion, bind('The line slams in').typeEffect], ['slam', undefined]);
+  assert.equal(bind('Letters drop in one by one', 'Every hit lands.', {}).textMotion, 'drop');
+  assert.equal(bind('The line splits in from both sides', 'Every frame, measured.', {}).textMotion, 'split');
+  assert.equal(bind('The line traces itself in as an outline, then fills', 'Craft is a decision.', {}).typeEffect, 'outline');
+  assert.equal(bind('The line decodes from code glyphs', 'Built in code.', {}).typeEffect, 'decode');
+  assert.equal(bind('MINUTES gets a highlighter', 'Minutes, not weeks.', {}).emphasisStyle, 'highlight');
+  assert.equal(bind('DROPS sits in a pill', 'Your next ad drops in minutes.', {}).emphasisStyle, 'pill');
+  assert.equal(bind('A giant outlined CRAFT echoes behind the shot', 'Craft is a decision.', {}).echo, true);
+  assert.equal(bind('A word beat: each word fills the frame', 'Landscape. Vertical. Square.', {}).recipe, 'word-beat');
+  assert.equal(bind('A count-up', '3 formats from 1 brief.', {}).recipe, 'stat');
+  assert.equal(bind('A quote card attributed to SEV7NFOLD', 'We give ideas motion.', {}).recipe, 'quote');
+});
+
+test('test 2 fixes: headline effects leave word beats and count-ups alone; the brief\'s typography beats the style kit', async () => {
+  const { applyTypeEffect, normalizeDirection, expandRecipe: expand } = await import('../src/production/recipes.mjs');
+  const { enforceStyleKit } = await import('../src/production/style-kits.mjs');
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  // A decode on a word beat would replace its beats.
+  const spec = { version: 2, recipe: 'word-beat', typeEffect: 'decode', durationInSeconds: 2.8, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  const title = applyTypeEffect(expand(spec, { copy: 'Landscape. Vertical. Square.', context: DARK, shotIndex: 0 }), spec).find((e) => e.role === 'title');
+  assert.equal(title.reveal.style, 'beat');
+  assert.equal(normalizeDirection({ recipe: 'word-beat', typeEffect: 'decode', transitionOut: 'cut' }, { copy: 'Landscape. Vertical. Square.', index: 0, count: 4, seed: 's' }).direction.typeEffect, undefined);
+  assert.equal(normalizeDirection({ recipe: 'title-reveal', typeEffect: 'decode', transitionOut: 'cut' }, { copy: 'Landscape. Vertical. Square.', index: 0, count: 4, seed: 's' }).direction.typeEffect, undefined, 'a staccato line becomes a word beat, without the effect');
+  const word = { recipe: 'title-reveal', typeEffect: 'decode' };
+  applyBriefWords(word, { id: 's1', onScreenCopy: 'Landscape. Vertical. Square.', mainVisual: 'A word beat: Landscape. Vertical. Square.' });
+  assert.deepEqual([word.recipe, word.typeEffect], ['word-beat', undefined]);
+  // The brief asked for a highlighter; Tech & UI doesn't use them, but the brief wins.
+  const asked = { version: 2, recipe: 'statement' };
+  applyBriefWords(asked, { id: 's3', onScreenCopy: 'Minutes, not weeks.', mainVisual: 'The line splits in: Minutes, not weeks. MINUTES gets a highlighter.' });
+  assert.deepEqual([asked.textMotion, asked.emphasisStyle], ['split', 'highlight']);
+  enforceStyleKit([asked], 'tech-ui');
+  assert.equal(asked.emphasisStyle, 'highlight', 'the brief\'s own words stay');
+  // The model's own choice still follows the kit, and graphics stay guarded.
+  const chosen = { version: 2, recipe: 'statement', emphasisStyle: 'highlight', graphics: [{ kind: 'icon', name: 'music' }] };
+  const lockedGraphic = { version: 2, recipe: 'statement', briefLocked: ['emphasisStyle'], emphasisStyle: 'pill', graphics: [{ kind: 'icon', name: 'music' }] };
+  enforceStyleKit([chosen, lockedGraphic], 'bold-street');
+  assert.equal(chosen.emphasisStyle, 'highlight', 'bold street allows highlighters');
+  assert.deepEqual([chosen.graphics.length, lockedGraphic.graphics.length], [0, 0], 'bold street drops icons, asked for or not');
+  const techChosen = { version: 2, recipe: 'statement', emphasisStyle: 'highlight' };
+  enforceStyleKit([techChosen], 'tech-ui');
+  assert.equal(techChosen.emphasisStyle, 'outline', 'without the brief asking, the kit decides');
+});
+
+test('test 3 fixes: emojis, badges, signs and icons the brief names are binding; the kit still guards them; emojis are sticker-sized', async () => {
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  const { enforceStyleKit } = await import('../src/production/style-kits.mjs');
+  const { applyGraphics } = await import('../src/production/recipes.mjs');
+  const bind = (copy, mainVisual, direction = {}) => { applyBriefWords(direction, { id: 's', onScreenCopy: copy, mainVisual }); return direction; };
+  const hey = bind('Hey you.', 'Letters drop in: Hey you. A 👀 emoji pops up beside it.');
+  assert.equal(hey.textMotion, 'drop');
+  assert.deepEqual(hey.graphics, [{ kind: 'emoji', name: 'eyes', place: 'right' }]);
+  const dropShot = bind('Your next ad drops in minutes.', 'Your next ad drops in minutes. DROPS sits in a pill, a ✨ emoji above, and a NEW seal sticker on the corner.');
+  assert.equal(dropShot.textMotion, undefined, 'the copy\'s own "drops in" is not an instruction');
+  assert.equal(dropShot.emphasisStyle, 'pill');
+  assert.deepEqual(dropShot.graphics.map((g) => [g.kind, g.name, g.text, g.place]), [['emoji', 'sparkles', undefined, 'above'], ['badge', 'seal', 'NEW', 'top-right']]);
+  const ai = bind('Built in code. Directed by AI.', 'The line decodes from code glyphs: Built in code. Directed by AI. AI gets a marker highlight, and an arrow points at it.');
+  assert.deepEqual([ai.typeEffect, ai.emphasisStyle, ai.graphics[0].name], ['decode', 'highlight', 'arrow-right']);
+  // Test 5's trap: the brief asks for a music icon; Bold street doesn't use icons.
+  const sound = bind('Real instruments, locked to the cut.', 'The line splits in: Real instruments, locked to the cut. A music icon beside it. Then The Fold.', { version: 2 });
+  assert.deepEqual(sound.graphics, [{ kind: 'icon', name: 'music', place: 'right' }]);
+  enforceStyleKit([sound], 'bold-street');
+  assert.deepEqual([sound.graphics, sound.textMotion], [[], 'split'], 'the icon is dropped; the split stays');
+  // Emojis read as stickers, even beside a small line.
+  const context = { ...DARK, width: 1280, height: 720 };
+  const spec = { version: 2, recipe: 'statement', copy: 'Your next ad drops in minutes.', durationInSeconds: 2.5, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut', graphics: [{ kind: 'emoji', name: 'sparkles', place: 'above' }] };
+  const emoji = applyGraphics(expandRecipe(spec, { copy: spec.copy, context, shotIndex: 1 }), spec, context).find((e) => e.type === 'graphic');
+  assert.ok(emoji.size >= 72, `emoji ${emoji.size}px`);
+});
+
+test('tests 4 and 5 fixes: named transitions bind, long lines and quotes set bigger and balanced', async () => {
+  const { applyBriefTransitions } = await import('../src/production/production.mjs');
+  const { limitFolds } = await import('../src/production/recipes.mjs');
+  const { fitBlock, measure } = await import('../src/render/typography.mjs');
+  // Test 4's beats: a zoom out of the first shot, The Fold out of the third, and a
+  // second Fold "resolving into" the end card.
+  const shots = [
+    { id: 's1', onScreenCopy: 'Craft is a decision.', mainVisual: 'The line traces itself in as an outline, then fills. A giant outlined CRAFT echoes behind the shot. Then the camera flies through a letter into the next shot.' },
+    { id: 's2', onScreenCopy: 'We don\'t decorate ideas. We give them motion.', mainVisual: 'A quote card.' },
+    { id: 's3', onScreenCopy: 'Every frame, measured.', mainVisual: 'The line splits in from both sides. MEASURED is outlined. Then The Fold.' },
+    { id: 's4', onScreenCopy: 'CREATIVITY AT SCALE.', mainVisual: 'A second Fold resolves into the logo. The payoff slams in.' },
+  ];
+  const specs = shots.map(() => ({ version: 2, transitionOut: 'fade' }));
+  applyBriefTransitions(specs, shots);
+  limitFolds(specs, shots.map((s) => s.id));
+  assert.deepEqual(specs.slice(0, 3).map((s) => s.transitionOut), ['zoom', 'fade', 'fold']);
+  // Limits still apply: a second zoom becomes a push.
+  const zoomShots = [shots[0], { ...shots[0], id: 's1b' }, { id: 'e', onScreenCopy: 'END.', mainVisual: 'The end card.' }];
+  const twoZooms = zoomShots.map(() => ({ version: 2, transitionOut: 'cut' }));
+  applyBriefTransitions(twoZooms, zoomShots);
+  limitFolds(twoZooms, ['a', 'b', 'c']);
+  assert.deepEqual(twoZooms.slice(0, 2).map((s) => s.transitionOut), ['zoom', 'push']);
+  // Test 5's long lines in a vertical frame (where one line must shrink a lot): two
+  // balanced lines at bigger sizes. (At 16:9 width they already fit near full size.)
+  for (const line of ['Every line fits. Every hit lands.', 'Real instruments, locked to the cut.']) {
+    const one = fitBlock('bold', line, { maxWidth: 619, maxSize: 75, minSize: 36, maxLines: 1 });
+    const block = fitBlock('bold', line, { maxWidth: 619, maxSize: 75, minSize: 36, maxLines: 2 });
+    assert.ok(block.size >= one.size * 1.15, `${line}: ${block.size} vs ${one.size}`);
+    assert.equal(block.lines.length, 2);
+    const widths = block.lines.map((l) => measure('bold', l, block.size));
+    assert.ok(Math.min(...widths) / Math.max(...widths) > 0.5, `balanced: ${block.lines.join(' / ')}`);
+  }
+  // Test 4's quote fills the frame instead of one small line.
+  const quote = expandRecipe({ version: 2, recipe: 'quote', durationInSeconds: 4, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy: 'We don\'t decorate ideas. We give them motion.', context: { ...DARK, width: 1280, height: 720 }, shotIndex: 1 }).find((e) => e.role === 'title');
+  assert.ok(quote.lines.length >= 2 && quote.fontSize >= 720 * 0.06, `quote ${quote.fontSize}px over ${quote.lines.length} lines`);
+  // A full line keeps one line.
+  assert.equal(fitBlock('bold', 'Short line', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1);
+  assert.equal(fitBlock('bold', 'Every line fits. Every hit lands.', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1, 'near full size on one line: kept');
 });
