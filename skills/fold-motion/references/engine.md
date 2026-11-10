@@ -151,6 +151,29 @@ user asked for them); graphics stay guarded by the kit. Headline effects never
 apply to word beats, count-ups, type windows or logo reveals (they'd replace the
 shot's own animation). With timecoded beats, the brief sets the shot count.
 
+### Font pairings
+
+Six pairings (`src/production/font-pairings.mjs`), all SIL Open Font License fonts
+from Google Fonts bundled in `assets/fonts/pairings` (22 static instances, 1.1 MB,
+rebuilt by `scripts/build-font-pairings.py`, each family's OFL.txt beside it):
+
+| Pairing | Display | Body | Kicker | Style kit |
+| --- | --- | --- | --- | --- |
+| classic | Anton | Montserrat | Montserrat caps, wide tracking | (default) |
+| editorial | Playfair Display | Montserrat | Playfair italic | Editorial luxury |
+| modern | Space Grotesk | Inter | Space Mono caps | Tech & UI |
+| friendly | Fredoka | Nunito | Caveat (handwritten) | Playful DTC |
+| condensed | Bebas Neue | Archivo | Archivo Black caps | Bold street |
+| soft | Fraunces | DM Sans | Fraunces italic | Warm craft |
+
+The style kit picks a pairing; brief words ("serif", "monospace", "handwritten",
+"rounded", "condensed", "soft serif") override it; the studio's Fonts picker
+overrides both (rebuilds without AI); an uploaded brand font always stays the
+display face. While a recipe lays out, its roles (display, bold, semibold,
+medium) map to the pairing's fonts (`withFonts`), so every measurement uses the
+real font; elements then store the concrete font ids, so rendering, Fit and
+contrast work unchanged. The timeline records its `fonts`.
+
 ### Style kits
 
 Each film has a visual language from `src/production/style-kits.mjs`:

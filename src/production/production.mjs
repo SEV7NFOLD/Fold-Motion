@@ -9,6 +9,7 @@ import { fontFace, measure } from '../render/typography.mjs';
 import { BADGE_SHAPES, EMOJI_CHARS, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 import { chooseStyle, enforceStyleKit, resolveStyle, STYLE_KITS, STYLE_OPTIONS } from './style-kits.mjs';
+import { PAIRING_OPTIONS, resolvePairing } from './font-pairings.mjs';
 
 export { durationFromBrief };
 
@@ -125,6 +126,8 @@ export function normalizeProductionContext(context = {}) {
   }
   // A style kit chosen in the studio (otherwise the storyboard's is used).
   if (!STYLE_OPTIONS.includes(normalized.style)) delete normalized.style;
+  // A font pairing chosen in the studio (otherwise the style kit's, or the brief's words).
+  if (!PAIRING_OPTIONS.includes(normalized.fonts)) delete normalized.fonts;
   for (const key of ['headline', 'subheadline']) {
     if (typeof normalized[key] !== 'string') normalized[key] = '';
     normalized[key] = normalized[key].trim();
@@ -1114,6 +1117,7 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
   }
   const normalizedContext = normalizeProductionContext(context);
   normalizedContext.style = resolveStyle(storyboard, normalizedContext);
+  normalizedContext.fonts = resolvePairing(storyboard, normalizedContext);
   const seed = `${storyboard.id}|${storyboard.title}`;
   const repairs = [];
   const specs = storyboard.shots.map((shot, index) => {
@@ -1125,6 +1129,7 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
   repairs.push(...enforceStyleKit(specs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
   const timeline = buildTimeline(storyboard, specs, normalizedContext);
   timeline.style = normalizedContext.style;
+    timeline.fonts = normalizedContext.fonts;
   return { timeline, acceptance: buildAcceptanceSpec(storyboard, normalizedContext), provider: 'rebuild', ...(repairs.length ? { repairs } : {}) };
 }
 
@@ -1189,6 +1194,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
   const normalizedContext = normalizeProductionContext(context);
   normalizedContext.style = resolveStyle(storyboard, normalizedContext);
+  normalizedContext.fonts = resolvePairing(storyboard, normalizedContext);
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
     const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed, storyboard.shots.length));
@@ -1197,6 +1203,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     enforceStyleKit(shotSpecs, normalizedContext.style);
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;
+    timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: 'mock-provider' };
   }
 
@@ -1226,6 +1233,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;
+    timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };
   } catch (error) {
     throw markOutputError(error);

@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 
 const metricsUrl = new URL('../../assets/fonts/metrics.json', import.meta.url);
 const METRICS = JSON.parse(readFileSync(metricsUrl, 'utf8'));
+// The font pairings (SIL OFL fonts from Google Fonts; scripts/build-font-pairings.py).
+const PAIRED = JSON.parse(readFileSync(new URL('../../assets/fonts/pairings/metrics.json', import.meta.url), 'utf8'));
+delete PAIRED._note;
 
 /** Font roles the recipes use. `display` is Anton; the rest are Montserrat weights. */
 export const FONTS = Object.freeze({
@@ -19,9 +22,36 @@ export const FONTS = Object.freeze({
   medium: Object.freeze({ family: 'Montserrat', weight: 500 }),
 });
 
-export const FONT_FILES = Object.freeze(
-  Object.keys(FONTS).map((key) => fileURLToPath(new URL(`../../assets/fonts/${METRICS[key].file}`, import.meta.url))),
-);
+export const FONT_FILES = Object.freeze([
+  ...Object.keys(FONTS).map((key) => fileURLToPath(new URL(`../../assets/fonts/${METRICS[key].file}`, import.meta.url))),
+  ...Object.values(PAIRED).map((metrics) => fileURLToPath(new URL(`../../assets/fonts/${metrics.file}`, import.meta.url))),
+]);
+
+/** Every bundled font id (the four roles plus the pairing fonts). */
+export const FONT_IDS = Object.freeze([...Object.keys(FONTS), ...Object.keys(PAIRED)]);
+
+// While a recipe lays out a shot, its roles (display, bold, semibold, medium) map
+// to the film's pairing, so every measurement uses the real font; the elements
+// then store the concrete font ids (resolveFont), so rendering needs no mapping.
+let ACTIVE = null;
+
+/** Runs `fn` with roles mapped to the given fonts. */
+export function withFonts(map, fn) {
+  const previous = ACTIVE;
+  ACTIVE = map;
+  try { return fn(); } finally { ACTIVE = previous; }
+}
+
+/** The concrete font for a role under the current mapping. */
+export function resolveFont(font) {
+  return (ACTIVE && ACTIVE[font]) || font;
+}
+
+function lookup(font) {
+  const id = resolveFont(font);
+  if (id === '_note') return undefined;
+  return METRICS[id] || PAIRED[id] || BRAND_FONTS.get(id);
+}
 
 // Uploaded brand fonts, registered from their measured metrics (see
 // public/font-metrics.mjs) under an id derived from those metrics.
@@ -44,12 +74,12 @@ export function registerBrandFont(metrics) {
 
 /** Family and weight for a font id (built-in role or registered brand font). */
 export function fontFace(font) {
-  const metrics = METRICS[font] && font !== '_note' ? METRICS[font] : BRAND_FONTS.get(font);
-  return metrics ? { family: metrics.family, weight: metrics.weight } : undefined;
+  const metrics = lookup(font);
+  return metrics ? { family: metrics.family, weight: metrics.weight, style: metrics.style === 'italic' ? 'italic' : 'normal' } : undefined;
 }
 
 export function fontMetrics(font) {
-  const metrics = (font !== '_note' && METRICS[font]) || BRAND_FONTS.get(font);
+  const metrics = lookup(font);
   if (!metrics) throw new Error(`Unknown font role "${font}".`);
   return metrics;
 }
