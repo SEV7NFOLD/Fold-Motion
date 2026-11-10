@@ -6,7 +6,7 @@ import { applyGraphics, applyTextMotion, applyTypeEffect, ensureProductShot, exp
 import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs';
 import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { fontFace, measure } from '../render/typography.mjs';
-import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
+import { BADGE_SHAPES, EMOJI_CHARS, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
 import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
 import { chooseStyle, enforceStyleKit, resolveStyle, STYLE_KITS, STYLE_OPTIONS } from './style-kits.mjs';
 
@@ -407,8 +407,12 @@ function isLegacyScene(raw) {
  * word beat, count-up or quote card, the direction uses exactly that.
  */
 export function applyBriefWords(direction, shot, label = shot.id) {
-  const text = [shot.mainVisual, shot.motion, shot.purpose].filter(Boolean).join(' ').toLowerCase();
-  if (!text) return [];
+  // The shot's own line is taken out first: "Your next ad drops in minutes" is copy,
+  // not an instruction to drop the letters in.
+  const copy = String(shot.onScreenCopy || '').toLowerCase().trim();
+  const full = [shot.mainVisual, shot.motion, shot.purpose].filter(Boolean).join(' ').toLowerCase();
+  const text = copy ? full.split(copy).join(' ') : full;
+  if (!text.trim()) return [];
   const changes = [];
   const set = (field, value, why) => {
     // Marked as the brief's own choice, so the style kit doesn't overwrite it.
@@ -429,6 +433,30 @@ export function applyBriefWords(direction, shot, label = shot.id) {
   else if (/\bpill\b/.test(text)) set('emphasisStyle', 'pill', 'a pill');
   else if (/\b[a-z]+ is outlined\b|\bis outlined\b/.test(text)) set('emphasisStyle', 'outline', 'an outlined word');
   if (/\becho(?:es|ing)?\b/.test(text)) set('echo', true, 'an echo');
+  // Graphics the brief names: emoji characters, a NEW seal or pill, a sparkle, an
+  // arrow, an asterisk, a named icon. The style kit still guards them afterwards.
+  const raw = full;
+  const placeNear = (index) => {
+    const around = text.slice(Math.max(0, index - 30), index + 40);
+    return /\babove\b/.test(around) ? 'above' : /\bbelow\b|\bunder\b/.test(around) ? 'below' : /\bbeside\b|\bnext to\b|\bpoints?\b/.test(around) ? 'right' : 'top-right';
+  };
+  const asked = [];
+  for (const [char, name] of Object.entries(EMOJI_CHARS)) {
+    const at = raw.indexOf(char);
+    if (at >= 0) asked.push({ kind: 'emoji', name, place: placeNear(text.indexOf(char.toLowerCase()) >= 0 ? text.indexOf(char.toLowerCase()) : 0) });
+  }
+  const badge = /\b(new|out now|shop now)\s+(seal|pill|tag|sticker|badge)\b/.exec(text);
+  if (badge) asked.push({ kind: 'badge', name: badge[2] === 'pill' ? 'pill' : badge[2] === 'tag' ? 'tag' : 'seal', text: badge[1].toUpperCase(), place: 'top-right' });
+  if (/\bsparkle\b/.test(text)) asked.push({ kind: 'sign', name: 'sparkle', place: placeNear(text.indexOf('sparkle')) });
+  if (/\barrow\b/.test(text)) asked.push({ kind: 'sign', name: 'arrow-right', place: 'left' });
+  if (/\basterisk\b/.test(text)) asked.push({ kind: 'sign', name: 'asterisk', place: 'top-right' });
+  for (const match of text.matchAll(/\b([a-z-]+) icon\b/g)) if (ICON_NAMES.includes(match[1])) asked.push({ kind: 'icon', name: match[1], place: placeNear(match.index) });
+  if (asked.length) {
+    const existing = Array.isArray(direction.graphics) ? direction.graphics : [];
+    const merged = [...asked, ...existing.filter((item) => !asked.some((a) => a.kind === item.kind && a.name === item.name))].slice(0, 2);
+    direction.graphics = merged;
+    changes.push(`${label}: the brief asks for ${asked.map((a) => `${a.kind} "${a.name}"`).join(', ')}.`);
+  }
   const words = String(shot.onScreenCopy || '').trim().split(/\s+/).length;
   if (/\bword beat\b/.test(text) && words >= 2 && words <= 5) {
     set('recipe', 'word-beat', 'a word beat');

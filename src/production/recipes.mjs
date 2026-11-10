@@ -81,7 +81,8 @@ export function applyGraphics(elements, spec, context = {}) {
   const reveal = title.reveal || { start: 0, duration: 0.6 };
   const landed = (reveal.start || 0) + (reveal.duration || 0.6) + (reveal.stagger || 0) * Math.min(6, title.lines.join(' ').split(/\s+/).length);
   graphics.forEach((graphic, index) => {
-    const size = graphic.kind === 'badge' ? unit * (graphic.name === 'seal' ? 0.16 : 0.085) : Math.min(unit * 0.16, Math.max(unit * 0.06, cap * 1.1));
+    // Emojis read as stickers: never smaller than a tenth of the frame's short side.
+    const size = graphic.kind === 'badge' ? unit * (graphic.name === 'seal' ? 0.16 : 0.085) : Math.min(unit * 0.16, Math.max(unit * (graphic.kind === 'emoji' ? 0.1 : 0.06), cap * (graphic.kind === 'emoji' ? 1.4 : 1.1)));
     const gap = unit * 0.03;
     const midX = (box.left + box.right) / 2;
     const midY = (box.top + box.bottom) / 2;

@@ -1228,3 +1228,29 @@ test('test 2 fixes: headline effects leave word beats and count-ups alone; the b
   enforceStyleKit([techChosen], 'tech-ui');
   assert.equal(techChosen.emphasisStyle, 'outline', 'without the brief asking, the kit decides');
 });
+
+test('test 3 fixes: emojis, badges, signs and icons the brief names are binding; the kit still guards them; emojis are sticker-sized', async () => {
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  const { enforceStyleKit } = await import('../src/production/style-kits.mjs');
+  const { applyGraphics } = await import('../src/production/recipes.mjs');
+  const bind = (copy, mainVisual, direction = {}) => { applyBriefWords(direction, { id: 's', onScreenCopy: copy, mainVisual }); return direction; };
+  const hey = bind('Hey you.', 'Letters drop in: Hey you. A 👀 emoji pops up beside it.');
+  assert.equal(hey.textMotion, 'drop');
+  assert.deepEqual(hey.graphics, [{ kind: 'emoji', name: 'eyes', place: 'right' }]);
+  const dropShot = bind('Your next ad drops in minutes.', 'Your next ad drops in minutes. DROPS sits in a pill, a ✨ emoji above, and a NEW seal sticker on the corner.');
+  assert.equal(dropShot.textMotion, undefined, 'the copy\'s own "drops in" is not an instruction');
+  assert.equal(dropShot.emphasisStyle, 'pill');
+  assert.deepEqual(dropShot.graphics.map((g) => [g.kind, g.name, g.text, g.place]), [['emoji', 'sparkles', undefined, 'above'], ['badge', 'seal', 'NEW', 'top-right']]);
+  const ai = bind('Built in code. Directed by AI.', 'The line decodes from code glyphs: Built in code. Directed by AI. AI gets a marker highlight, and an arrow points at it.');
+  assert.deepEqual([ai.typeEffect, ai.emphasisStyle, ai.graphics[0].name], ['decode', 'highlight', 'arrow-right']);
+  // Test 5's trap: the brief asks for a music icon; Bold street doesn't use icons.
+  const sound = bind('Real instruments, locked to the cut.', 'The line splits in: Real instruments, locked to the cut. A music icon beside it. Then The Fold.', { version: 2 });
+  assert.deepEqual(sound.graphics, [{ kind: 'icon', name: 'music', place: 'right' }]);
+  enforceStyleKit([sound], 'bold-street');
+  assert.deepEqual([sound.graphics, sound.textMotion], [[], 'split'], 'the icon is dropped; the split stays');
+  // Emojis read as stickers, even beside a small line.
+  const context = { ...DARK, width: 1280, height: 720 };
+  const spec = { version: 2, recipe: 'statement', copy: 'Your next ad drops in minutes.', durationInSeconds: 2.5, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut', graphics: [{ kind: 'emoji', name: 'sparkles', place: 'above' }] };
+  const emoji = applyGraphics(expandRecipe(spec, { copy: spec.copy, context, shotIndex: 1 }), spec, context).find((e) => e.type === 'graphic');
+  assert.ok(emoji.size >= 72, `emoji ${emoji.size}px`);
+});
