@@ -288,6 +288,16 @@ export function composeScore(timeline, { mood = 'auto', text = '', band } = {}) 
   const shotStarts = timeline.shots.map((shot) => shot.startFrame / timeline.fps);
   const endcard = cues.find((cue) => cue.type === 'endcard')?.time ?? shotStarts.at(-1);
   const sends = (amount) => ({ left: send.left, right: send.right, amount });
+  // The tempo map: each shot gets a whole number of beats and the tempo flexes a
+  // little between shots, so every cut lands on a downbeat and every part (band,
+  // drums, bass, arp) plays on the same grid, as film scores lock to picture.
+  const grid = [];
+  shotStarts.forEach((start, index) => {
+    const end = index < shotStarts.length - 1 ? shotStarts[index + 1] : duration;
+    const count = Math.max(1, Math.round((end - start) / beat));
+    const local = (end - start) / count;
+    for (let k = 0; k < count; k += 1) grid.push({ time: start + k * local, beat: local, shot: index, k });
+  });
 
   // ---- pad: a chord per shot, cycling the progression, resolving on the end card
   // (with real instruments, the band plays the pad, bass and keys instead)
@@ -328,8 +338,10 @@ export function composeScore(timeline, { mood = 'auto', text = '', band } = {}) 
     for (let i = 0; i < SAMPLE_RATE * 0.3 && at + i < length; i += 1) kickEnvelope[at + i] = Math.max(kickEnvelope[at + i], Math.exp(-i / (SAMPLE_RATE * 0.12)));
   };
   const hat = (t, gain, pan) => drums.add(t, envelope(biquad(noise(0.07, random), 'high', 7500), 0.001, 0.018), { gain, pan });
-  for (let b = 0; b * beat < duration; b += 1) {
-    const t = b * beat;
+  for (const step of grid) {
+    const t = step.time;
+    const beat = step.beat;
+    const b = step.k;
     if (t < firstGroove - 1e-6 || t >= endcard - 0.05) continue;
     const bar = b % 4;
     const e = style.energy;
@@ -451,7 +463,7 @@ export function composeScore(timeline, { mood = 'auto', text = '', band } = {}) 
   }
 
   // ---- the band: real instruments from the music book, on the same bus and room
-  if (band) band({ music, sends, style, chosen, bpm, beat, shotStarts, endcard, duration, cues, random, sampleRate: SAMPLE_RATE, timeline });
+  if (band) band({ music, sends, style, chosen, bpm, beat, grid, shotStarts, endcard, duration, cues, random, sampleRate: SAMPLE_RATE, timeline });
 
   // ---- mix, room, master
   const [wetL, wetR] = reverb(send.left, send.right);

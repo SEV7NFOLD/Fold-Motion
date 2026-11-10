@@ -36,13 +36,13 @@ export function midiFromName(name) {
  */
 const INSTRUMENTS = {
   piano: { source: 'vcsl', dir: 'Chordophones/Zithers/Grand Piano, Steinway B/NoSus/', pattern: /JHPiano_NoSus_Close_([A-G]#?\d)_vl3_rr1\.wav$/, keep: 4.0, every: 3, range: [33, 96] },
-  violins: { source: 'vsco', dir: 'Strings/Violin Section/susVib/', pattern: /VlnEns_susVib_([A-G]#?\d)_v1\.wav$/, keep: 4.5, every: 1, range: [55, 96], sustain: true },
-  cellos: { source: 'vsco', dir: 'Strings/Cello Section/susvib/', pattern: /susvib_([A-G]#?\d)_v1_1\.wav$/, keep: 4.5, every: 1, range: [36, 72], sustain: true },
+  violins: { source: 'vsco', dir: 'Strings/Violin Section/susVib/', pattern: /VlnEns_susVib_([A-G]#?\d)_v1\.wav$/, keep: 4.5, every: 1, range: [55, 100], sustain: true, octave: 1 },
+  cellos: { source: 'vsco', dir: 'Strings/Cello Section/susvib/', pattern: /susvib_([A-G]#?\d)_v1_1\.wav$/, keep: 4.5, every: 1, range: [36, 76], sustain: true, octave: 1 },
   harp: { source: 'vsco', dir: 'Strings/Harp/', pattern: /KSHarp_([A-G]#?\d)_(?:mf|mp|f)\.wav$/, keep: 3.0, every: 1, range: [36, 100] },
-  glock: { source: 'vsco', dir: 'Percussion/Glock/', pattern: /glock_medium_([A-G]#?\d)\.wav$/, keep: 2.5, every: 1, range: [60, 108] },
-  bass: { source: 'vsco', dir: 'Strings/Solo Contrabass/SusNV/', pattern: /([A-G]#?\d)[^/]*\.wav$/, keep: 4.0, every: 1, range: [28, 55], sustain: true },
-  pizz: { source: 'vsco', dir: 'Strings/Solo Contrabass/Pizz/', pattern: /([A-G]#?\d)[^/]*\.wav$/, keep: 1.6, every: 1, range: [28, 55] },
-  marimba: { source: 'vsco', dir: 'Percussion/', pattern: /Marimba[^/]*?([A-G]#?\d)[^/]*\.wav$/, keep: 1.8, every: 1, range: [48, 96] },
+  glock: { source: 'vsco', dir: 'Percussion/Glock/', pattern: /glock_medium_([A-G]#?\d)\.wav$/, keep: 2.5, every: 1, range: [72, 108], octave: 1 },
+  bass: { source: 'vsco', dir: 'Strings/Solo Contrabass/SusNV/', pattern: /([A-G]#?\d)[^/]*\.wav$/, keep: 4.0, every: 1, range: [28, 60], sustain: true, octave: 1 },
+  pizz: { source: 'vsco', dir: 'Strings/Solo Contrabass/Pizz/', pattern: /([A-G]#?\d)[^/]*\.wav$/, keep: 1.6, every: 1, range: [28, 60], octave: 1 },
+  marimba: { source: 'vsco', dir: 'Percussion/', pattern: /Marimba[^/]*?([A-G]#?\d)[^/]*\.wav$/, keep: 1.8, every: 1, range: [48, 100], octave: 1 },
 };
 const HITS = {
   'bass-drum': { source: 'vsco', file: 'Percussion/BDrumNewhit_v5_rr1_Sum.wav', keep: 2.2 },
@@ -88,8 +88,11 @@ function main() {
     const notes = new Map();
     for (const file of trees[spec.source].filter((item) => item.startsWith(spec.dir))) {
       const match = spec.pattern.exec(file);
-      const midi = match && midiFromName(match[1]);
-      if (midi !== undefined && midi >= spec.range[0] && midi <= spec.range[1] && !notes.has(midi)) notes.set(midi, file);
+      // Some libraries number octaves one lower than scientific pitch (a cello's
+      // lowest note labelled C1): `octave` shifts those names to the true pitch,
+      // checked by measuring each instrument's fundamental.
+      const midi = match && midiFromName(match[1]) + 12 * (spec.octave || 0);
+      if (!Number.isNaN(midi) && midi !== undefined && midi >= spec.range[0] && midi <= spec.range[1] && !notes.has(midi)) notes.set(midi, file);
     }
     const sorted = [...notes.keys()].sort((a, b) => a - b);
     const chosen = sorted.filter((midi, index) => index === 0 || index === sorted.length - 1 || midi - sorted[0] >= 0 && (sorted.indexOf(midi) % spec.every === 0));

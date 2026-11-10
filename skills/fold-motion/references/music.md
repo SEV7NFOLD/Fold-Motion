@@ -54,6 +54,22 @@ cuts, the music breathes before the payoff, and the last chord lands on the logo
 - The synth sound design (whooshes, glints, sweeps) stays underneath, and QA's
   sync check still requires 90% of hits within one frame.
 
+## 4b. Playing together
+
+- **The tempo map:** each shot gets a whole number of beats, with the tempo
+  flexing slightly between shots, so every cut is a downbeat and every part
+  (band, synth drums, bass, arp) plays on the same grid.
+- **Attacks on time:** bowed strings take up to 0.2 s to speak. Each sample's
+  attack delay is measured when the pack loads, and notes are scheduled early by
+  that much (adjusted for pitch), so attacks land on the beat.
+- **True octaves:** the VSCO library numbers octaves one lower than scientific
+  pitch for some instruments (a cello's lowest note labelled C1); the pack
+  builder shifts those to their true pitch, checked by measuring each sample.
+- **Notes end at the chord change,** instead of ringing into the next chord.
+- **Tight, not robotic:** a few milliseconds of seeded looseness, no more.
+- Measured on a six-shot film: strings speak within 30 ms of each cut (they were
+  114 ms late), and flams fell from 56% of attacks to 17%.
+
 ## 5. Mixing
 
 - The band plays on its own bus, ducked slightly under the kick on moods that

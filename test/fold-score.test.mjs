@@ -108,3 +108,39 @@ test('FOLD Score 2: real instruments from the CC0 pack, arranged by the music bo
   assert.throws(() => instrumentBand({ dir: '/nonexistent' }), /instrument pack is missing/);
   assert.equal(composeScore(timeline, { mood: 'premium' }).engine, 'synth');
 });
+
+test('FOLD Score 2 plays together: true octaves, every cut a downbeat, attacks on time, few flams', { timeout: 120_000 }, async () => {
+  const { instrumentBand } = await import('../src/audio/band.mjs');
+  const { readFileSync } = await import('node:fs');
+  const manifest = JSON.parse(readFileSync(new URL('../assets/samples/manifest.json', import.meta.url), 'utf8'));
+  // Physical ranges: a library that numbers octaves one low would put these below what the instrument can play.
+  const lowest = { violins: 55, cellos: 36, bass: 28, glock: 72 };
+  for (const [name, floor] of Object.entries(lowest)) assert.ok(manifest.instruments[name].zones[0].midi >= floor, `${name} starts at ${manifest.instruments[name].zones[0].midi}`);
+  const context = { primaryColor: '#2A1838', accentColor: '#C9A55C' };
+  const { storyboard } = await createCreativePlan('A calm film', context, null);
+  storyboard.shots = [['Ruby. Sapphire. Emerald.', 2.6], ['Every ritual, sealed with a jewel', 2.4], ['Ten minutes. New skin.', 2.4], ['Radiance, renewed.', 2.0], ['Purposeful actives.', 2.6], ['Results worth the ritual.', 3.0]].map(([line, seconds], i) => ({ ...storyboard.shots[0], id: `shot-0${i + 1}`, onScreenCopy: line, durationSeconds: seconds }));
+  const { timeline } = await compileCreativePlan(storyboard, context, null);
+  const cuts = timeline.shots.slice(1).map((shot) => shot.startFrame / timeline.fps);
+  const real = instrumentBand();
+  for (const mood of ['premium', 'energetic', 'editorial', 'warm']) {
+    const attacks = [];
+    let grid = [];
+    const spy = (args) => {
+      grid = args.grid;
+      return real({ ...args, music: { add(t, signal) {
+        let peak = 0; for (const v of signal) peak = Math.max(peak, Math.abs(v));
+        let i = 0; while (i < signal.length && Math.abs(signal[i]) <= peak * 0.1) i += 1;
+        attacks.push({ time: t + i / 48_000, long: signal.length > 48_000 * 0.9 });
+      } } });
+    };
+    composeScore(timeline, { mood, band: spy });
+    for (const cut of cuts) assert.ok(grid.some((g) => Math.abs(g.time - cut) < 1e-6 && g.k === 0), `${mood}: the cut at ${cut}s is a downbeat`);
+    const pads = cuts.flatMap((cut) => attacks.filter((a) => a.long && a.time > cut - 0.3 && a.time < cut + 0.4).map((a) => a.time - cut));
+    const late = pads.reduce((sum, x) => sum + x, 0) / pads.length;
+    assert.ok(Math.abs(late) < 0.03, `${mood}: strings speak ${Math.round(late * 1000)} ms from the cut`);
+    const times = attacks.map((a) => a.time).sort((a, b) => a - b);
+    let flams = 0;
+    for (let i = 1; i < times.length; i += 1) if (times[i] - times[i - 1] > 0.02 && times[i] - times[i - 1] < 0.09) flams += 1;
+    assert.ok(flams / times.length < 0.25, `${mood}: ${flams} of ${times.length} attacks flam`);
+  }
+});

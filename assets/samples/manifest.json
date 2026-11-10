@@ -64,28 +64,48 @@
       "sustain": true,
       "zones": [
         {
+          "midi": 55,
+          "file": "violins/55.flac"
+        },
+        {
           "midi": 57,
           "file": "violins/57.flac"
         },
         {
-          "midi": 60,
-          "file": "violins/60.flac"
+          "midi": 59,
+          "file": "violins/59.flac"
         },
         {
-          "midi": 64,
-          "file": "violins/64.flac"
+          "midi": 62,
+          "file": "violins/62.flac"
         },
         {
-          "midi": 67,
-          "file": "violins/67.flac"
+          "midi": 66,
+          "file": "violins/66.flac"
         },
         {
-          "midi": 71,
-          "file": "violins/71.flac"
+          "midi": 69,
+          "file": "violins/69.flac"
         },
         {
-          "midi": 74,
-          "file": "violins/74.flac"
+          "midi": 72,
+          "file": "violins/72.flac"
+        },
+        {
+          "midi": 76,
+          "file": "violins/76.flac"
+        },
+        {
+          "midi": 79,
+          "file": "violins/79.flac"
+        },
+        {
+          "midi": 83,
+          "file": "violins/83.flac"
+        },
+        {
+          "midi": 86,
+          "file": "violins/86.flac"
         }
       ]
     },
@@ -93,40 +113,52 @@
       "sustain": true,
       "zones": [
         {
-          "midi": 38,
-          "file": "cellos/38.flac"
+          "midi": 36,
+          "file": "cellos/36.flac"
         },
         {
-          "midi": 41,
-          "file": "cellos/41.flac"
+          "midi": 40,
+          "file": "cellos/40.flac"
         },
         {
-          "midi": 45,
-          "file": "cellos/45.flac"
+          "midi": 43,
+          "file": "cellos/43.flac"
         },
         {
-          "midi": 48,
-          "file": "cellos/48.flac"
+          "midi": 47,
+          "file": "cellos/47.flac"
         },
         {
-          "midi": 52,
-          "file": "cellos/52.flac"
+          "midi": 50,
+          "file": "cellos/50.flac"
         },
         {
-          "midi": 55,
-          "file": "cellos/55.flac"
+          "midi": 53,
+          "file": "cellos/53.flac"
         },
         {
-          "midi": 59,
-          "file": "cellos/59.flac"
+          "midi": 57,
+          "file": "cellos/57.flac"
         },
         {
-          "midi": 62,
-          "file": "cellos/62.flac"
+          "midi": 60,
+          "file": "cellos/60.flac"
         },
         {
-          "midi": 65,
-          "file": "cellos/65.flac"
+          "midi": 64,
+          "file": "cellos/64.flac"
+        },
+        {
+          "midi": 67,
+          "file": "cellos/67.flac"
+        },
+        {
+          "midi": 71,
+          "file": "cellos/71.flac"
+        },
+        {
+          "midi": 74,
+          "file": "cellos/74.flac"
         }
       ]
     },
@@ -215,14 +247,6 @@
       "sustain": false,
       "zones": [
         {
-          "midi": 67,
-          "file": "glock/67.flac"
-        },
-        {
-          "midi": 72,
-          "file": "glock/72.flac"
-        },
-        {
           "midi": 79,
           "file": "glock/79.flac"
         },
@@ -237,6 +261,14 @@
         {
           "midi": 96,
           "file": "glock/96.flac"
+        },
+        {
+          "midi": 103,
+          "file": "glock/103.flac"
+        },
+        {
+          "midi": 108,
+          "file": "glock/108.flac"
         }
       ]
     },
@@ -252,28 +284,52 @@
           "file": "bass/30.flac"
         },
         {
-          "midi": 32,
-          "file": "bass/32.flac"
+          "midi": 31,
+          "file": "bass/31.flac"
         },
         {
-          "midi": 33,
-          "file": "bass/33.flac"
+          "midi": 34,
+          "file": "bass/34.flac"
         },
         {
-          "midi": 37,
-          "file": "bass/37.flac"
+          "midi": 36,
+          "file": "bass/36.flac"
+        },
+        {
+          "midi": 38,
+          "file": "bass/38.flac"
         },
         {
           "midi": 40,
           "file": "bass/40.flac"
         },
         {
+          "midi": 42,
+          "file": "bass/42.flac"
+        },
+        {
           "midi": 44,
           "file": "bass/44.flac"
         },
         {
-          "midi": 47,
-          "file": "bass/47.flac"
+          "midi": 45,
+          "file": "bass/45.flac"
+        },
+        {
+          "midi": 49,
+          "file": "bass/49.flac"
+        },
+        {
+          "midi": 52,
+          "file": "bass/52.flac"
+        },
+        {
+          "midi": 56,
+          "file": "bass/56.flac"
+        },
+        {
+          "midi": 59,
+          "file": "bass/59.flac"
         }
       ]
     },
@@ -289,28 +345,52 @@
           "file": "pizz/30.flac"
         },
         {
-          "midi": 32,
-          "file": "pizz/32.flac"
+          "midi": 31,
+          "file": "pizz/31.flac"
         },
         {
-          "midi": 33,
-          "file": "pizz/33.flac"
+          "midi": 34,
+          "file": "pizz/34.flac"
         },
         {
-          "midi": 37,
-          "file": "pizz/37.flac"
+          "midi": 36,
+          "file": "pizz/36.flac"
+        },
+        {
+          "midi": 38,
+          "file": "pizz/38.flac"
         },
         {
           "midi": 40,
           "file": "pizz/40.flac"
         },
         {
+          "midi": 42,
+          "file": "pizz/42.flac"
+        },
+        {
           "midi": 44,
           "file": "pizz/44.flac"
         },
         {
-          "midi": 47,
-          "file": "pizz/47.flac"
+          "midi": 45,
+          "file": "pizz/45.flac"
+        },
+        {
+          "midi": 49,
+          "file": "pizz/49.flac"
+        },
+        {
+          "midi": 52,
+          "file": "pizz/52.flac"
+        },
+        {
+          "midi": 56,
+          "file": "pizz/56.flac"
+        },
+        {
+          "midi": 59,
+          "file": "pizz/59.flac"
         }
       ]
     },
@@ -318,28 +398,40 @@
       "sustain": false,
       "zones": [
         {
-          "midi": 53,
-          "file": "marimba/53.flac"
+          "midi": 48,
+          "file": "marimba/48.flac"
         },
         {
-          "midi": 60,
-          "file": "marimba/60.flac"
+          "midi": 55,
+          "file": "marimba/55.flac"
         },
         {
-          "midi": 67,
-          "file": "marimba/67.flac"
+          "midi": 59,
+          "file": "marimba/59.flac"
         },
         {
-          "midi": 71,
-          "file": "marimba/71.flac"
+          "midi": 65,
+          "file": "marimba/65.flac"
         },
         {
-          "midi": 77,
-          "file": "marimba/77.flac"
+          "midi": 72,
+          "file": "marimba/72.flac"
         },
         {
-          "midi": 84,
-          "file": "marimba/84.flac"
+          "midi": 79,
+          "file": "marimba/79.flac"
+        },
+        {
+          "midi": 83,
+          "file": "marimba/83.flac"
+        },
+        {
+          "midi": 89,
+          "file": "marimba/89.flac"
+        },
+        {
+          "midi": 96,
+          "file": "marimba/96.flac"
         }
       ]
     }
