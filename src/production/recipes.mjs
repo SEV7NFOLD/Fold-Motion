@@ -779,6 +779,8 @@ export function fallbackDirection(seed, index, count, copy, productCount = 0) {
   else recipe = direction.middle;
   if (recipe === 'kicker-title') recipe = 'title-reveal';
   if (index > 0 && index < count - 1 && STAT_NUMBER.test(String(copy)) && String(copy).length <= 28) recipe = 'stat';
+  // Staccato lines ("Ruby. Sapphire. Emerald.") are word beats, offline too.
+  if (recipe !== 'lockup' && STACCATO.test(String(copy).trim())) recipe = 'word-beat';
   else if (productCount && count >= 2 && index === 1) recipe = productCount >= 3 && count >= 5 ? 'product-grid' : 'product-hero';
   else if (productCount && count >= 4 && index === count - 2 && words.length <= 2 && String(copy).length <= 16) recipe = 'type-window';
   // Offline films still show the newer effects: one headline effect on the second shot.

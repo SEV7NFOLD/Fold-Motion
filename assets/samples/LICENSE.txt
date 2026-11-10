@@ -1,0 +1,7 @@
+FOLD Score 2 instrument pack.
+
+All samples are from the Versilian Community Sample Library (VCSL) and VSCO 2
+Community Edition by Versilian Studios LLC, released under Creative Commons Zero
+(CC0 1.0, public domain): https://github.com/sgossner/VCSL and
+https://github.com/sgossner/VSCO-2-CE. Trimmed, converted and level-matched by
+scripts/build-sample-pack.mjs. No attribution is required; this note is a courtesy.

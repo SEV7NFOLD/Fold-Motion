@@ -1908,7 +1908,7 @@ function musicLine(report) {
   const audio = report?.audio;
   if (!audio) return null;
   const look = `${LOOK_LABELS[report?.look] ? `. Look: ${LOOK_LABELS[report.look]}` : ''}${report?.output ? `. ${report.output.label}, ${report.output.width}×${report.output.height}` : ''}`;
-  const text = `${audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}` : 'No music'}${look}`;
+  const text = `${audio.engine === 'FOLD Score' ? `Music: FOLD Score, ${audio.label}, ${audio.bpm} bpm, ${audio.key}${audio.instruments ? ', real instruments' : ''}` : 'No music'}${look}`;
   return h('p', { class: 'music-line', text });
 }
 
