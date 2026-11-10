@@ -102,7 +102,32 @@ const PREVIEW_FONTS = {
   bold: ['Montserrat, Arial, sans-serif', 700],
   semibold: ['Montserrat, Arial, sans-serif', 600],
   medium: ['Montserrat, Arial, sans-serif', 500],
+  // The pairing fonts (previews approximate them with close system fallbacks; the
+  // render uses the exact fonts).
+  'playfair-bold': ['"Playfair Display", Georgia, serif', 700],
+  'playfair-italic': ['"Playfair Display", Georgia, serif', 600, 'italic'],
+  'spacegrotesk-bold': ['"Space Grotesk", Arial, sans-serif', 700],
+  'inter-medium': ['Inter, Arial, sans-serif', 500],
+  'inter-semibold': ['Inter, Arial, sans-serif', 600],
+  'inter-bold': ['Inter, Arial, sans-serif', 700],
+  'spacemono-bold': ['"Space Mono", "Courier New", monospace', 700],
+  'fredoka-semibold': ['Fredoka, "Arial Rounded MT Bold", sans-serif', 600],
+  'nunito-medium': ['Nunito, Arial, sans-serif', 500],
+  'nunito-semibold': ['Nunito, Arial, sans-serif', 600],
+  'nunito-bold': ['Nunito, Arial, sans-serif', 800],
+  'caveat-bold': ['Caveat, "Comic Sans MS", cursive', 700],
+  bebas: ['"Bebas Neue", Impact, sans-serif', 400],
+  'archivo-medium': ['Archivo, Arial, sans-serif', 500],
+  'archivo-semibold': ['Archivo, Arial, sans-serif', 600],
+  'archivo-bold': ['Archivo, Arial, sans-serif', 700],
+  archivoblack: ['"Archivo Black", Impact, sans-serif', 400],
+  'fraunces-semibold': ['Fraunces, Georgia, serif', 600],
+  'fraunces-italic': ['Fraunces, Georgia, serif', 500, 'italic'],
+  'dmsans-medium': ['"DM Sans", Arial, sans-serif', 500],
+  'dmsans-semibold': ['"DM Sans", Arial, sans-serif', 600],
+  'dmsans-bold': ['"DM Sans", Arial, sans-serif', 700],
 };
+const FONT_LABELS = { classic: 'Anton + Montserrat', editorial: 'Playfair + Montserrat', modern: 'Space Grotesk + Inter', friendly: 'Fredoka + Nunito', condensed: 'Bebas Neue + Archivo', soft: 'Fraunces + DM Sans' };
 
 const APPROVE_WORDS = /^(approve|approved|lgtm|looks good|ship it|go ahead|go|yes|yep|ok|okay)\b[\s.!]*$/i;
 const NEW_WORDS = /^(new|new production|new project|start over)[\s.!]*$/i;
@@ -886,7 +911,7 @@ function withBrand(context, record = activeRecord(), format = formatOf(record)) 
     return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}), ...(productLooks.get(product.id) || {}) };
   }) : undefined;
   const { width, height } = FORMATS[format];
-  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics, ...(record?.style && record.style !== 'auto' ? { style: record.style } : {}) };
+  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics, ...(record?.style && record.style !== 'auto' ? { style: record.style } : {}), ...(record?.fonts ? { fonts: record.fonts } : {}) };
 }
 
 /** Rebuilds the shots in a new format before rendering (same storyboard). */
@@ -1462,7 +1487,7 @@ function specToSvg(spec, label, palette = {}) {
       stage.append(svgEl('rect', { x, y: element.y - element.height / 2, width: element.width, height: element.height, fill, opacity: 0.85 }));
     } else if (element.type === 'text' && Array.isArray(element.lines)) {
       // v2 text: the recipe already measured and wrapped it; draw its final state.
-      const [family, weight] = String(element.font).startsWith('brand-') && brandKit.font ? [`'${brandKit.font.family}'`, brandKit.font.metrics.weight] : PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
+      const [family, weight, fontStyle] = String(element.font).startsWith('brand-') && brandKit.font ? [`'${brandKit.font.family}'`, brandKit.font.metrics.weight] : PREVIEW_FONTS[element.font] || PREVIEW_FONTS.bold;
       const emphasis = new Set(element.emphasis?.words ?? []);
       // Type windows: the letters are filled with the product photo.
       const windowProduct = element.window ? brandKit.products[element.window.product - 1] : null;
@@ -1487,6 +1512,7 @@ function specToSvg(spec, label, palette = {}) {
           ...(windowFill ? { stroke: element.window.outline, 'stroke-width': Math.max(1.2, size * 0.006) } : {}),
           'font-family': family,
           'font-weight': weight,
+          'font-style': fontStyle || 'normal',
           'font-size': size,
           'letter-spacing': (element.tracking || 0) * size,
         });
@@ -1691,7 +1717,7 @@ function fillGate(slot, message, record) {
     else if (stage > PROJECT_STATES.indexOf('STORYBOARD_REVIEW')) content.push(stamp('Storyboard approved'));
   } else if (message.type === 'timeline') {
     if (state === 'RENDERING') {
-      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), stylePicker(record), sizePicker(record), musicPicker(record), lookPicker(record), ...photoColorPicker(record), changesButton(), shotEditor(record));
+      content.push(goButton('Render and run QA', () => renderFilm(record)), formatPicker(record), stylePicker(record), fontsPicker(record), sizePicker(record), musicPicker(record), lookPicker(record), ...photoColorPicker(record), changesButton(), shotEditor(record));
       const blocked = renderBlockedReason();
       if (blocked) {
         content[0].disabled = true;
@@ -1822,7 +1848,7 @@ function directorNotes(timeline) {
   }).filter((note) => note.reason);
   if (notes.length === 0) return null;
   return h('details', { class: 'director-notes' },
-    h('summary', { text: `Director’s notes (${notes.length})${STYLE_LABELS[timeline.style] ? ` · ${STYLE_LABELS[timeline.style]}` : ''}` }),
+    h('summary', { text: `Director’s notes (${notes.length})${STYLE_LABELS[timeline.style] ? ` · ${STYLE_LABELS[timeline.style]}` : ''}${FONT_LABELS[timeline.fonts] ? ` · ${FONT_LABELS[timeline.fonts]}` : ''}` }),
     h('ol', {}, ...notes.map((note) => h('li', {},
       h('span', { class: 'director-shot', text: `Shot ${note.index + 1} · ${note.recipe}${note.photo ? ` · photo ${note.photo}` : ''}` }),
       h('span', { class: 'director-reason', text: note.reason })))));
@@ -1870,6 +1896,20 @@ function lookPicker(record) {
 }
 
 const SIZES = { hd: 'HD', fhd: 'Full HD', '2k': '2K' };
+
+/** The film's font pairing; changing it rebuilds the shots in the new fonts (no AI call). */
+function fontsPicker(record) {
+  const chosen = FONT_LABELS[record.project?.timeline?.fonts];
+  const choices = [['auto', chosen && !record.fonts ? `Fonts: Auto (${chosen})` : 'Fonts: Auto'], ...Object.entries(FONT_LABELS).map(([value, label]) => [value, `Fonts: ${label}`])];
+  const select = h('select', { class: 'music-pick', 'aria-label': 'Font pairing', title: 'Each pairing sets the headline, body and kicker fonts. An uploaded brand font stays the headline font.' },
+    ...choices.map(([value, label]) => h('option', { value, text: label, ...((record.fonts || 'auto') === value ? { selected: true } : {}) })));
+  select.addEventListener('change', () => {
+    record.fonts = select.value === 'auto' ? undefined : select.value;
+    persist();
+    if (record.project.state === 'RENDERING') rebuildShots(record);
+  });
+  return select;
+}
 
 /** The film's visual language; changing it rebuilds the shots under the new kit (no AI call). */
 function stylePicker(record) {

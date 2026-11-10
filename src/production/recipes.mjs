@@ -7,6 +7,8 @@
  * so text always fits and nothing collides. Output elements carry their own reveal
  * timing; the renderer (src/render/frame-v2.mjs) animates them deterministically.
  */
+import { pairingFor } from './font-pairings.mjs';
+import { resolveFont, withFonts } from '../render/typography.mjs';
 import { capHeight, fitBlock, measure, registerBrandFont } from '../render/typography.mjs';
 import { contrastRatio, ensureContrast, MIN_TEXT_CONTRAST, mix, readableTextColor } from './color.mjs';
 import { BADGE_SHAPES, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
@@ -207,16 +209,22 @@ function hairline({ id, x, y, width, accent, start, duration, from = 'center', t
   return { id, type: 'line', x, y, width, height: thickness, fill: accent, reveal: { style: 'grow', from, start, duration } };
 }
 
+// The pairing in effect while a recipe lays out (set by expandRecipe).
+let PAIRING = pairingFor();
+
 function kickerElement({ id, kicker, x, y, height, palette, start, anchor = 'middle', maxWidth = Infinity }) {
-  const shown = String(kicker).toUpperCase();
+  // Each pairing gives kickers its own voice: tracked caps, a serif italic, a
+  // monospace, or a handwritten note.
+  const style = PAIRING.kicker;
+  const shown = style.upper ? String(kicker).toUpperCase() : String(kicker);
   // Wide tracking first; a long kicker tightens, then shrinks, to fit the frame.
-  let size = Math.max(16, height * 0.022);
-  let tracking = 0.42;
-  const width = () => measure('semibold', shown, size) + tracking * size * Math.max(0, shown.length - 1);
-  if (width() > maxWidth) tracking = 0.2;
+  let size = Math.max(16, height * 0.022 * style.scale);
+  let tracking = style.tracking;
+  const width = () => measure(style.font, shown, size) + tracking * size * Math.max(0, shown.length - 1);
+  if (width() > maxWidth) tracking = Math.min(tracking, 0.2);
   if (width() > maxWidth) size = Math.max(12, size * (maxWidth / width()));
   return textElement({
-    id, role: 'kicker', content: kicker, shown, font: 'semibold', size, tracking,
+    id, role: 'kicker', content: kicker, shown, font: style.font, size, tracking,
     lines: [shown], lineHeight: size * 1.3, x, y, anchor, fill: palette.muted,
     reveal: { style: 'cascade', unit: 'letter', start, duration: 0.45, stagger: Math.min(0.02, 0.6 / Math.max(1, shown.length)) },
   });
@@ -258,7 +266,24 @@ function blockBaseline(centerY, size, lineCount, lineHeight, font) {
  * `context`: { width, height, primaryColor, accentColor }
  * `support`: optional supporting line (the subheadline on the final shot).
  */
-export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '', productOrdinal }) {
+export function expandRecipe(spec, options) {
+  // The film's font pairing: roles map to its fonts while the recipe lays out, and
+  // the elements keep the concrete fonts (an uploaded brand font stays the display).
+  const pairing = pairingFor(options.context);
+  const previous = PAIRING;
+  PAIRING = pairing;
+  try {
+    return withFonts({ display: pairing.display, bold: pairing.bold, semibold: pairing.semibold, medium: pairing.medium }, () => {
+      const elements = expandRecipeLaidOut(spec, options);
+      for (const element of elements) if (element.type === 'text' && element.font) element.font = resolveFont(element.font);
+      return elements;
+    });
+  } finally {
+    PAIRING = previous;
+  }
+}
+
+function expandRecipeLaidOut(spec, { copy, context, shotIndex = 0, support = '', productOrdinal }) {
   // An uploaded brand font takes the display face's place in every recipe.
   const DISPLAY = context.brandFont ? registerBrandFont(context.brandFont) : 'display';
   const W = context.width;

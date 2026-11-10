@@ -29,7 +29,7 @@ const ease = {
 };
 const f = (value) => Number(value.toFixed(2));
 const esc = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]);
-const fontAttrs = (font, size) => { const face = fontFace(font) || fontFace('display'); return `font-family="${esc(face.family)}" font-weight="${face.weight}" font-size="${f(size)}"`; };
+const fontAttrs = (font, size) => { const face = fontFace(font) || fontFace('display'); return `font-family="${esc(face.family)}" font-weight="${face.weight}"${face.style === 'italic' ? ' font-style="italic"' : ''} font-size="${f(size)}"`; };
 
 // ---------------------------------------------------------------- text
 

@@ -344,3 +344,10 @@ test('the studio shows the style and offers a Style picker that rebuilds', () =>
   assert.match(studio, /'editorial-luxury': 'Editorial luxury'/);
   assert.match(studio, /if \(record\.project\.state === 'RENDERING'\) rebuildShots\(record\);\n  \}\);\n  return select;\n\}/);
 });
+
+test('the studio offers a Fonts picker that rebuilds, previews every pairing face, and names the pairing', () => {
+  const studio = read(root, 'public', 'studio.js');
+  assert.match(studio, /function fontsPicker\(record\)/);
+  for (const id of ['playfair-bold', 'spacegrotesk-bold', 'fredoka-semibold', 'bebas', 'fraunces-semibold', 'caveat-bold']) assert.ok(studio.includes(`'${id}'`) || studio.includes(` ${id}:`), id);
+  assert.match(studio, /\.\.\.\(record\?\.fonts \? \{ fonts: record\.fonts \} : \{\}\)/);
+});

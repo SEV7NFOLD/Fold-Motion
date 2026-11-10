@@ -1297,3 +1297,58 @@ test('tests 4 and 5 fixes: named transitions bind, long lines and quotes set big
   assert.equal(fitBlock('bold', 'Short line', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1);
   assert.equal(fitBlock('bold', 'Every line fits. Every hit lands.', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1, 'near full size on one line: kept');
 });
+
+test('font pairings: chosen by style kit, brief words or the studio, brand fonts win, and every line fits in every pairing', async () => {
+  const { PAIRINGS, PAIRING_OPTIONS, resolvePairing, pairingFromWords } = await import('../src/production/font-pairings.mjs');
+  const { measureFrameFit, rebuildTimeline } = await import('../src/production/production.mjs');
+  const { fontFace, FONT_IDS } = await import('../src/render/typography.mjs');
+  assert.equal(PAIRING_OPTIONS.length, 6);
+  for (const pairing of Object.values(PAIRINGS)) for (const role of ['display', 'bold', 'semibold', 'medium']) assert.ok(FONT_IDS.includes(pairing[role]), `${pairing.label} ${role}`);
+  assert.equal(fontFace('playfair-italic').style, 'italic');
+  assert.equal(fontFace('bebas').family, 'Bebas Neue');
+  // Chosen by the kit, the brief's words, then the studio.
+  assert.equal(resolvePairing({ style: 'editorial-luxury' }), 'editorial');
+  assert.equal(resolvePairing({ style: 'bold-street' }), 'condensed');
+  assert.equal(resolvePairing({ style: 'tech-ui', creativeDirection: 'Set in a handwritten script font' }), 'friendly');
+  assert.equal(resolvePairing({ style: 'tech-ui' }, { fonts: 'soft' }), 'soft');
+  assert.equal(pairingFromWords('a sans-serif look'), undefined, 'sans-serif is not a serif');
+  assert.equal(pairingFromWords('an elegant serif headline'), 'editorial');
+  // A compiled film records its pairing; the elements carry the real fonts.
+  const { storyboard } = await createCreativePlan('A luxurious, refined fragrance film', DARK, null);
+  const { timeline } = await compileCreativePlan(storyboard, DARK, null);
+  assert.equal(timeline.fonts, 'editorial');
+  const fonts = new Set(timeline.shots.flatMap((shot) => shot.spec.elements.filter((e) => e.type === 'text' && e.role !== 'decor').map((e) => e.font)));
+  assert.ok(fonts.has('playfair-bold'), [...fonts].join(', '));
+  const frame = renderTimelineFrame(timeline, timeline.totalFrames - 1, {});
+  assert.match(frame, /font-family="Playfair Display"/);
+  // The studio's Fonts picker rebuilds under another pairing.
+  const rebuilt = rebuildTimeline(storyboard, timeline.shots.map((shot) => ({ ...shot.spec, elements: undefined })), { ...DARK, fonts: 'condensed' });
+  assert.equal(rebuilt.timeline.fonts, 'condensed');
+  assert.match(renderTimelineFrame(rebuilt.timeline, rebuilt.timeline.totalFrames - 1, {}), /font-family="Bebas Neue"/);
+  // An uploaded brand font stays the display face whatever the pairing.
+  const brand = { ...DARK, fonts: 'editorial', brandFont: { family: 'Brand Sans', weight: 700, capHeight: 0.7, ascender: 0.9, descender: 0.2, fallbackAdvance: 0.6, advance: { A: 0.6, ' ': 0.25 } } };
+  const brandTitle = expandRecipe({ version: 2, recipe: 'title-reveal', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy: 'A A A', context: brand, shotIndex: 0 }).find((e) => e.role === 'title');
+  assert.match(brandTitle.font, /^brand-/);
+  // The safety net, in every pairing: every recipe, every format, short and long lines.
+  const lines = ['Craft', 'Every frame, measured.', 'We turn a single paragraph of intent into a film that moves'];
+  const font = { fontFiles: [...FONT_FILES], loadSystemFonts: false, defaultFontFamily: 'Montserrat' };
+  for (const fontsKey of PAIRING_OPTIONS) {
+    for (const [width, height] of [[1280, 720], [720, 1280], [960, 960]]) {
+      const context = { ...DARK, width, height, fonts: fontsKey };
+      for (const recipe of ['title-reveal', 'statement', 'kicker-title', 'type-stack', 'lockup', 'quote']) {
+        for (const copy of lines) {
+          if (recipe === 'type-stack' && copy.split(' ').length > 6) continue;
+          const spec = { version: 2, recipe, kicker: 'Creativity at scale', durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+          spec.elements = expandRecipe(spec, { copy, context, shotIndex: 1, support: recipe === 'lockup' ? 'FOLD Motion by SEV7NFOLD.' : '' });
+          const fit = measureFrameFit({ width, height, shots: [{ shotId: 's', spec }] });
+          assert.equal(fit.pass, true, `${fontsKey} ${width}x${height} ${recipe} "${copy}": ${JSON.stringify(fit.failures)}`);
+        }
+      }
+    }
+    // Each pairing's fonts actually render.
+    const spec = { version: 2, recipe: 'kicker-title', kicker: 'Creativity at scale', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+    spec.elements = expandRecipe(spec, { copy: 'Every frame, measured.', context: { ...DARK, fonts: fontsKey }, shotIndex: 1 });
+    const png = new Resvg(renderTimelineFrame({ width: 1280, height: 720, fps: 24, totalFrames: 48, shots: [{ shotId: 's', startFrame: 0, endFrame: 47, durationFrames: 48, palette: { primary: DARK.primaryColor, accent: DARK.accentColor }, spec }] }, 47, {}), { fitTo: { mode: 'width', value: 320 }, font }).render();
+    assert.equal(png.width, 320);
+  }
+});
