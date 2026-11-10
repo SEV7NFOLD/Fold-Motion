@@ -146,7 +146,8 @@ function renderBeat(element, t, ctx) {
   const cx = ctx.width / 2;
   const cy = ctx.height / 2;
   const emphasized = (element.emphasis?.words ?? []).includes(index);
-  const fill = emphasized ? element.emphasis.from : element.fill;
+  // Color words light up in their color; otherwise the emphasis or the text color.
+  const fill = element.wordColors?.[index] || (emphasized ? element.emphasis.from : element.fill);
   return {
     done: false,
     out: {
@@ -264,6 +265,8 @@ function renderText(element, t, ctx) {
   // Emphasis styles: gradient (default), outline, highlighter swipe, pill.
   const emphasisStyle = element.emphasisStyle || 'gradient';
   const fillFor = (wordIndex) => {
+    // Color words keep their color in the resolved line too.
+    if (element.wordColors?.[wordIndex]) return element.wordColors[wordIndex];
     if (!emphasis.has(wordIndex)) return element.fill;
     if (emphasisStyle === 'outline') return `none" stroke="${element.emphasis.from}" stroke-width="${f(Math.max(1.4, sizes[0] * 0.022))}`;
     if (emphasisStyle === 'highlight' || emphasisStyle === 'pill') return element.emphasisInk || element.fill;

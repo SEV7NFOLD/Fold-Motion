@@ -15,6 +15,26 @@ export const RECIPE_OPTIONS = Object.freeze(['title-reveal', 'statement', 'kicke
 
 /** How a headline moves in, and how its emphasized words are treated. */
 export const TEXT_MOTIONS = Object.freeze(['rise', 'slam', 'drop', 'split']);
+// Two to five single words, each ending in a full stop, ! or ?.
+const STACCATO = /^(?:[\p{L}\p{N}'’&-]+[.!?]\s+){1,4}[\p{L}\p{N}'’&-]+[.!?]$/u;
+
+/**
+ * Words that name a color light up in it (adjusted to read on the background):
+ * gems, flowers, fruit and metals.
+ */
+const COLOR_WORDS = {
+  ruby: '#E0115F', sapphire: '#3D7BFF', emerald: '#2ECC71', amethyst: '#B57EDC', topaz: '#FFC87C', diamond: '#CFF5FF',
+  gold: '#E3B341', golden: '#E3B341', silver: '#D6D9DE', pearl: '#F2EFE6', jade: '#4FBF8B', onyx: '#B9B9B9', obsidian: '#9A8CA8',
+  rose: '#FF6FA3', blush: '#F7A9B8', lavender: '#B9A1E8', violet: '#9C6BFF', lilac: '#C8A2C8',
+  citrus: '#FFB83D', orange: '#FF9F2E', lemon: '#FFE45C', grapefruit: '#FF6B5B', mint: '#7FE0B4', cherry: '#FF3B5C', coral: '#FF7F66',
+  red: '#FF4D4D', blue: '#4D9BFF', green: '#3DDC84', yellow: '#FFE14D', pink: '#FF7AB6', purple: '#B17CFF', amber: '#FFB547', ivory: '#F6F1E3',
+};
+
+/** A color word's color, readable on the background, or undefined. */
+export function colorForWord(word, background) {
+  const hex = COLOR_WORDS[String(word).toLowerCase().replace(/[^a-z]/g, '')];
+  return hex && background ? ensureContrast(hex, background) : undefined;
+}
 
 /** Graphics that support the type, placed relative to the headline. */
 export const GRAPHIC_PLACES = Object.freeze(['above', 'below', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']);
@@ -279,7 +299,9 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     }
     case 'statement': {
       const shown = display(copy, textCase);
-      const block = fitBlock('bold', shown, { maxWidth: W * 0.8, maxSize: H * 0.105, minSize: H * 0.05, maxLines: 2, tracking: -0.015 });
+      // Short statements fill the space; longer ones stay calm.
+      const fewWords = shown.split(/\s+/).length <= 3;
+      const block = fitBlock('bold', shown, { maxWidth: W * 0.8, maxSize: fewWords ? Math.min(W, H) * 0.16 : H * 0.105, minSize: H * 0.05, maxLines: 2, tracking: -0.015 });
       const lineHeight = block.size * 1.18;
       const y = blockBaseline(H * 0.5, block.size, block.lines.length, lineHeight, 'bold');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
@@ -799,6 +821,11 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
     changes.push(`${recipe} needs an uploaded product photo; used "${fallback.recipe === recipe ? 'title-reveal' : fallback.recipe}"`);
     recipe = PRODUCT_RECIPES.includes(fallback.recipe) ? 'title-reveal' : fallback.recipe;
   }
+  // A staccato line ("Ruby. Sapphire. Emerald.") is made for a word beat.
+  if (['title-reveal', 'statement', 'kicker-title', 'type-stack'].includes(recipe) && STACCATO.test(String(copy).trim())) {
+    changes.push(`a staccato line suits a word beat; used "word-beat" instead of "${recipe}"`);
+    recipe = 'word-beat';
+  }
   if (recipe === 'word-beat' && (words.length < 2 || words.length > 5)) {
     changes.push('word-beat needs a line of two to five words; used "title-reveal"');
     recipe = 'title-reveal';
@@ -955,6 +982,13 @@ export function applyTextMotion(elements, spec, context = {}) {
       : spec.textMotion === 'drop'
         ? { style: 'drop', start: 0.1 * k, duration: 0.55, stagger: Math.min(0.06, (0.9 * k) / Math.max(1, letters)) }
         : { style: 'split', start: 0.1 * k, duration: 0.7 * k, stagger: 0.1 * k };
+  }
+  if (context.primaryColor) {
+    const words = shown.split(/\s+/).filter(Boolean);
+    const colors = words.map((word) => colorForWord(word, context.primaryColor));
+    if (spec.recipe === 'word-beat' && colors.some(Boolean)) title.wordColors = colors;
+    const first = title.emphasis?.words?.[0];
+    if (first !== undefined && colors[first]) title.emphasis = { ...title.emphasis, from: colors[first], to: colors[first] };
   }
   if (EMPHASIS_STYLES.includes(spec.emphasisStyle) && spec.emphasisStyle !== 'gradient' && title.emphasis?.words?.length && context.accentColor) {
     // Highlighters and pills sit behind the word: its ink must read on the accent.

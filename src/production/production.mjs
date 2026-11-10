@@ -932,6 +932,8 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
     for (const shot of removeRepeatedLines(storyboard)) {
       if (provider) repairs.push(`${shot.id} repeated "${shot.onScreenCopy}"; removed, and its time shared with the shots around it.`);
     }
+    // Three or more one-word shots in a row become one word beat.
+    for (const merged of mergeWordRuns(storyboard)) repairs.push(`${merged.ids.join(', ')} were one word each; merged into a word beat: "${merged.copy}".`);
   }
   const validation = validateStoryboard(storyboard);
   if (!validation.valid) {
@@ -1017,6 +1019,57 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
   return { timeline, acceptance: buildAcceptanceSpec(storyboard, normalizedContext), provider: 'rebuild', ...(repairs.length ? { repairs } : {}) };
 }
 
+/**
+ * Runs of three or more one-word shots ("Ruby." "Sapphire." "Emerald.") merge into
+ * a single word-beat shot of up to five words, keeping their total time: each word
+ * then fills the frame on the beat instead of sitting small in its own shot.
+ */
+export function mergeWordRuns(storyboard) {
+  const shots = storyboard.shots;
+  const oneWord = (shot) => shot && !/\s/.test(String(shot.onScreenCopy || '').trim()) && String(shot.onScreenCopy || '').replace(/[^\p{L}\p{N}]/gu, '').length >= 2 && String(shot.onScreenCopy).length <= 16;
+  const merged = [];
+  for (let start = 0; start < shots.length - 1; start += 1) {
+    let end = start;
+    while (end + 1 < shots.length - 1 && oneWord(shots[end + 1]) && end + 1 - start < 5) end += 1;
+    if (!oneWord(shots[start]) || end - start + 1 < 3) continue;
+    const run = shots.slice(start, end + 1);
+    const copy = run.map((shot) => shot.onScreenCopy.trim()).map((word) => (/[.!?]$/.test(word) ? word : `${word}.`)).join(' ');
+    const shot = {
+      ...run[0],
+      onScreenCopy: copy,
+      durationSeconds: Number(run.reduce((sum, item) => sum + (Number(item.durationSeconds) || 0), 0).toFixed(2)),
+      mainVisual: `A word beat: ${copy} Each word fills the frame on the beat.`,
+    };
+    shots.splice(start, run.length, shot);
+    merged.push({ ids: run.map((item) => item.id), copy });
+  }
+  return merged;
+}
+
+/**
+ * The payoff gets time to land: the end card keeps at least three seconds (or a
+ * fifth of the film, if shorter), taken from the longest other shots, never
+ * leaving one under 1.2 seconds. The total length doesn't change.
+ */
+export function protectPayoff(specs) {
+  const last = specs.at(-1);
+  if (!last || !['lockup', 'logo-reveal'].includes(last.recipe) || specs.length < 3) return [];
+  const total = specs.reduce((sum, spec) => sum + spec.durationInSeconds, 0);
+  const target = Math.min(3, total * 0.2);
+  let need = Number((target - last.durationInSeconds).toFixed(2));
+  if (need <= 0.05) return [];
+  const taken = need;
+  const donors = specs.slice(0, -1).map((spec, index) => ({ spec, index })).sort((a, b) => b.spec.durationInSeconds - a.spec.durationInSeconds);
+  for (const { spec } of donors) {
+    if (need <= 0) break;
+    const give = Math.min(need, Math.max(0, spec.durationInSeconds - 1.2), spec.durationInSeconds * 0.35);
+    spec.durationInSeconds = Number((spec.durationInSeconds - give).toFixed(2));
+    need = Number((need - give).toFixed(2));
+  }
+  last.durationInSeconds = Number((last.durationInSeconds + taken - Math.max(0, need)).toFixed(2));
+  return [`The end card got ${(taken - Math.max(0, need)).toFixed(1)}s more so the payoff can land.`];
+}
+
 export async function compileCreativePlan(storyboard, context = {}, provider = null) {
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
@@ -1028,6 +1081,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
     strengthenDirection(shotSpecs, storyboard);
     enforceStyleKit(shotSpecs, normalizedContext.style);
+    protectPayoff(shotSpecs);
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;
     return { timeline, provider: 'mock-provider' };
@@ -1054,6 +1108,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   repairs.push(...ensureProductShot(shotSpecs, normalizedContext.products?.length || 0, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...strengthenDirection(shotSpecs, storyboard));
   repairs.push(...enforceStyleKit(shotSpecs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
+  repairs.push(...protectPayoff(shotSpecs));
   try {
     const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
     timeline.style = normalizedContext.style;

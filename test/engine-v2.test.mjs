@@ -1114,3 +1114,42 @@ test('style kits: chosen from the brief, enforced in code, overridable, and a ga
     assert.equal(rebuilt.timeline.style, other);
   }
 });
+
+test('film polish: one-word runs become word beats, color words light up, the payoff gets time, short statements grow', async () => {
+  const { mergeWordRuns, protectPayoff } = await import('../src/production/production.mjs');
+  const { normalizeDirection, colorForWord, applyTextMotion } = await import('../src/production/recipes.mjs');
+  const { contrastRatio } = await import('../src/production/color.mjs');
+  const shot = (id, copy, durationSeconds = 1.3) => ({ id, onScreenCopy: copy, durationSeconds, purpose: 'p', mainVisual: 'v', motion: 'm', transition: 't', audioCue: 'a' });
+  const storyboard = { shots: [shot('s1', 'Ruby.'), shot('s2', 'Sapphire'), shot('s3', 'Emerald.'), shot('s4', 'Every ritual, sealed with a jewel', 3), shot('s5', 'Calm.'), shot('s6', 'Glow.'), shot('s7', 'Results worth the ritual.', 3)] };
+  const merged = mergeWordRuns(storyboard);
+  assert.deepEqual(storyboard.shots.map((s) => s.onScreenCopy), ['Ruby. Sapphire. Emerald.', 'Every ritual, sealed with a jewel', 'Calm.', 'Glow.', 'Results worth the ritual.']);
+  assert.equal(storyboard.shots[0].durationSeconds, 3.9, 'the run keeps its time');
+  assert.equal(merged.length, 1, 'pairs and the end card stay as they are');
+  assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow. Calm. Pure.', index: 1, count: 4, seed: 's' }).direction.recipe, 'word-beat');
+  assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow and calm', index: 1, count: 4, seed: 's' }).direction.recipe, 'title-reveal');
+  // Color words light up, readable on the background.
+  const purple = '#2A1838';
+  for (const word of ['Ruby.', 'SAPPHIRE', 'emerald', 'Gold', 'citrus']) assert.ok(contrastRatio(colorForWord(word, purple), purple) >= 4.5, word);
+  assert.equal(colorForWord('ritual', purple), undefined);
+  const context = { width: 1280, height: 720, primaryColor: purple, accentColor: '#C9A55C' };
+  const beatSpec = { version: 2, recipe: 'word-beat', durationInSeconds: 3, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  beatSpec.elements = applyTextMotion(expandRecipe(beatSpec, { copy: 'Ruby. Sapphire. Emerald.', context, shotIndex: 0 }), beatSpec, context);
+  const beat = beatSpec.elements.find((e) => e.role === 'title');
+  assert.equal(beat.wordColors.length, 3);
+  const frame = renderTimelineFrame({ width: 1280, height: 720, fps: 24, totalFrames: 72, shots: [{ shotId: 's', startFrame: 0, endFrame: 71, durationFrames: 72, palette: { primary: purple, accent: '#C9A55C' }, spec: beatSpec }] }, 4, {});
+  assert.ok(frame.includes(`fill="${beat.wordColors[0]}"`), 'RUBY is drawn in ruby');
+  const resolved = renderTimelineFrame({ width: 1280, height: 720, fps: 24, totalFrames: 72, shots: [{ shotId: 's', startFrame: 0, endFrame: 71, durationFrames: 72, palette: { primary: purple, accent: '#C9A55C' }, spec: beatSpec }] }, 71, {});
+  assert.ok(beat.wordColors.every((color) => resolved.includes(`fill="${color}"`)), 'the resolved line keeps every color');
+  const goldSpec = { version: 2, recipe: 'title-reveal', emphasis: 'gold', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  const gold = applyTextMotion(expandRecipe(goldSpec, { copy: 'Sealed in gold', context, shotIndex: 1 }), goldSpec, context).find((e) => e.role === 'title');
+  assert.equal(gold.emphasis.from, colorForWord('gold', purple), 'an emphasized color word takes its color');
+  // The payoff gets time; the film keeps its length; nothing drops under 1.2s.
+  const specs = [3.4, 3.2, 3.0, 2.4, 1.5].map((durationInSeconds, i) => ({ version: 2, recipe: i === 4 ? 'lockup' : 'statement', durationInSeconds }));
+  protectPayoff(specs);
+  assert.ok(specs[4].durationInSeconds >= 2.7, `end card ${specs[4].durationInSeconds}`);
+  assert.equal(Number(specs.reduce((sum, s) => sum + s.durationInSeconds, 0).toFixed(2)), 13.5);
+  assert.ok(specs.every((s) => s.durationInSeconds >= 1.2));
+  // Short statements grow.
+  const statement = (copy) => expandRecipe({ version: 2, recipe: 'statement', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy, context, shotIndex: 1 }).find((e) => e.role === 'title').fontSize;
+  assert.ok(statement('Radiance, renewed.') > 720 * 0.105 + 1, 'two words fill the space');
+});
