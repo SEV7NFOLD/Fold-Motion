@@ -1198,3 +1198,33 @@ test('brief adherence: beats set the shot count, end-card lines stay on the end 
   assert.equal(bind('A count-up', '3 formats from 1 brief.', {}).recipe, 'stat');
   assert.equal(bind('A quote card attributed to SEV7NFOLD', 'We give ideas motion.', {}).recipe, 'quote');
 });
+
+test('test 2 fixes: headline effects leave word beats and count-ups alone; the brief\'s typography beats the style kit', async () => {
+  const { applyTypeEffect, normalizeDirection, expandRecipe: expand } = await import('../src/production/recipes.mjs');
+  const { enforceStyleKit } = await import('../src/production/style-kits.mjs');
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  // A decode on a word beat would replace its beats.
+  const spec = { version: 2, recipe: 'word-beat', typeEffect: 'decode', durationInSeconds: 2.8, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' };
+  const title = applyTypeEffect(expand(spec, { copy: 'Landscape. Vertical. Square.', context: DARK, shotIndex: 0 }), spec).find((e) => e.role === 'title');
+  assert.equal(title.reveal.style, 'beat');
+  assert.equal(normalizeDirection({ recipe: 'word-beat', typeEffect: 'decode', transitionOut: 'cut' }, { copy: 'Landscape. Vertical. Square.', index: 0, count: 4, seed: 's' }).direction.typeEffect, undefined);
+  assert.equal(normalizeDirection({ recipe: 'title-reveal', typeEffect: 'decode', transitionOut: 'cut' }, { copy: 'Landscape. Vertical. Square.', index: 0, count: 4, seed: 's' }).direction.typeEffect, undefined, 'a staccato line becomes a word beat, without the effect');
+  const word = { recipe: 'title-reveal', typeEffect: 'decode' };
+  applyBriefWords(word, { id: 's1', onScreenCopy: 'Landscape. Vertical. Square.', mainVisual: 'A word beat: Landscape. Vertical. Square.' });
+  assert.deepEqual([word.recipe, word.typeEffect], ['word-beat', undefined]);
+  // The brief asked for a highlighter; Tech & UI doesn't use them, but the brief wins.
+  const asked = { version: 2, recipe: 'statement' };
+  applyBriefWords(asked, { id: 's3', onScreenCopy: 'Minutes, not weeks.', mainVisual: 'The line splits in: Minutes, not weeks. MINUTES gets a highlighter.' });
+  assert.deepEqual([asked.textMotion, asked.emphasisStyle], ['split', 'highlight']);
+  enforceStyleKit([asked], 'tech-ui');
+  assert.equal(asked.emphasisStyle, 'highlight', 'the brief\'s own words stay');
+  // The model's own choice still follows the kit, and graphics stay guarded.
+  const chosen = { version: 2, recipe: 'statement', emphasisStyle: 'highlight', graphics: [{ kind: 'icon', name: 'music' }] };
+  const lockedGraphic = { version: 2, recipe: 'statement', briefLocked: ['emphasisStyle'], emphasisStyle: 'pill', graphics: [{ kind: 'icon', name: 'music' }] };
+  enforceStyleKit([chosen, lockedGraphic], 'bold-street');
+  assert.equal(chosen.emphasisStyle, 'highlight', 'bold street allows highlighters');
+  assert.deepEqual([chosen.graphics.length, lockedGraphic.graphics.length], [0, 0], 'bold street drops icons, asked for or not');
+  const techChosen = { version: 2, recipe: 'statement', emphasisStyle: 'highlight' };
+  enforceStyleKit([techChosen], 'tech-ui');
+  assert.equal(techChosen.emphasisStyle, 'outline', 'without the brief asking, the kit decides');
+});

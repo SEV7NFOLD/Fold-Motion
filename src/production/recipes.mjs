@@ -904,7 +904,7 @@ export function normalizeDirection(raw, { copy, index, count, seed, hasLogo = fa
     direction: {
       recipe,
       ...(product ? { product } : {}),
-      ...(TYPE_EFFECTS.includes(source.typeEffect) ? { typeEffect: source.typeEffect } : {}),
+      ...(TYPE_EFFECTS.includes(source.typeEffect) && !['word-beat', 'stat'].includes(recipe) ? { typeEffect: source.typeEffect } : {}),
       ...(TEXT_MOTIONS.includes(source.textMotion) ? { textMotion: source.textMotion } : {}),
       ...(EMPHASIS_STYLES.includes(source.emphasisStyle) ? { emphasisStyle: source.emphasisStyle } : {}),
       ...(typeof source.echo === 'boolean' ? { echo: source.echo } : {}),
@@ -1027,7 +1027,9 @@ export function applyTextMotion(elements, spec, context = {}) {
 
 /** Applies a shot's headline effect (decode or outline) to its title. */
 export function applyTypeEffect(elements, spec) {
-  if (!TYPE_EFFECTS.includes(spec?.typeEffect) || ['type-window', 'logo-reveal'].includes(spec.recipe)) return elements;
+  // Shot types with their own animation keep it: a decode would replace a word
+  // beat's beats or a count-up's count.
+  if (!TYPE_EFFECTS.includes(spec?.typeEffect) || ['type-window', 'logo-reveal', 'word-beat', 'stat'].includes(spec.recipe)) return elements;
   const k = Math.min(1.6, Math.max(1, (spec.durationInSeconds || 2.5) / 2.5));
   for (const element of elements) {
     if (element.type !== 'text' || element.role !== 'title') continue;

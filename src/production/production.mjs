@@ -411,6 +411,8 @@ export function applyBriefWords(direction, shot, label = shot.id) {
   if (!text) return [];
   const changes = [];
   const set = (field, value, why) => {
+    // Marked as the brief's own choice, so the style kit doesn't overwrite it.
+    if (['textMotion', 'emphasisStyle', 'typeEffect', 'echo'].includes(field)) direction.briefLocked = [...new Set([...(direction.briefLocked || []), field])];
     if (direction[field] === value) return;
     direction[field] = value;
     changes.push(`${label}: the brief says ${why}; used ${field} "${value}".`);
@@ -428,7 +430,10 @@ export function applyBriefWords(direction, shot, label = shot.id) {
   else if (/\b[a-z]+ is outlined\b|\bis outlined\b/.test(text)) set('emphasisStyle', 'outline', 'an outlined word');
   if (/\becho(?:es|ing)?\b/.test(text)) set('echo', true, 'an echo');
   const words = String(shot.onScreenCopy || '').trim().split(/\s+/).length;
-  if (/\bword beat\b/.test(text) && words >= 2 && words <= 5) set('recipe', 'word-beat', 'a word beat');
+  if (/\bword beat\b/.test(text) && words >= 2 && words <= 5) {
+    set('recipe', 'word-beat', 'a word beat');
+    if (direction.typeEffect) { delete direction.typeEffect; changes.push(`${label}: a word beat keeps its own animation; dropped the headline effect.`); }
+  }
   else if (/\bcount-?up\b|\bcounts? (?:up|from zero)/.test(text) && /\d/.test(String(shot.onScreenCopy))) set('recipe', 'stat', 'a count-up');
   else if (/\bquote card\b/.test(text)) set('recipe', 'quote', 'a quote card');
   return changes;

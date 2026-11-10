@@ -98,19 +98,22 @@ export function enforceStyleKit(specs, style, labels = []) {
   specs.forEach((spec, index) => {
     if (spec?.version !== 2) return;
     const label = labels[index] || `shot ${index + 1}`;
-    if (spec.textMotion && !kit.textMotions.includes(spec.textMotion)) {
+    // The brief's explicit typography words win over the kit (the user asked for
+    // them); graphics stay guarded, since that's where brand risk lives.
+    const locked = new Set(spec.briefLocked || []);
+    if (spec.textMotion && !locked.has('textMotion') && !kit.textMotions.includes(spec.textMotion)) {
       changes.push(`${label}: ${kit.label} doesn't use "${spec.textMotion}"; used "${kit.textMotions[0]}".`);
       spec.textMotion = kit.textMotions[0];
     }
-    if (spec.emphasisStyle && !kit.emphasisStyles.includes(spec.emphasisStyle)) {
+    if (spec.emphasisStyle && !locked.has('emphasisStyle') && !kit.emphasisStyles.includes(spec.emphasisStyle)) {
       changes.push(`${label}: ${kit.label} doesn't use a ${spec.emphasisStyle} emphasis; used "${kit.emphasisStyles[0]}".`);
       spec.emphasisStyle = kit.emphasisStyles[0];
     }
-    if (spec.echo && !kit.echo) {
+    if (spec.echo && !locked.has('echo') && !kit.echo) {
       changes.push(`${label}: ${kit.label} doesn't use echoes.`);
       delete spec.echo;
     }
-    if (spec.typeEffect && !kit.typeEffects.includes(spec.typeEffect)) {
+    if (spec.typeEffect && !locked.has('typeEffect') && !kit.typeEffects.includes(spec.typeEffect)) {
       changes.push(`${label}: ${kit.label} doesn't use the ${spec.typeEffect} effect.`);
       delete spec.typeEffect;
     }
