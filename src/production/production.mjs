@@ -467,6 +467,36 @@ export function applyBriefWords(direction, shot, label = shot.id) {
   return changes;
 }
 
+/**
+ * Transitions the brief names are binding. Out of a shot: "flies through a letter"
+ * (zoom), "then The Fold", "then a wipe", "pushes into". Into a shot: "The Fold
+ * opens onto", "a second Fold resolves into" set the previous shot's transition.
+ * The limits (one zoom, two Folds) apply afterwards.
+ */
+export function applyBriefTransitions(specs, shots) {
+  const changes = [];
+  const textOf = (shot) => {
+    const copy = String(shot.onScreenCopy || '').toLowerCase().trim();
+    const full = [shot.mainVisual, shot.motion, shot.transition, shot.purpose].filter(Boolean).join(' ').toLowerCase();
+    return copy ? full.split(copy).join(' ') : full;
+  };
+  const set = (index, value, why) => {
+    const spec = specs[index];
+    if (!spec || index >= specs.length - 1 || spec.transitionOut === value) return;
+    spec.transitionOut = value;
+    changes.push(`${shots[index].id}: the brief says ${why}; used "${value}".`);
+  };
+  shots.forEach((shot, index) => {
+    const text = textOf(shot);
+    if (index > 0 && /\b(?:the |a second |another )?fold (?:opens onto|resolves into|opens|unfolds)/.test(text)) set(index - 1, 'fold', 'The Fold opens this shot');
+    if (/fl(?:y|ies|ying) through a letter|through a letter into/.test(text)) set(index, 'zoom', 'the camera flies through a letter');
+    else if (/\bthen (?:the |a )?fold\b|\bfolds? (?:into|to) the next/.test(text)) set(index, 'fold', 'then The Fold');
+    else if (/\bthen (?:a )?wipe\b|\bwipes? (?:to|into) the next/.test(text)) set(index, 'wipe', 'a wipe');
+    else if (/\bpush(?:es)? into the next|\bthen (?:a )?push\b/.test(text)) set(index, 'push', 'a push');
+  });
+  return changes;
+}
+
 function directedShotSpec(raw, shot, index, count, context, seed) {
   const label = shot.id;
   const repairs = [];
@@ -1187,6 +1217,8 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     repairs.push(...result.repairs);
     return result.spec;
   });
+  // The brief's named transitions first, then the limits (one zoom, two Folds).
+  repairs.push(...applyBriefTransitions(shotSpecs, storyboard.shots));
   repairs.push(...limitFolds(shotSpecs, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...ensureProductShot(shotSpecs, normalizedContext.products?.length || 0, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...strengthenDirection(shotSpecs, storyboard));

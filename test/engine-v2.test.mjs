@@ -143,11 +143,14 @@ test('v2 frames are deterministic', () => {
   for (const frame of [0, 17, 40, 77, 110, 160]) assert.equal(renderTimelineFrame(timeline, frame), renderTimelineFrame(timeline, frame));
 });
 
-test('transitions draw at shot boundaries', () => {
+test('transitions draw at shot boundaries', async () => {
   const timeline = sampleTimeline();
   const [one, two, three] = timeline.shots;
-  assert.match(renderTimelineFrame(timeline, one.endFrame - 2), /fill="#7C3AED"\/>/, 'wipe panel enters at the end of shot 1');
-  assert.match(renderTimelineFrame(timeline, two.startFrame + 2), new RegExp(`<rect x="[\\d.]+" y="0" width="[\\d.]+" height="720" fill="#7C3AED"/>`), 'wipe panel exits at the start of shot 2');
+  // The wipe panel is a deep tint of the accent (mixed 55% toward the primary).
+  const { mix: mixColor } = await import('../src/production/color.mjs');
+  const panel = mixColor('#7C3AED', timeline.shots[0].palette.primary, 0.55);
+  assert.ok(renderTimelineFrame(timeline, one.endFrame - 2).includes(`fill="${panel}"/>`), 'wipe panel enters at the end of shot 1');
+  assert.match(renderTimelineFrame(timeline, two.startFrame + 2), new RegExp(`<rect x="[\\d.]+" y="0" width="[\\d.]+" height="720" fill="${panel}"/>`), 'wipe panel exits at the start of shot 2');
   assert.match(renderTimelineFrame(timeline, two.endFrame - 1), /scale\(1\.\d+\)/, 'push scales up at the end of shot 2');
   assert.match(renderTimelineFrame(timeline, three.endFrame - 1), /fill="#0E0E11" opacity="0\.\d+"/, 'fade veils the end of shot 3');
   const middle = renderTimelineFrame(timeline, one.startFrame + 18);
@@ -1253,4 +1256,44 @@ test('test 3 fixes: emojis, badges, signs and icons the brief names are binding;
   const spec = { version: 2, recipe: 'statement', copy: 'Your next ad drops in minutes.', durationInSeconds: 2.5, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut', graphics: [{ kind: 'emoji', name: 'sparkles', place: 'above' }] };
   const emoji = applyGraphics(expandRecipe(spec, { copy: spec.copy, context, shotIndex: 1 }), spec, context).find((e) => e.type === 'graphic');
   assert.ok(emoji.size >= 72, `emoji ${emoji.size}px`);
+});
+
+test('tests 4 and 5 fixes: named transitions bind, long lines and quotes set bigger and balanced', async () => {
+  const { applyBriefTransitions } = await import('../src/production/production.mjs');
+  const { limitFolds } = await import('../src/production/recipes.mjs');
+  const { fitBlock, measure } = await import('../src/render/typography.mjs');
+  // Test 4's beats: a zoom out of the first shot, The Fold out of the third, and a
+  // second Fold "resolving into" the end card.
+  const shots = [
+    { id: 's1', onScreenCopy: 'Craft is a decision.', mainVisual: 'The line traces itself in as an outline, then fills. A giant outlined CRAFT echoes behind the shot. Then the camera flies through a letter into the next shot.' },
+    { id: 's2', onScreenCopy: 'We don\'t decorate ideas. We give them motion.', mainVisual: 'A quote card.' },
+    { id: 's3', onScreenCopy: 'Every frame, measured.', mainVisual: 'The line splits in from both sides. MEASURED is outlined. Then The Fold.' },
+    { id: 's4', onScreenCopy: 'CREATIVITY AT SCALE.', mainVisual: 'A second Fold resolves into the logo. The payoff slams in.' },
+  ];
+  const specs = shots.map(() => ({ version: 2, transitionOut: 'fade' }));
+  applyBriefTransitions(specs, shots);
+  limitFolds(specs, shots.map((s) => s.id));
+  assert.deepEqual(specs.slice(0, 3).map((s) => s.transitionOut), ['zoom', 'fade', 'fold']);
+  // Limits still apply: a second zoom becomes a push.
+  const zoomShots = [shots[0], { ...shots[0], id: 's1b' }, { id: 'e', onScreenCopy: 'END.', mainVisual: 'The end card.' }];
+  const twoZooms = zoomShots.map(() => ({ version: 2, transitionOut: 'cut' }));
+  applyBriefTransitions(twoZooms, zoomShots);
+  limitFolds(twoZooms, ['a', 'b', 'c']);
+  assert.deepEqual(twoZooms.slice(0, 2).map((s) => s.transitionOut), ['zoom', 'push']);
+  // Test 5's long lines in a vertical frame (where one line must shrink a lot): two
+  // balanced lines at bigger sizes. (At 16:9 width they already fit near full size.)
+  for (const line of ['Every line fits. Every hit lands.', 'Real instruments, locked to the cut.']) {
+    const one = fitBlock('bold', line, { maxWidth: 619, maxSize: 75, minSize: 36, maxLines: 1 });
+    const block = fitBlock('bold', line, { maxWidth: 619, maxSize: 75, minSize: 36, maxLines: 2 });
+    assert.ok(block.size >= one.size * 1.15, `${line}: ${block.size} vs ${one.size}`);
+    assert.equal(block.lines.length, 2);
+    const widths = block.lines.map((l) => measure('bold', l, block.size));
+    assert.ok(Math.min(...widths) / Math.max(...widths) > 0.5, `balanced: ${block.lines.join(' / ')}`);
+  }
+  // Test 4's quote fills the frame instead of one small line.
+  const quote = expandRecipe({ version: 2, recipe: 'quote', durationInSeconds: 4, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy: 'We don\'t decorate ideas. We give them motion.', context: { ...DARK, width: 1280, height: 720 }, shotIndex: 1 }).find((e) => e.role === 'title');
+  assert.ok(quote.lines.length >= 2 && quote.fontSize >= 720 * 0.06, `quote ${quote.fontSize}px over ${quote.lines.length} lines`);
+  // A full line keeps one line.
+  assert.equal(fitBlock('bold', 'Short line', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1);
+  assert.equal(fitBlock('bold', 'Every line fits. Every hit lands.', { maxWidth: 1024, maxSize: 75, minSize: 36, maxLines: 2 }).lines.length, 1, 'near full size on one line: kept');
 });

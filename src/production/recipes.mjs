@@ -554,7 +554,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
     case 'quote': {
       const shown = display(copy, textCase === 'upper' ? 'upper' : 'as-written');
       const unit = Math.min(W, H);
-      const block = fitBlock('medium', shown, { maxWidth: W * 0.78, maxSize: unit * 0.075, minSize: unit * 0.035, maxLines: 4, tracking: 0 });
+      const block = fitBlock('medium', shown, { maxWidth: W * 0.78, maxSize: unit * 0.085, minSize: unit * 0.035, maxLines: 4, tracking: 0 });
       const lineHeight = block.size * 1.32;
       const y = blockBaseline(H * 0.52, block.size, block.lines.length, lineHeight, 'medium');
       const lastBaseline = y + (block.lines.length - 1) * lineHeight;
@@ -649,7 +649,7 @@ export function expandRecipe(spec, { copy, context, shotIndex = 0, support = '',
       const titleFont = payoff ? DISPLAY : 'bold';
       const unit = Math.min(W, H);
       const block = payoff
-        ? fitBlock(DISPLAY, shown, { maxWidth: W * (W < H ? 0.84 : 0.8), maxSize: unit * 0.2, minSize: unit * 0.06, maxLines: 2, tracking: 0.01 })
+        ? fitBlock(DISPLAY, shown, { maxWidth: W * (W < H ? 0.84 : 0.8), maxSize: unit * 0.2, minSize: unit * 0.06, maxLines: 2, tracking: 0.01, maxHeight: H * (context.logo ? 0.26 : 0.32), lineHeight: 1.02 })
         : fitBlock('bold', shown, { maxWidth: W * 0.72, maxSize: H * 0.09, minSize: H * 0.045, maxLines: 2, tracking: -0.015 });
       const lineHeight = block.size * (payoff ? 1.02 : 1.18);
       if (context.logo) {
