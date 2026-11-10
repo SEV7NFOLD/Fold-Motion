@@ -607,9 +607,9 @@ test('too few shots for the film gets one rewrite asking for more cuts', async (
     },
   });
   assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /only 3 shots for a 10-second film/);
-  assert.match(prompts[1], /Return exactly 6 shots/);
-  assert.match(prompts[1], /two or three shots inside each timecoded beat/);
+  // Beats of 3, 4 and 3 seconds: one shot, two shots (four seconds or longer) and the end card.
+  assert.match(prompts[1], /only 3 shots for the brief's 3 timecoded beats/);
+  assert.match(prompts[1], /Return exactly 4 shots: one per beat, two in beats of four seconds or longer/);
   assert.equal(result.storyboard.shots.length, 6);
   let elapsed = 0;
   const cuts = result.storyboard.shots.map((shot) => { elapsed += shot.durationSeconds; return Math.round(elapsed * 1000) / 1000; });
@@ -1125,6 +1125,8 @@ test('film polish: one-word runs become word beats, color words light up, the pa
   assert.deepEqual(storyboard.shots.map((s) => s.onScreenCopy), ['Ruby. Sapphire. Emerald.', 'Every ritual, sealed with a jewel', 'Calm.', 'Glow.', 'Results worth the ritual.']);
   assert.equal(storyboard.shots[0].durationSeconds, 3.9, 'the run keeps its time');
   assert.equal(merged.length, 1, 'pairs and the end card stay as they are');
+  const longRun = { shots: [shot('l1', 'Ruby.', 3), shot('l2', 'Sapphire.', 3), shot('l3', 'Emerald.', 3), shot('l4', 'The end.', 3)] };
+  assert.equal(mergeWordRuns(longRun).length, 0, 'a nine-second run would sit on the line: not merged');
   assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow. Calm. Pure.', index: 1, count: 4, seed: 's' }).direction.recipe, 'word-beat');
   assert.equal(normalizeDirection({ recipe: 'title-reveal', transitionOut: 'cut' }, { copy: 'Slow and calm', index: 1, count: 4, seed: 's' }).direction.recipe, 'title-reveal');
   // Color words light up, readable on the background.
@@ -1145,11 +1147,54 @@ test('film polish: one-word runs become word beats, color words light up, the pa
   assert.equal(gold.emphasis.from, colorForWord('gold', purple), 'an emphasized color word takes its color');
   // The payoff gets time; the film keeps its length; nothing drops under 1.2s.
   const specs = [3.4, 3.2, 3.0, 2.4, 1.5].map((durationInSeconds, i) => ({ version: 2, recipe: i === 4 ? 'lockup' : 'statement', durationInSeconds }));
-  protectPayoff(specs);
+  protectPayoff(specs, 'durationInSeconds');
   assert.ok(specs[4].durationInSeconds >= 2.7, `end card ${specs[4].durationInSeconds}`);
   assert.equal(Number(specs.reduce((sum, s) => sum + s.durationInSeconds, 0).toFixed(2)), 13.5);
   assert.ok(specs.every((s) => s.durationInSeconds >= 1.2));
   // Short statements grow.
   const statement = (copy) => expandRecipe({ version: 2, recipe: 'statement', durationInSeconds: 2, motion: { camera: 'static', atmosphere: 'spotlight' }, transitionOut: 'cut' }, { copy, context, shotIndex: 1 }).find((e) => e.role === 'title').fontSize;
   assert.ok(statement('Radiance, renewed.') > 720 * 0.105 + 1, 'two words fill the space');
+});
+
+test('brief adherence: beats set the shot count, end-card lines stay on the end card, the brief\'s motion words bind', async () => {
+  const { applyBriefWords } = await import('../src/production/production.mjs');
+  const shot = (id, copy, durationSeconds, mainVisual = 'v') => ({ id, onScreenCopy: copy, durationSeconds, purpose: 'p', mainVisual, motion: 'm', transition: 't', audioCue: 'a' });
+  const run = async (prompt, shots) => {
+    const prompts = [];
+    const base = (await createCreativePlan('A film', DARK, null)).storyboard;
+    const result = await generateProductionAction({
+      action: 'storyboard', prompt, context: DARK, apiKeys: ['k'], logger: quiet, environment: {},
+      fetchImpl: async (_url, options) => { prompts.push(JSON.parse(options.body).contents[0].parts[0].text); return { ok: true, status: 200, async json() { return { candidates: [{ content: { parts: [{ text: JSON.stringify({ ...base, shots }) }] } }] }; } }; },
+    });
+    return { prompts, storyboard: result.storyboard };
+  };
+  // Test 1's brief: three beats (3, 2, 3 seconds) are three shots; no padding asked for.
+  const test1 = ['SEV7NFOLD | Hello', '', 'An 8-second brand intro.', '', '0:00 - 0:03 | Arrival', 'The line slams in: Ideas into motion.', '', '0:03 - 0:05 | Promise', 'Made with craft.', '', '0:05 - 0:08 | Signature', '• On-Screen Text:', 'SEV7NFOLD', 'Creativity at scale.'].join('\n');
+  const three = await run(test1, [shot('s1', 'Ideas into motion.', 3), shot('s2', 'Made with craft.', 2), shot('s3', 'SEV7NFOLD', 3)]);
+  assert.equal(three.prompts.length, 1, 'three beats, three shots: no rewrite');
+  assert.equal(three.storyboard.shots.at(-1).durationSeconds, 3, 'the end card keeps its beat');
+  // A padded shot repeating the end card's second line is removed, its time shared.
+  const padded = await run(test1, [shot('s1', 'Ideas into motion.', 3), shot('s2', 'Made with craft.', 2), shot('s3', 'CREATIVITY AT SCALE.', 1.7), shot('s4', 'SEV7NFOLD', 1.3)]);
+  assert.deepEqual(padded.storyboard.shots.map((s) => s.onScreenCopy), ['Ideas into motion.', 'Made with craft.', 'SEV7NFOLD']);
+  // Long middle beats want two shots each; the end card's beat stays one.
+  const long = ['0:00 - 0:04 | A', 'One', '0:04 - 0:08 | B', 'Two', '0:08 - 0:11 | C', 'Three', '0:11 - 0:15 | D', '• On-Screen Text:', 'END.'].join('\n');
+  const four = await run(long, [shot('s1', 'One', 4), shot('s2', 'Two', 4), shot('s3', 'Three', 3), shot('s4', 'END.', 4)]);
+  assert.equal(four.prompts.length, 2);
+  assert.match(four.prompts[1], /Return exactly 6 shots: one per beat, two in beats of four seconds or longer/);
+  // No timecodes: the payoff gets its time on the storyboard, where it sticks.
+  const untimed = await run('A 10-second film for FOLD Motion', [shot('s1', 'Ideas into motion', 2.6), shot('s2', 'Made with craft', 2.6), shot('s3', 'Every frame measured', 2.6), shot('s4', 'Built to move', 1.2), shot('s5', 'The end card.', 1.0)]);
+  assert.ok(untimed.storyboard.shots.at(-1).durationSeconds >= 1.99, `end card ${untimed.storyboard.shots.at(-1).durationSeconds}`);
+  // The brief's motion words bind.
+  const bind = (mainVisual, copy = 'Ideas into motion.', direction = { typeEffect: 'outline', recipe: 'title-reveal' }) => { applyBriefWords(direction, shot('s', copy, 2, mainVisual)); return direction; };
+  assert.deepEqual([bind('The line slams in: Ideas into motion.').textMotion, bind('The line slams in').typeEffect], ['slam', undefined]);
+  assert.equal(bind('Letters drop in one by one', 'Every hit lands.', {}).textMotion, 'drop');
+  assert.equal(bind('The line splits in from both sides', 'Every frame, measured.', {}).textMotion, 'split');
+  assert.equal(bind('The line traces itself in as an outline, then fills', 'Craft is a decision.', {}).typeEffect, 'outline');
+  assert.equal(bind('The line decodes from code glyphs', 'Built in code.', {}).typeEffect, 'decode');
+  assert.equal(bind('MINUTES gets a highlighter', 'Minutes, not weeks.', {}).emphasisStyle, 'highlight');
+  assert.equal(bind('DROPS sits in a pill', 'Your next ad drops in minutes.', {}).emphasisStyle, 'pill');
+  assert.equal(bind('A giant outlined CRAFT echoes behind the shot', 'Craft is a decision.', {}).echo, true);
+  assert.equal(bind('A word beat: each word fills the frame', 'Landscape. Vertical. Square.', {}).recipe, 'word-beat');
+  assert.equal(bind('A count-up', '3 formats from 1 brief.', {}).recipe, 'stat');
+  assert.equal(bind('A quote card attributed to SEV7NFOLD', 'We give ideas motion.', {}).recipe, 'quote');
 });
