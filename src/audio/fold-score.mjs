@@ -270,7 +270,7 @@ function reverb(left, right, { room = 0.82, damp = 0.35 } = {}) {
  * Composes the film's score. Returns { left, right, sampleRate, mood, label, bpm,
  * key, cues, sync }. `mood` is a MOODS key or 'auto' (from `text`).
  */
-export function composeScore(timeline, { mood = 'auto', text = '' } = {}) {
+export function composeScore(timeline, { mood = 'auto', text = '', band } = {}) {
   const chosen = MOODS[mood] ? mood : chooseMood(text);
   const style = MOODS[chosen];
   const random = prng(`${timeline.id || 'film'}|${chosen}`);
@@ -290,7 +290,8 @@ export function composeScore(timeline, { mood = 'auto', text = '' } = {}) {
   const sends = (amount) => ({ left: send.left, right: send.right, amount });
 
   // ---- pad: a chord per shot, cycling the progression, resolving on the end card
-  timeline.shots.forEach((shot, index) => {
+  // (with real instruments, the band plays the pad, bass and keys instead)
+  if (!band) timeline.shots.forEach((shot, index) => {
     const start = shotStarts[index];
     const end = index < timeline.shots.length - 1 ? shotStarts[index + 1] : duration;
     const last = index === timeline.shots.length - 1;
@@ -337,6 +338,7 @@ export function composeScore(timeline, { mood = 'auto', text = '' } = {}) {
     if (style.hats === 'sixteenths') for (let s = 1; s < 4; s += 1) hat(t + (s * beat) / 4, s === 2 ? 0.17 : 0.1, s % 2 ? -0.45 : 0.45);
     if (style.hats === 'ticks') { hat(t + beat / 2, 0.13, bar % 2 ? 0.5 : -0.5); hat(t + beat * 0.75, 0.06, bar % 2 ? -0.5 : 0.5); }
     if (style.hats === 'brush') { hat(t + beat * 0.5, 0.08, -0.35); hat(t + beat * 0.83, 0.055, 0.35); }
+    if (band) continue;
     // bass: eighths on the shot's root
     const shotIndex = Math.max(0, shotStarts.findLastIndex((start) => start <= t + 1e-6));
     const root = noteFrequency(style.bass[shotIndex % style.bass.length]);
@@ -448,6 +450,9 @@ export function composeScore(timeline, { mood = 'auto', text = '' } = {}) {
     music.add(0, sub, { gain: 0.045 });
   }
 
+  // ---- the band: real instruments from the music book, on the same bus and room
+  if (band) band({ music, sends, style, chosen, bpm, beat, shotStarts, endcard, duration, cues, random, sampleRate: SAMPLE_RATE, timeline });
+
   // ---- mix, room, master
   const [wetL, wetR] = reverb(send.left, send.right);
   const left = new Float32Array(length);
@@ -469,7 +474,7 @@ export function composeScore(timeline, { mood = 'auto', text = '' } = {}) {
   }
   const normalize = 0.89 / peak;
   for (let i = 0; i < length; i += 1) { left[i] *= normalize; right[i] *= normalize; }
-  const score = { left, right, sampleRate: SAMPLE_RATE, mood: chosen, label: style.label, bpm, key: style.key, cues };
+  const score = { left, right, sampleRate: SAMPLE_RATE, mood: chosen, label: style.label, bpm, key: style.key, cues, engine: band ? 'instruments' : 'synth' };
   score.sync = measureSync(score, cues.filter((cue) => ['cut', 'endcard', 'letter'].includes(cue.type)).map((cue) => cue.time));
   return score;
 }
@@ -560,24 +565,31 @@ export function integratedLoudness(left, right) {
  */
 export function masterScore(score, { target = -14, ceiling = -2 } = {}) {
   const { left, right } = score;
-  const gain = 10 ** ((target - integratedLoudness(left, right)) / 20);
   const limit = 10 ** (ceiling / 20);
   const lookahead = Math.round(0.005 * SAMPLE_RATE);
   const release = Math.exp(-1 / (0.08 * SAMPLE_RATE));
   const needed = new Float32Array(left.length);
-  for (let i = 0; i < left.length; i += 1) {
-    const peak = Math.max(Math.abs(left[i]), Math.abs(right[i])) * gain;
-    needed[i] = peak > limit ? limit / peak : 1;
-  }
-  // Each sample takes the smallest gain needed within the look-ahead window,
-  // then the gain recovers smoothly.
-  let current = 1;
-  for (let i = 0; i < left.length; i += 1) {
-    let target = 1;
-    for (let j = i; j < Math.min(left.length, i + lookahead); j += 1) target = Math.min(target, needed[j]);
-    current = target < current ? target : target + (current - target) * release;
-    left[i] *= gain * current;
-    right[i] *= gain * current;
+  // Gain to the target, then a look-ahead limiter. Limiting lowers loudness again
+  // (more so with real percussion), so the pass repeats, re-measured each time,
+  // until the score sits within 0.3 LU of the target (four passes at most).
+  for (let pass = 0; pass < 4; pass += 1) {
+    const loudness = integratedLoudness(left, right);
+    if (pass > 0 && Math.abs(loudness - target) <= 0.3) break;
+    const gain = 10 ** ((target - loudness) / 20);
+    for (let i = 0; i < left.length; i += 1) {
+      const peak = Math.max(Math.abs(left[i]), Math.abs(right[i])) * gain;
+      needed[i] = peak > limit ? limit / peak : 1;
+    }
+    // Each sample takes the smallest gain needed within the look-ahead window,
+    // then the gain recovers smoothly.
+    let current = 1;
+    for (let i = 0; i < left.length; i += 1) {
+      let wanted = 1;
+      for (let j = i; j < Math.min(left.length, i + lookahead); j += 1) wanted = Math.min(wanted, needed[j]);
+      current = wanted < current ? wanted : wanted + (current - wanted) * release;
+      left[i] *= gain * current;
+      right[i] *= gain * current;
+    }
   }
   score.loudness = integratedLoudness(left, right);
   score.samplePeak = 20 * Math.log10(left.reduce((m, v, i) => Math.max(m, Math.abs(v), Math.abs(right[i])), 1e-9));

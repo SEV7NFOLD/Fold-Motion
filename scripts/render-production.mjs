@@ -14,6 +14,7 @@ import { mix } from '../src/production/color.mjs';
 import { normalizeBrandFont } from '../src/production/brand-assets.mjs';
 import { registerBrandFont } from '../src/render/typography.mjs';
 import { composeScore, encodeWav, masterScore, MOOD_OPTIONS } from '../src/audio/fold-score.mjs';
+import { instrumentBand } from '../src/audio/band.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -480,9 +481,16 @@ export async function renderProductionProject({
   let score = null;
   const scorePath = path.join(outputDirectory, 'score.wav');
   if (scored) {
+    // FOLD Score 2: real instruments when the pack loads (FOLD_SCORE=synth forces the
+    // synth score); if anything is missing, the synth score plays instead.
+    let band;
+    if (process.env.FOLD_SCORE !== 'synth') {
+      try { band = instrumentBand(); } catch (error) { console.warn(`Real instruments unavailable, using the synth score: ${error.message}`); }
+    }
     score = composeScore(timeline, {
       mood: scoreMood(music, storyboard),
       text: [storyboard?.title, storyboard?.narrativeConcept, storyboard?.creativeDirection].filter(Boolean).join(' '),
+      band,
     });
     masterScore(score, { target: -14, ceiling: -2 });
     await writeFile(scorePath, encodeWav(score));
@@ -596,7 +604,7 @@ export async function renderProductionProject({
     renderer: 'resvg + ffmpeg',
     productionQA,
     creativeQA,
-    ...(score ? { audio: { engine: 'FOLD Score', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
+    ...(score ? { audio: { engine: 'FOLD Score', instruments: score.engine === 'instruments', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
     look: filmLook(grade, storyboard),
     output: { resolution: output.key, label: output.label, width: output.width, height: output.height },
     photoColor: original ? 'original' : 'palette',

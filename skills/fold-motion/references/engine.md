@@ -117,6 +117,19 @@ is dropped. Fit checks graphics too, and FOLD Score chimes as each appears.
 Emojis are for playful briefs only (a rule for the model now; style kits will
 enforce it in code).
 
+### FOLD Score 2: real instruments
+
+Films are scored with real recorded instruments when `assets/samples` is present
+(a 7 MB pack of CC0 Versilian samples: Steinway piano, violin and cello sections,
+harp, glockenspiel, contrabass sustain and pizzicato, marimba, and ten percussion
+hits; rebuilt from the original repositories by `scripts/build-sample-pack.mjs`).
+`src/audio/band.mjs` samples and arranges them from the music book
+(`src/audio/music-book.mjs`, explained in `references/music.md`) in place of the
+synth pad, bass and arp; the synth's drums and sound design, the ducking, room and
+master stay. Mastering repeats until the score is within 0.3 LU of -14 LUFS.
+`FOLD_SCORE=synth` forces the synth score, which also plays if the pack can't
+load. The render report records `audio.instruments`.
+
 ### Word beats, color words and the payoff
 
 Runs of three or more one-word shots merge into one word beat (up to five words,

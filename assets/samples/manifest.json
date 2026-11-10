@@ -1,0 +1,382 @@
+{
+  "version": 1,
+  "sampleRate": 32000,
+  "license": "CC0-1.0",
+  "sources": [
+    "https://github.com/sgossner/VCSL",
+    "https://github.com/sgossner/VSCO-2-CE"
+  ],
+  "instruments": {
+    "piano": {
+      "sustain": false,
+      "zones": [
+        {
+          "midi": 34,
+          "file": "piano/34.flac"
+        },
+        {
+          "midi": 40,
+          "file": "piano/40.flac"
+        },
+        {
+          "midi": 46,
+          "file": "piano/46.flac"
+        },
+        {
+          "midi": 52,
+          "file": "piano/52.flac"
+        },
+        {
+          "midi": 58,
+          "file": "piano/58.flac"
+        },
+        {
+          "midi": 64,
+          "file": "piano/64.flac"
+        },
+        {
+          "midi": 70,
+          "file": "piano/70.flac"
+        },
+        {
+          "midi": 76,
+          "file": "piano/76.flac"
+        },
+        {
+          "midi": 82,
+          "file": "piano/82.flac"
+        },
+        {
+          "midi": 88,
+          "file": "piano/88.flac"
+        },
+        {
+          "midi": 94,
+          "file": "piano/94.flac"
+        },
+        {
+          "midi": 96,
+          "file": "piano/96.flac"
+        }
+      ]
+    },
+    "violins": {
+      "sustain": true,
+      "zones": [
+        {
+          "midi": 57,
+          "file": "violins/57.flac"
+        },
+        {
+          "midi": 60,
+          "file": "violins/60.flac"
+        },
+        {
+          "midi": 64,
+          "file": "violins/64.flac"
+        },
+        {
+          "midi": 67,
+          "file": "violins/67.flac"
+        },
+        {
+          "midi": 71,
+          "file": "violins/71.flac"
+        },
+        {
+          "midi": 74,
+          "file": "violins/74.flac"
+        }
+      ]
+    },
+    "cellos": {
+      "sustain": true,
+      "zones": [
+        {
+          "midi": 38,
+          "file": "cellos/38.flac"
+        },
+        {
+          "midi": 41,
+          "file": "cellos/41.flac"
+        },
+        {
+          "midi": 45,
+          "file": "cellos/45.flac"
+        },
+        {
+          "midi": 48,
+          "file": "cellos/48.flac"
+        },
+        {
+          "midi": 52,
+          "file": "cellos/52.flac"
+        },
+        {
+          "midi": 55,
+          "file": "cellos/55.flac"
+        },
+        {
+          "midi": 59,
+          "file": "cellos/59.flac"
+        },
+        {
+          "midi": 62,
+          "file": "cellos/62.flac"
+        },
+        {
+          "midi": 65,
+          "file": "cellos/65.flac"
+        }
+      ]
+    },
+    "harp": {
+      "sustain": false,
+      "zones": [
+        {
+          "midi": 38,
+          "file": "harp/38.flac"
+        },
+        {
+          "midi": 41,
+          "file": "harp/41.flac"
+        },
+        {
+          "midi": 45,
+          "file": "harp/45.flac"
+        },
+        {
+          "midi": 48,
+          "file": "harp/48.flac"
+        },
+        {
+          "midi": 52,
+          "file": "harp/52.flac"
+        },
+        {
+          "midi": 55,
+          "file": "harp/55.flac"
+        },
+        {
+          "midi": 59,
+          "file": "harp/59.flac"
+        },
+        {
+          "midi": 62,
+          "file": "harp/62.flac"
+        },
+        {
+          "midi": 65,
+          "file": "harp/65.flac"
+        },
+        {
+          "midi": 69,
+          "file": "harp/69.flac"
+        },
+        {
+          "midi": 72,
+          "file": "harp/72.flac"
+        },
+        {
+          "midi": 76,
+          "file": "harp/76.flac"
+        },
+        {
+          "midi": 79,
+          "file": "harp/79.flac"
+        },
+        {
+          "midi": 83,
+          "file": "harp/83.flac"
+        },
+        {
+          "midi": 86,
+          "file": "harp/86.flac"
+        },
+        {
+          "midi": 89,
+          "file": "harp/89.flac"
+        },
+        {
+          "midi": 93,
+          "file": "harp/93.flac"
+        },
+        {
+          "midi": 95,
+          "file": "harp/95.flac"
+        },
+        {
+          "midi": 98,
+          "file": "harp/98.flac"
+        }
+      ]
+    },
+    "glock": {
+      "sustain": false,
+      "zones": [
+        {
+          "midi": 67,
+          "file": "glock/67.flac"
+        },
+        {
+          "midi": 72,
+          "file": "glock/72.flac"
+        },
+        {
+          "midi": 79,
+          "file": "glock/79.flac"
+        },
+        {
+          "midi": 84,
+          "file": "glock/84.flac"
+        },
+        {
+          "midi": 91,
+          "file": "glock/91.flac"
+        },
+        {
+          "midi": 96,
+          "file": "glock/96.flac"
+        }
+      ]
+    },
+    "bass": {
+      "sustain": true,
+      "zones": [
+        {
+          "midi": 28,
+          "file": "bass/28.flac"
+        },
+        {
+          "midi": 30,
+          "file": "bass/30.flac"
+        },
+        {
+          "midi": 32,
+          "file": "bass/32.flac"
+        },
+        {
+          "midi": 33,
+          "file": "bass/33.flac"
+        },
+        {
+          "midi": 37,
+          "file": "bass/37.flac"
+        },
+        {
+          "midi": 40,
+          "file": "bass/40.flac"
+        },
+        {
+          "midi": 44,
+          "file": "bass/44.flac"
+        },
+        {
+          "midi": 47,
+          "file": "bass/47.flac"
+        }
+      ]
+    },
+    "pizz": {
+      "sustain": false,
+      "zones": [
+        {
+          "midi": 28,
+          "file": "pizz/28.flac"
+        },
+        {
+          "midi": 30,
+          "file": "pizz/30.flac"
+        },
+        {
+          "midi": 32,
+          "file": "pizz/32.flac"
+        },
+        {
+          "midi": 33,
+          "file": "pizz/33.flac"
+        },
+        {
+          "midi": 37,
+          "file": "pizz/37.flac"
+        },
+        {
+          "midi": 40,
+          "file": "pizz/40.flac"
+        },
+        {
+          "midi": 44,
+          "file": "pizz/44.flac"
+        },
+        {
+          "midi": 47,
+          "file": "pizz/47.flac"
+        }
+      ]
+    },
+    "marimba": {
+      "sustain": false,
+      "zones": [
+        {
+          "midi": 53,
+          "file": "marimba/53.flac"
+        },
+        {
+          "midi": 60,
+          "file": "marimba/60.flac"
+        },
+        {
+          "midi": 67,
+          "file": "marimba/67.flac"
+        },
+        {
+          "midi": 71,
+          "file": "marimba/71.flac"
+        },
+        {
+          "midi": 77,
+          "file": "marimba/77.flac"
+        },
+        {
+          "midi": 84,
+          "file": "marimba/84.flac"
+        }
+      ]
+    }
+  },
+  "hits": {
+    "bass-drum": {
+      "file": "hits/bass-drum.flac"
+    },
+    "timpani": {
+      "file": "hits/timpani.flac"
+    },
+    "timpani-roll": {
+      "file": "hits/timpani-roll.flac"
+    },
+    "cymbal-swell": {
+      "file": "hits/cymbal-swell.flac"
+    },
+    "cymbal-swell-long": {
+      "file": "hits/cymbal-swell-long.flac"
+    },
+    "crash": {
+      "file": "hits/crash.flac"
+    },
+    "triangle": {
+      "file": "hits/triangle.flac"
+    },
+    "tambourine": {
+      "file": "hits/tambourine.flac"
+    },
+    "shaker": {
+      "file": "hits/shaker.flac"
+    },
+    "clap": {
+      "file": "hits/clap.flac"
+    },
+    "snare": {
+      "file": "hits/snare.flac"
+    }
+  }
+}
