@@ -117,6 +117,17 @@ is dropped. Fit checks graphics too, and FOLD Score chimes as each appears.
 Emojis are for playful briefs only (a rule for the model now; style kits will
 enforce it in code).
 
+### Word beats, color words and the payoff
+
+Runs of three or more one-word shots merge into one word beat (up to five words,
+same total time), and staccato lines ("Ruby. Sapphire. Emerald.") are steered to
+`word-beat`. Words that name a color (gems, flowers, fruit, metals: ruby,
+sapphire, emerald, gold, rose, lavender, citrus…) light up in it in word beats,
+and when they're the emphasized word, adjusted to 4.5:1 on the background. On
+fresh builds the end card keeps at least three seconds (or a fifth of the film),
+taken from the longest shots; edits are left alone. Statements of up to three
+words are set larger.
+
 ### Style kits
 
 Each film has a visual language from `src/production/style-kits.mjs`:
