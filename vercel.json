@@ -1,3 +1,7 @@
 {
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/api/render/jobs/:id", "destination": "/api/render-job?id=:id" },
+    { "source": "/output/:path*", "destination": "/api/output?path=:path*" }
+  ]
 }

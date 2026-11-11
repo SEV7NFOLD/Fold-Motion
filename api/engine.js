@@ -1,18 +1,23 @@
 import { getEngineConfig } from '../src/runtime/creative-api.mjs';
 import { publicAuthConfig } from '../src/runtime/supabase-server.mjs';
+import { VERCEL_RENDER_REASON, renderBackendUrl, wakeBackend } from './_render-backend.js';
 
-export const VERCEL_RENDER_REASON = 'This deployment runs on Vercel, which can’t render video (no FFmpeg, and functions can’t run a full encode). Render from the Render deployment, or run npm start on a machine with FFmpeg.';
+export { VERCEL_RENDER_REASON };
 
 // Key-free description of the configured AI engine, shown in the studio's System view.
-export default function engine(request, response) {
+export default async function engine(request, response) {
   if (request.method !== 'GET') {
     response.setHeader('Allow', 'GET');
     return response.status(405).json({ success: false, error: 'Method not allowed.' });
   }
+  const backend = renderBackendUrl();
+  // The studio loads this on open, so it's a good moment to start waking a sleeping
+  // Render instance before the director presses Render.
+  if (backend) await wakeBackend(backend);
   return response.status(200).json({
     success: true,
     engine: getEngineConfig(),
-    render: { available: false, reason: VERCEL_RENDER_REASON },
+    render: backend ? { available: true, via: 'render-backend' } : { available: false, reason: VERCEL_RENDER_REASON },
     auth: publicAuthConfig(),
   });
 }
