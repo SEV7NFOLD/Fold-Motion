@@ -82,10 +82,19 @@ directory provides generation, state-transition, and render endpoints. Use the
 repository root as the Root Directory and the **Other** framework preset.
 
 Set `GEMINI_API_KEY` in Vercel project settings; the key stays server-side.
-**Vercel cannot render video**: it has no FFmpeg and its functions can't run a
-full encode. On Vercel, `/api/engine` reports `render.available: false` and the
-Studio disables rendering with that explanation. Use the Render deployment
-(Docker, with FFmpeg) for rendering, QA, and delivery exports.
+**Vercel cannot render video itself**: it has no FFmpeg and its functions can't
+run a full encode. Without further setup, `/api/engine` reports
+`render.available: false` and the Studio disables rendering with that
+explanation.
+
+To render from the Vercel site, deploy the Render service too and set
+`RENDER_BACKEND_URL` in the Vercel project to its URL (for example
+`https://fold-motion-studio.onrender.com`), then redeploy. Vercel then queues
+each render on the Render server, polls its progress, and sends film links
+there. Give both deployments the same Supabase settings so sign-in works on
+both. A sleeping free Render instance takes about a minute to wake; the Studio
+starts waking it when it opens, and if a render still times out, press Render
+again.
 
 ## The v2 engine
 

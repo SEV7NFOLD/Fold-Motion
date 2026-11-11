@@ -311,7 +311,7 @@ error.
 | `src/orchestrator/project-state.mjs` | The state machine and its evidence rules |
 | `scripts/render-production.mjs` | Frames, MP4, ffprobe metadata, production QA, report |
 | `scripts/qa/validate-production.mjs` | Validates a render report |
-| `api/*.js` | Vercel functions for generate, state, engine (render is unsupported on Vercel) |
+| `api/*.js` | Vercel functions for generate, state, engine; render, render-job and output forward to `RENDER_BACKEND_URL` when set (Vercel never renders itself) |
 | `src/resilient/`, `src/routes/storyboard.mjs` | A rules-engine storyboard cascade on `/api/storyboard`. The studio does not use it, and its storyboard shape (`scenes`, `onScreenText`) differs from the production shape. |
 
 ## Commands
@@ -359,8 +359,11 @@ Generate responses always include `provider`, `telemetry`, and when present
 ## Deployments
 
 Render (Docker, FFmpeg) runs everything. Vercel serves the studio and the
-generate, state and engine APIs, but cannot render: `api/engine.js` reports
-`render.available: false` and the studio disables the Render button with the
-reason. A local or Docker server checks for FFmpeg and FFprobe once and
+generate, state and engine APIs, but cannot render itself. Without
+`RENDER_BACKEND_URL`, `api/engine.js` reports `render.available: false` and the
+studio disables the Render button with the reason. With `RENDER_BACKEND_URL`
+set to the Render deployment, Vercel queues renders there (`api/render.js`),
+proxies job status (`api/render-job.js`) and redirects `/output/` links
+(`api/output.js`). A local or Docker server checks for FFmpeg and FFprobe once and
 reports the result the same way. Render's free plan has
 ephemeral storage: files under `/app/output` vanish on restart.
