@@ -308,6 +308,9 @@ error.
 | `src/render/frame-v2.mjs` | v2 frame renderer: recipes' choreography, atmospheres, beam, camera, transitions |
 | `src/render/typography.mjs` | Bundled fonts and exact text measurement |
 | `src/production/color.mjs` | Contrast math and readable text color |
+| `src/production/beat-clock.mjs` | Launch style: frame-exact beat grid, tempo from mood (`chooseBeatTempo`), snapping, beat-sync QA (`measureBeatSync`) |
+| `src/production/pacing.mjs` | Launch style: pacing by mood (beats per idea, motion targets), `moodForBrief`, minimum reading time |
+| `src/production/beats.mjs` | Launch style: `splitIntoBeats` splits approved copy into 1–3 word beats that concatenate back to the exact copy |
 | `src/orchestrator/project-state.mjs` | The state machine and its evidence rules |
 | `scripts/render-production.mjs` | Frames, MP4, ffprobe metadata, production QA, report |
 | `scripts/qa/validate-production.mjs` | Validates a render report |
@@ -377,6 +380,8 @@ Generate responses always include `provider`, `telemetry`, and when present
 | `RENDERING` → `QA` | Render report with `verified: true` and boolean production and creative QA results |
 | `QA` → `APPROVED` | `finalCutApproved: true` and both QA gates passed |
 | `APPROVED` → `DELIVERED` | Video and source artifacts under `/output/` |
+
+A scored film also gets `production-silent.mp4`: the same picture with no audio track (copied, not re-encoded), recorded in the report as `silentExport` with its tempo (for example `{ "bpm": 120, "label": "120 BPM" }`) and as `artifacts.silentVideo`, so creators can add platform music that lands on the motion. Films rendered with `music: 'off'` are already silent and get no copy.
 
 ## Deployments
 

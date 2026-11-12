@@ -593,6 +593,13 @@ export async function renderProductionProject({
       actual: actualDuration,
     },
   };
+  // A silent copy of a scored film, labelled with its tempo, for creators who add
+  // platform music: the picture is copied, not re-encoded, so it is identical.
+  let silentExport = null;
+  if (scored) {
+    await runCommand(ffmpeg, ['-y', '-loglevel', 'error', '-i', videoPath, '-map', '0:v:0', '-c:v', 'copy', '-an', '-movflags', '+faststart', path.join(outputDirectory, 'production-silent.mp4')]);
+    silentExport = { file: 'production-silent.mp4', bpm: score.bpm, label: `${score.bpm} BPM` };
+  }
   const creativeQA = evaluateCreativeQA(timeline, context);
   const baseUrl = `/output/${projectId}/${runId}`;
   const report = {
@@ -605,12 +612,14 @@ export async function renderProductionProject({
     productionQA,
     creativeQA,
     ...(score ? { audio: { engine: 'FOLD Score', instruments: score.engine === 'instruments', mood: score.mood, label: score.label, bpm: score.bpm, key: score.key, cues: score.cues.length } } : { audio: { engine: 'none' } }),
+    ...(silentExport ? { silentExport } : {}),
     look: filmLook(grade, storyboard),
     output: { resolution: output.key, label: output.label, width: output.width, height: output.height },
     photoColor: original ? 'original' : 'palette',
     videoMetadata: metadata,
     artifacts: {
       video: `${baseUrl}/production.mp4`,
+      ...(silentExport ? { silentVideo: `${baseUrl}/production-silent.mp4` } : {}),
       timeline: `${baseUrl}/timeline.json`,
       storyboard: `${baseUrl}/storyboard.json`,
       acceptance: `${baseUrl}/acceptance.json`,

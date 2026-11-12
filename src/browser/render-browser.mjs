@@ -260,6 +260,11 @@ export async function renderBrowserProject({
     const d = Number.parseFloat(a?.duration ?? 'NaN');
     audio = { pass: Boolean(a) && Math.abs(d - timeline.durationInSeconds) <= 1 / timeline.fps + 0.03, codec: a?.codec_name, duration: d };
   }
+  let silentExport = null;
+  if (scorePath) {
+    await run(ffmpeg, ['-y', '-loglevel', 'error', '-i', videoPath, '-map', '0:v:0', '-c:v', 'copy', '-an', '-movflags', '+faststart', path.join(outputDirectory, 'production-silent.mp4')]);
+    silentExport = { file: 'production-silent.mp4', bpm: score.bpm, label: `${score.bpm} BPM` };
+  }
   const productionQA = {
     dimensions: { pass: stream.width === timeline.width && stream.height === timeline.height, expected: { width: timeline.width, height: timeline.height }, actual: { width: stream.width, height: stream.height } },
     fps: { pass: Math.abs(actualRate - timeline.fps) < 0.01, expected: timeline.fps, actual: actualRate },
@@ -287,10 +292,12 @@ export async function renderBrowserProject({
     productionQA,
     creativeQA,
     audio: score ? { engine: 'FOLD Score', mood: score.mood, bpm: score.bpm } : { engine: 'none' },
+    ...(silentExport ? { silentExport } : {}),
     ...(unsupported.length ? { unsupported } : {}),
     videoMetadata: probe,
     artifacts: {
       video: `/output/${projectId}/${runId}/production.mp4`,
+      ...(silentExport ? { silentVideo: `/output/${projectId}/${runId}/production-silent.mp4` } : {}),
       stills,
       timeline: `/output/${projectId}/${runId}/timeline.json`,
       storyboard: `/output/${projectId}/${runId}/storyboard.json`,
