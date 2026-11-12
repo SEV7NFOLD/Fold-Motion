@@ -17,7 +17,8 @@
   const D = window.FOLD_DATA;
   const W = D.width, H = D.height, FPS = D.fps;
   const BEAT = 60 / D.beat.bpm;
-  const k = W / 1920;
+  // sizes scale with the frame's shorter side, so vertical and square films keep their proportions
+  const k = Math.min(W / 1920, H / 1080);
   const OUT_BEATS = { 'fly-into': 1, collapse: 0.75, flip: 0.5, whip: 0.25 };
 
   // ---------- math

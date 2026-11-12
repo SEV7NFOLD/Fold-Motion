@@ -383,6 +383,12 @@ export async function renderProductionProject({
   photoColor = 'original',
   outputRoot = path.resolve('output'),
 }) {
+  // Launch films render in the browser renderer (docs/LAUNCH-STYLE-BUILD-PLAN.md): same
+  // request, same report format, labelled with its own renderer.
+  if (arguments[0]?.timeline?.launch) {
+    const { renderBrowserProject } = await import('../src/browser/render-browser.mjs');
+    return renderBrowserProject(arguments[0]);
+  }
   const validation = validateTimeline(timeline);
   const brand = resolveBrandAssets(assets);
   // A brand font: its metrics lay text out (registered for QA too), its file draws it.

@@ -17,7 +17,9 @@ export default async function engine(request, response) {
   return response.status(200).json({
     success: true,
     engine: getEngineConfig(),
-    render: backend ? { available: true, via: 'render-backend' } : { available: false, reason: VERCEL_RENDER_REASON },
+    render: backend
+      ? { available: true, via: 'render-backend', launch: { available: true, via: 'render-backend' } }
+      : { available: false, reason: VERCEL_RENDER_REASON, launch: { available: false, reason: VERCEL_RENDER_REASON } },
     auth: publicAuthConfig(),
   });
 }

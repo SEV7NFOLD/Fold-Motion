@@ -9,6 +9,17 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+# Launch films render in headless Chromium (src/browser/). FOLD_LAUNCH=0 builds a
+# smaller image without it; the studio then reports that launch films can't render here.
+# Chromium needs a paid Render instance with about 2 GB of memory to render reliably.
+ARG FOLD_LAUNCH=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN if [ "$FOLD_LAUNCH" = "1" ]; then \
+      npm install --no-save "playwright@$(node -p "require('./package.json').devDependencies.playwright")" \
+      && npx playwright install --with-deps chromium \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 COPY . .
 RUN mkdir -p /app/output
 
