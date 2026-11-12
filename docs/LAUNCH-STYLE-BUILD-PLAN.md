@@ -49,6 +49,14 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   target; UI moments carry less raw motion than kinetic type). Tuning showed
   that the camera must never park after a device finishes, and that small UI
   on paper scenes needs size to read as motion. Next: product images (6b).
+- **Phase 6b: product images.** A `product` device with image roles detected
+  in the browser (cutout → hero, photo → tile), sized under the 1.25× rule at
+  the camera's closest push and measured on screen by QA. The amaranthine
+  test film (16 s, calm 90 BPM, a 112×291 px cutout and a 911 px photo)
+  passes every check (bottle 1.15×, balm 0.73×); calm targets: 22% near-still
+  frames, longest still 0.33 s, motion energy 1.82 (just under the calm
+  target of 2.0). Not yet: label-detail crops, the dive into a photo,
+  several products in one shot, image swaps.
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every
