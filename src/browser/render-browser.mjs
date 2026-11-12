@@ -367,7 +367,7 @@ export function checkBrowserRenderer() {
       await access(executable);
       return { available: true, reason: null };
     } catch {
-      return { available: false, reason: 'Launch films render in a headless browser, which isn’t installed on this server. The Docker image includes it (a paid Render instance with about 2 GB of memory is needed); locally, run npm install and npx playwright install chromium.' };
+      return { available: false, reason: 'Launch films render in a headless browser, which isn’t installed on this server (it needs more memory than a free instance has). Render launch films on your own computer: npm install, npx playwright install chromium, then npm start and open the studio there. Classic films render here as usual.' };
     }
   })();
   return browserStatus;
