@@ -117,16 +117,40 @@ across a full beat. Nothing bounces more than 4% past its target.
 
 ## Architecture decision
 
-Build this in the **SVG engine** (`src/render/frame-v2.mjs` and friends), not
-the experimental browser renderer: everything above is 2D, the engine
-already supports gradients and blur, it renders about 10× faster, and its
-frames are deterministic and hash-checked. The browser renderer
-(PR #36) stays an experiment.
+**Decided by the director: build the launch style in the browser renderer**
+(`src/browser/`, from PR #36), not the SVG engine.
 
-The style ships as a new style kit, `launch`, plus new recipes, so existing
-styles and films are untouched.
+Why: every film the director approved (the benchmark and both product
+cuts) was made in headless Chromium. CSS gives the look its depth for
+free: real blur and focus pulls, masks and masked light sweeps, gradients,
+blurred backdrops, exact font rendering. Rebuilding that in the SVG engine
+would be slower to build and might not match. Quality is the point of this
+style, so it uses the renderer that produced the approved quality.
 
-## Phases
+What stays the same:
+- The planner, storyboard, copy repair, approval gates and QA reports.
+  The browser draws what the timeline describes; it doesn't decide it.
+- Determinism: every scene is `frame(t)`, a pure function of time, with
+  seeded randomness, and frame hashes are tested.
+- The SVG engine keeps rendering every existing style. The launch style is
+  a new style kit, `launch`; nothing else changes renderer.
+- Runs are labelled with their renderer, and FFprobe validation applies
+  as it does today (the skill's rule against switching backends silently).
+
+Consequences to plan for:
+- **Speed.** About 20 s of render time per second of film at 4 samples per
+  frame in development (the 15-second benchmark took about 5 minutes).
+  Phase 11 brings this down.
+- **Server.** Launch renders need Chromium. Playwright moves from a dev
+  dependency to a production one for launch renders, the Docker image grows
+  (about 300–400 MB), and the free Render instance (512 MB) is too small:
+  launch renders need a paid instance with about 2 GB, or run locally.
+- **Code.** Where later phases mention `src/render/frame-v2.mjs` or drawing
+  in recipes, read: scene modules in the browser runtime (`src/browser/`).
+  Each device is a module that draws a shot from its spec as a function of
+  time, the way the benchmark's `source/film.html` does.
+
+## Phases## Phases
 
 ### Phase 0: Golden film (human gate)
 
@@ -154,6 +178,9 @@ word entrance to it.
 - `buildTimeline` (in `src/production/production.mjs`) takes `context.beat`
   for launch films and snaps shot boundaries and reveal starts.
 - `composeScore` accepts a fixed tempo and grid, and accents downbeats under cuts.
+- Export: alongside the full mix, offer a silent file labelled with the
+  film's tempo (for example "96 BPM"), so creators can add platform music
+  that lands on the motion. The director's own workflow adds music in TikTok.
 - QA: `beatSync` in the render report. Every cut and entrance must sit within
   one frame of a grid point. Reuse `measureSync`.
 - Tests: grid math at 24, 25, 30 and 60 fps; quantization; a launch timeline
@@ -380,6 +407,24 @@ dark-palette brand.
 - The approval flow is unchanged: storyboard, render, final cut, delivery.
 - Render time for a 15 s Full HD launch film is shown before the director
   starts it.
+
+### Phase 11: Render speed
+
+Bring launch renders from about 20 s per output second toward 5 s, without
+changing what a finished frame looks like.
+
+- **Adaptive samples:** the timeline knows where the camera moves fast. Use
+  4 samples only on frames with fast motion, 1 on calm frames (most of a
+  film). Frame output is identical on calm frames.
+- **Parallel workers:** split the film into frame ranges across several
+  browser pages or processes, then join the samples in order.
+- **Draft renders:** 720p at 1 sample for previews before final approval,
+  about 10× faster. Final renders stay at full quality.
+- **Capture path:** keep the fast lossless PNG capture; measure whether a
+  raw screencast is faster on the server.
+- Tests: a draft and a final render of the same timeline share layout and
+  timing; adaptive sampling changes no calm frame (hash test); a 15-second
+  launch film renders within the target on the reference machine.
 
 ## Definition of done
 
