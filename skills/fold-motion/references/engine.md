@@ -324,9 +324,31 @@ error.
 | `npm run qa:validate -- <report.json>` | Validate a render report |
 | `npm run health` | Check runtime prerequisites |
 | `npm run render:scene-01` | Render the sample scene |
+| `npm run render:browser -- --input request.json` | Experimental: render the same request in headless Chromium (see below). Prints `RENDER_REPORT:<path>`; the run folder ends in `-browser` |
+| `npm run compare -- --brief "…"` | Render one offline-planned film with both renderers and stack them into `output/compare/*.mp4` (also takes `--input`) |
 
 FFmpeg and FFprobe must be installed for rendering. The Docker image includes
 them; check with `ffmpeg -version` before promising a render elsewhere.
+
+## Experimental browser renderer
+
+`src/browser/` renders a timeline in headless Chromium instead of SVG +
+Resvg. It is opt-in (CLI only, never the studio's default) and draws the
+engine's own layout: each title's lines, size, tracking, position and
+emphasis come from the elements, so copy and placement match the SVG
+engine and layout QA (`evaluateCreativeQA`) still applies. On top it adds
+per-letter motion from `textMotion`, a 3D camera from `motion.camera`, a
+deep echo layer for parallax, glow, light sweeps, canvas atmospheres, a
+real 3D accordion for `fold`, and motion blur (4 samples across a
+180-degree shutter, blended by FFmpeg `tmix`; grain is added after the
+blend). It adds FOLD Score audio, checks with FFprobe, and its own QA at
+each shot's settled moment: copy drawn exactly, title letters inside the
+safe area, and letters advancing left to right. Not supported yet: product
+photos (`image` elements) and uploaded brand fonts; both are listed under
+`unsupported` in the report, never dropped silently. It is about 10x slower
+than the SVG engine (Chromium's capture is the cost), so it isn't wired
+into the studio or the Render deployment. Needs the dev dependencies installed (Playwright
+is a dev dependency) and `npx playwright install chromium`.
 
 ## APIs
 
