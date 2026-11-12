@@ -1,0 +1,240 @@
+# Launch style: master build plan
+
+Goal: a director drops a product or launch brief into the studio and gets a
+film at the level of modern SaaS and tech launch motion: word-by-word beats
+locked to the music, refined typography, soft light, UI storytelling. Every
+word stays exactly as approved, as FOLD Motion already guarantees.
+
+This plan is written to be executed phase by phase by a coding agent. Each
+phase lists what to build, where, and the tests that prove it is done. Do
+not start a phase until the previous one passes. Follow `AGENTS.md` and
+`skills/fold-motion/SKILL.md` throughout.
+
+## What "reference grade" means
+
+The four reference films (a SaaS text animation, the Bleap fintech launch,
+Google's "Made by" countdown, a Google Workspace update) define the style.
+Do **not** copy their frames, layouts or wording: those designs belong to
+their owners, and a copy would only fit their briefs. Match their *quality*,
+measured by the criteria below. A film is reference grade when all hold.
+
+| # | Criterion | How it's checked |
+| --- | --- | --- |
+| 1 | Every cut and every word entrance lands on a beat or half-beat | `beatSync` QA: 100% of events within 1 frame of the grid |
+| 2 | Never more than 6 words of new copy on screen at once; most beats show 1–3 | `beatDensity` QA over the timeline |
+| 3 | Copy across all beats concatenates to the approved copy exactly | `copyIntegrity` QA (extends repair checks) |
+| 4 | Type is sentence case in a refined sans, with at most one serif-italic accent word per beat | Style kit rules + QA |
+| 5 | At least 3 distinct motion devices per 15 s, and no device more than twice in a row | `deviceVariety` QA |
+| 6 | Scale contrast: at least one beat at 2.5× the base type size per 15 s | `scaleContrast` QA |
+| 7 | Backgrounds are soft light only: no particles, grids or outline echo words in this style | Style kit rule + drift test |
+| 8 | Text contrast 4.5:1, nothing outside the safe area, no clipped glyphs | Existing creative QA |
+| 9 | A vision review scores at least 8/10 on the rubric (Phase 8) for every eval brief | `npm run eval:launch` |
+| 10 | The director approves Phase 0's golden film as the benchmark | Human gate |
+
+## The style, in rules
+
+**Pacing.** One idea per beat. A line builds word by word, or swaps a word in
+place, on the beat. Shots are 1–4 beats long, not 3–6 seconds. Holds happen
+on purpose, for the hero line and the end card.
+
+**Type.** A clean sans (Inter, DM Sans or Space Grotesk, already bundled) in
+sentence case, with an optional italic serif accent (Fraunces or Playfair
+italic, bundled) for one word. Small type with generous space most of the
+time, then sudden jumps to huge type for impact beats.
+
+**Light.** Two or three large blurred gradient blobs in the brand's accent
+family, drifting slowly. Depth-of-field blur on secondary elements. Optional
+palette flips (dark ↔ light) on strong beats.
+
+**Devices** (the motion vocabulary for this style):
+- `build`: the line grows word by word while the camera pans to keep the newest word in view
+- `swap`: one word slot cycles through options in place (e.g. "Spend / Earn / Save")
+- `type`: a caret types the line, as in a prompt or search bar
+- `punch`: one word hits at huge scale, then the line settles
+- `flip`: the palette inverts on the beat
+- `chip`: a UI pill or card drops into a gap inside the sentence
+- `click`: a cursor moves to a word or button and clicks; the target reacts
+- `count`: a number rolls up to its value (only numbers present in the copy)
+- `check`: list items tick one per beat
+- `wall`: a repeated word fills the frame and one instance is highlighted
+- `lockup`: the logo and end line resolve, with a call to action
+
+**Easing.** Entrances use a fast-out curve (cubic-bezier(0.16, 1, 0.3, 1)) of
+0.5–0.75 beats; exits are quicker (0.25–0.4 beats, ease-in). Rises travel
+0.35× the type size with a short blur trail. Camera pans use ease-in-out
+across a full beat. Nothing bounces more than 4% past its target.
+
+## Architecture decision
+
+Build this in the **SVG engine** (`src/render/frame-v2.mjs` and friends), not
+the experimental browser renderer: everything above is 2D, the engine
+already supports gradients and blur, it renders about 10× faster, and its
+frames are deterministic and hash-checked. The browser renderer
+(PR #36) stays an experiment.
+
+The style ships as a new style kit, `launch`, plus new recipes, so existing
+styles and films are untouched.
+
+## Phases
+
+### Phase 0: Golden film (human gate)
+
+Build one 15-second film by hand in the target style: FOLD Motion's own
+launch ("Ideas into motion"), 1920×1080, 30 fps, with a FOLD Score track.
+It may be written as a one-off script. It exists to settle taste before any
+engine work.
+
+- Output: `output/golden/launch-golden.mp4` and a 24-frame contact sheet.
+- Done when: the director approves it. Save the approved contact sheet to
+  `assets/benchmarks/launch/` as the visual benchmark for Phase 8.
+- If it is not approved, iterate here. Do not build the engine around a look
+  nobody signed off.
+
+### Phase 1: Beat clock (music first)
+
+Today `chooseTempo` in `src/audio/fold-score.mjs` fits the tempo to cuts
+that already exist. Invert it for the launch style: choose the tempo first
+(from the mood range), then build a beat grid and quantize every cut and
+word entrance to it.
+
+- Add `src/production/beat-clock.mjs`: `beatGrid(bpm, fps, durationInSeconds)`
+  returns frame-exact beat and half-beat positions; `quantize(time, grid)`
+  snaps to the nearest one.
+- `buildTimeline` (in `src/production/production.mjs`) takes `context.beat`
+  for launch films and snaps shot boundaries and reveal starts.
+- `composeScore` accepts a fixed tempo and grid, and accents downbeats under cuts.
+- QA: `beatSync` in the render report. Every cut and entrance must sit within
+  one frame of a grid point. Reuse `measureSync`.
+- Tests: grid math at 24, 25, 30 and 60 fps; quantization; a launch timeline
+  passes `beatSync`; non-launch films behave exactly as before (frame hashes).
+
+### Phase 2: Copy into beats
+
+Split each shot's approved copy into beats of 1–3 words (at most 6 on
+screen), by rules, not by the model:
+
+- Never split a brand or product name, a number with its unit, a price, a
+  date or an offer.
+- Prefer breaks at punctuation, then before conjunctions and prepositions.
+- The concatenated beats equal the approved copy exactly. The repair layer
+  enforces this, as it does copy today.
+
+Files: `src/production/beats.mjs`, wired into `src/production/repair.mjs`.
+Tests: a table of 40+ real lines with the expected beats; property test that
+concatenation always equals the input; `copyIntegrity` QA.
+
+### Phase 3: Launch typography
+
+- New style kit `launch` in `src/production/style-kits.mjs`: pairing Inter
+  or DM Sans with a Fraunces italic accent, sentence case, base size around
+  5.5% of frame height, tracking −0.01 to −0.02 em.
+- Emphasis becomes an italic serif word or an accent gradient, never both.
+- `punch` beats scale to 2.5–4× base.
+- The `launch` kit disables echo words, particles and grids (criterion 7).
+- Tests: drift test that `launch` films contain no echo or particle elements;
+  measured layout fits the safe area at every scale.
+
+### Phase 4: Motion devices
+
+Implement `build`, `swap`, `type`, `punch` and `flip` first (they need no UI
+kit), then `wall` and `lockup`. Each device is a recipe in
+`src/production/recipes.mjs` and draws in `src/render/frame-v2.mjs`, as a
+pure function of the frame.
+
+- `build` needs a camera that pans to keep the newest word in view: compute
+  word positions from the measured layout and ease the view between them.
+- Motion blur: approximate with a short directional blur on fast-moving words
+  (feGaussianBlur with stdDeviation scaled by speed). Deterministic.
+- Tests per device: frames are deterministic; the settled frame matches the
+  layout; entrances start on beat frames.
+
+### Phase 5: Soft light and depth
+
+- Gradient blob field: 2–3 large ellipses, heavily blurred, in the accent
+  family, drifting slowly and seeded per film.
+- Depth blur for secondary layers (UI cards behind the type).
+- `flip` swaps the field and ink colors on the beat.
+- Performance: blur is the costly part. Cache static blob layers per shot and
+  keep a Full HD frame under the current render time per frame +50%.
+- Tests: render time budget test; the blob field is deterministic.
+
+### Phase 6: UI kit
+
+Draw in SVG, in brand colors: cursor (move along an eased curve, click with a
+ripple), button, pill/chip, card (title, two lines, optional mini chart),
+checkbox list, counter, and a prompt/search bar with a caret.
+
+- Every text inside UI comes from the approved copy or is clearly neutral
+  placeholder shape (grey lines), never invented claims.
+- Devices `chip`, `click`, `count` and `check` use the kit.
+- Tests: each component renders at 16:9, 9:16 and 1:1; counters only show
+  numbers present in the copy.
+
+### Phase 7: Planner
+
+Teach the storyboard and shot prompts the launch style.
+
+- `src/ai/prompts/storyboard-director.mjs` and `shot-compiler.mjs`: describe
+  the devices, beat pacing, the variety rules and when to use each device.
+- The compile schema enumerates the new devices; the mock planner produces
+  valid launch films offline, so tests never need keys.
+- `pairingFromWords` / style detection: product, SaaS, app and launch briefs
+  pick `launch` by default.
+- Update `skills/fold-motion/references/engine.md` and the drift tests in the
+  same change, as `AGENTS.md` requires.
+
+### Phase 8: Review loop (render, look, fix)
+
+Automate the loop a human designer runs.
+
+1. Render the film.
+2. Build a 24-frame contact sheet and run the automated QA (criteria 1–8).
+3. Send the contact sheet, the storyboard and the Phase 0 benchmark to a
+   vision model (Gemini) with a fixed rubric: rhythm, type quality, hierarchy,
+   use of space, light, device variety, brand fit. Each scores 1–10 with the
+   frame number of every defect.
+4. If any automated check fails or the score is below 8, apply the smallest
+   fix for the worst defect (planner or engine) and re-render.
+5. Limits from the skill: two technical repair attempts per failure, three
+   creative rounds per shot, two global rounds. Then stop and report
+   honestly; never mark a film as passing when it isn't.
+
+Files: `scripts/review-film.mjs`, `src/qa/vision-review.mjs`. The vision
+score is advice for the loop, not a replacement for the director's approval.
+
+### Phase 9: Eval set
+
+Ten fixed briefs covering the range: a SaaS feature launch, a fintech app, a
+developer tool, a consumer app, a hardware product with a photo, an event, a
+price announcement, a vertical social cut, a light-palette brand and a
+dark-palette brand.
+
+- `npm run eval:launch` renders all ten, runs Phase 8 scoring, and writes a
+  summary with contact sheets to `output/eval/<date>/`.
+- Done when every brief meets criteria 1–9. Rerun after every phase from 4
+  onwards to catch regressions.
+
+### Phase 10: Studio
+
+- `launch` appears in the style picker and is the default for product briefs.
+- The approval flow is unchanged: storyboard, render, final cut, delivery.
+- Render time for a 15 s Full HD launch film is shown before the director
+  starts it.
+
+## Definition of done
+
+A director types a product brief, approves the storyboard, presses Render,
+and receives a film that meets criteria 1–9 without any manual fixing, in
+16:9, 9:16 and 1:1, with exact copy and a beat-locked score. Criterion 10 is
+the director's own sign-off on Phase 0, which anchors everything else.
+
+## Risks
+
+- **Taste.** Automated checks catch rule breaks, not blandness. The golden
+  film and the director's review are the real quality bar.
+- **Vision scoring drifts.** Keep the rubric and benchmark fixed, log scores
+  per run, and compare against the eval history rather than trusting one
+  number.
+- **Render cost.** Blur is expensive. Budget it in Phase 5 before adding more.
+- **Free-tier limits.** The review loop multiplies Gemini calls; cap rounds and
+  fall back to automated QA only when quota runs out, saying so in the report.
