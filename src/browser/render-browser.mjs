@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluateCreativeQA, validateTimeline } from '../production/production.mjs';
 import { beatGrid, measureBeatSync, timelineBeatEvents } from '../production/beat-clock.mjs';
+import { launchReadingCheck } from '../production/launch.mjs';
 import { composeScore, encodeWav, masterScore } from '../audio/fold-score.mjs';
 import { instrumentBand } from '../audio/band.mjs';
 
@@ -35,7 +36,7 @@ async function loadPlaywright() {
 export async function timelineFonts(timeline) {
   const base = JSON.parse(await readFile(path.join(FONTS_DIR, 'metrics.json'), 'utf8'));
   const paired = JSON.parse(await readFile(path.join(FONTS_DIR, 'pairings', 'metrics.json'), 'utf8'));
-  const ids = new Set(['display']);
+  const ids = new Set(['display', ...(timeline.launch ? ['inter-semibold', 'fraunces-italic'] : [])]);
   for (const shot of timeline.shots) for (const el of shot.spec.elements || []) if (el.font) ids.add(el.font);
   const fonts = {};
   const missing = [];
@@ -60,10 +61,15 @@ export async function buildScenePage(timeline, fonts) {
     fps: timeline.fps,
     totalFrames: timeline.totalFrames,
     palette: timeline.palette,
-    fonts: Object.fromEntries(Object.entries(fonts).map(([id, { family }]) => [id, `"${family}"`])),
+    fonts: {
+      ...Object.fromEntries(Object.entries(fonts).map(([id, { family }]) => [id, `"${family}"`])),
+      ...(timeline.launch ? { sans: `"${fonts['inter-semibold'].family}"`, serif: `"${fonts['fraunces-italic'].family}"` } : {}),
+    },
+    ...(timeline.beat ? { beat: timeline.beat } : {}),
     shots: timeline.shots.map((shot) => ({
       shotId: shot.shotId, startFrame: shot.startFrame, endFrame: shot.endFrame,
       durationFrames: shot.durationFrames, palette: shot.palette, spec: shot.spec,
+      ...(shot.spec?.launch ? { launch: shot.spec.launch } : {}),
     })),
   };
   const { width: W, height: H } = timeline;
@@ -110,7 +116,9 @@ export async function openScene(timeline, { launch } = {}) {
   await page.evaluate(async (families) => {
     await Promise.all(families.map((family) => document.fonts.load(`100px "${family}"`, 'AaBb')));
   }, Object.values(fonts).map((f) => f.family));
-  await page.addScriptTag({ content: await readFile(path.join(HERE, 'scene-runtime.js'), 'utf8') });
+  // Launch timelines get the launch runtime; everything else the general scene runtime.
+  const runtime = timeline.launch ? 'launch-runtime.js' : 'scene-runtime.js';
+  await page.addScriptTag({ content: await readFile(path.join(HERE, runtime), 'utf8') });
   const unsupported = [
     ...missing.map((id) => ({ element: `font:${id}`, reason: 'This font (an uploaded brand font) is not loaded by the browser renderer yet; the display font is used.' })),
     ...(await page.evaluate(() => window.FOLD_RENDER.unsupported)),
@@ -286,7 +294,9 @@ export async function renderBrowserProject({
   // Layout QA is shared with the SVG engine (the browser draws the engine's layout);
   // the browser adds its own checks on what it actually drew.
   const layoutQA = evaluateCreativeQA(timeline, context);
-  const creativeQA = { ...layoutQA, browser: browserQA, pass: Boolean(layoutQA.pass) && browserQA.every((shot) => shot.pass) };
+  // Launch films: every piece of copy must stay on screen for its reading time.
+  const reading = timeline.launch ? launchReadingCheck(timeline) : null;
+  const creativeQA = { ...layoutQA, browser: browserQA, ...(reading ? { launchReading: reading } : {}), pass: Boolean(layoutQA.pass) && browserQA.every((shot) => shot.pass) && (reading ? reading.pass : true) };
 
   const unsupported = scene.unsupported;
   const report = {

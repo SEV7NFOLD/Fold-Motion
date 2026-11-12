@@ -1,0 +1,146 @@
+/**
+ * Launch style planner (docs/LAUNCH-STYLE-BUILD-PLAN.md, Phases 3–4).
+ *
+ * Gives every shot of a beat-timed timeline a motion device and the beats its
+ * copy appears on. The browser renderer's launch runtime (src/browser/
+ * launch-runtime.js) draws from this plan. Device choice is deterministic for
+ * now; Phase 7 teaches the AI planner to choose.
+ *
+ * - first shot: `build`  (copy appears beat by beat; the camera chases it)
+ * - last shot:  `lockup` (the copy assembles from depth, letter by letter), up to six words
+ * - a list ("With neroli, mandarin, frankincense & lavender"): `swap`
+ * - one or two words: `punch` (lands huge, then settles)
+ * - anything else: `build`
+ *
+ * Copy is never rewritten: beats come from splitIntoBeats, which always adds
+ * back up to the exact copy.
+ */
+import { FUNCTION_WORDS, splitIntoBeats } from './beats.mjs';
+import { minimumBeats } from './pacing.mjs';
+
+const DETERMINERS = new Set(['a', 'an', 'the', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'every']);
+
+export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup']);
+
+/**
+ * A list sentence split into a lead and items whose raw slices join back to the
+ * exact copy: "With neroli, mandarin, frankincense & lavender." ->
+ * lead "With", items ["neroli,", "mandarin,", "frankincense", "& lavender."].
+ */
+export function listParts(copy) {
+  const text = String(copy);
+  const match = /^(.*?)\s*([^,]+(?:,\s*[^,]+)+?)(?:,?\s*(?:&|and)\s+)([^,&]+?)([.!?]?)\s*$/i.exec(text.trim());
+  if (!match) return null;
+  const head = match[1] + (match[1] ? ' ' : '') + match[2];
+  const pieces = head.split(',').map((p) => p.trim()).filter(Boolean);
+  // the first item keeps its determiner ("your fonts"); prepositions stay in the lead ("With")
+  const firstWords = pieces[0].split(/\s+/);
+  let cut0 = firstWords.length - 1;
+  while (cut0 > 0 && DETERMINERS.has(firstWords[cut0 - 1].toLowerCase())) cut0 -= 1;
+  const names = [firstWords.slice(cut0).join(' '), ...pieces.slice(1), match[3].trim()];
+  if (names.length < 3 || names.some((i) => i.split(/\s+/).length > 3)) return null;
+  // cut points in the original text: each item's start, and the connector before the last item
+  const starts = []; let from = 0;
+  names.forEach((name, i) => {
+    const at = text.indexOf(name, from);
+    starts.push(at); from = at + name.length;
+  });
+  const connector = text.slice(0, starts[starts.length - 1]).search(/(,?\s*(?:&|and)\s+)$/i);
+  if (starts.some((s) => s < 0) || connector < 0) return null;
+  const cut = [starts[0], ...starts.slice(1, -1), text.slice(0, connector).length + text.slice(connector).search(/[&a]/i)];
+  const raw = [text.slice(0, cut[0]), ...cut.map((c, i) => text.slice(c, i < cut.length - 1 ? cut[i + 1] : text.length))];
+  if (raw.join('') !== text) return null;
+  return { lead: raw[0].trim(), items: raw.slice(1).map((r) => r.trim()), raw };
+}
+
+/**
+ * Word-level beats for short build lines, the benchmark's rhythm: each beat is one
+ * main word with the small words before it ("Your idea", "deserves", "motion.").
+ */
+export function wordBeats(copy) {
+  const words = String(copy).trim().split(/\s+/).filter(Boolean);
+  const beats = []; let pending = [];
+  const small = (w) => FUNCTION_WORDS.has(w.replace(/^["'“‘(\[]+|["'”’)\].,;:!?—–]+$/g, '').toLowerCase());
+  for (const w of words) {
+    pending.push(w);
+    if (!small(w)) { beats.push(pending.join(' ')); pending = []; }
+  }
+  if (pending.length) beats.length ? (beats[beats.length - 1] += ` ${pending.join(' ')}`) : beats.push(pending.join(' '));
+  return beats;
+}
+
+/** Beat offsets (from the shot start) for a run of copy pieces that must fit in `available` beats. */
+function schedule(pieces, bpm, available, { startAt = 0.5, holdOf } = {}) {
+  const holds = pieces.map((piece, i) => Math.max(1, holdOf(piece, i)));
+  const lastRead = minimumBeats(pieces[pieces.length - 1], bpm);
+  const room = Math.max(0.5 * (pieces.length - 1), available - startAt - lastRead);
+  const used = holds.slice(0, -1).reduce((s, h) => s + h, 0);
+  const scale = used > room && used > 0 ? room / used : 1;
+  const at = []; let cursor = startAt;
+  pieces.forEach((_, i) => {
+    at.push(Math.round(cursor * 2) / 2);
+    // compressed holds round down, so squeezing never pushes the last piece past its reading time
+    if (i < pieces.length - 1) cursor += Math.max(0.5, (scale < 1 ? Math.floor : Math.round)(holds[i] * scale * 2) / 2);
+  });
+  return at;
+}
+
+/** Plans devices and beat timings for a beat-timed timeline. Returns the plan; also sets shot.spec.launch. */
+export function planLaunch(timeline, storyboard) {
+  if (!timeline.beat) throw new Error('planLaunch needs a beat-timed timeline (compile with context.beat).');
+  const { bpm, framesPerBeat } = timeline.beat;
+  const shots = timeline.shots.map((shot, index) => {
+    const copy = storyboard.shots[index]?.onScreenCopy ?? '';
+    const beatsAvailable = shot.durationFrames / framesPerBeat;
+    const words = copy.trim().split(/\s+/).filter(Boolean);
+    // a lockup assembles letter by letter, so it's only for short closing lines
+    const last = index === timeline.shots.length - 1 && timeline.shots.length > 1 && words.length <= 6;
+    const list = !last && index > 0 ? listParts(copy) : null;
+    let plan;
+    // the opening shot waits half a beat for the camera's zoom; later shots land content on the cut
+    const startAt = index === 0 ? 0.5 : 0;
+    if (last) {
+      plan = { device: 'lockup', copy, at: startAt };
+    } else if (list) {
+      // the lead is read with the first item, so the first item holds for both (less the half-beat the lead led by)
+      const itemsAt = list.lead ? startAt + 0.5 : startAt;
+      const holdOf = (p, i) => (i === 0 && list.lead ? minimumBeats(`${list.lead} ${p}`, bpm) - (itemsAt - startAt) : minimumBeats(p, bpm));
+      plan = { device: 'swap', copy, lead: list.lead, items: list.items, leadAt: startAt, at: schedule(list.items, bpm, beatsAvailable, { startAt: itemsAt, holdOf }) };
+    } else if (index > 0 && words.length <= 2) {
+      plan = { device: 'punch', copy, at: startAt };
+    } else {
+      // short lines build word by word; longer ones in short phrases
+      const beats = words.length <= 7 ? wordBeats(copy) : splitIntoBeats(copy).map((b) => b.text);
+      // a built line stays on screen, so each beat needs only part of its reading time before the next arrives
+      plan = { device: 'build', copy, beats, at: schedule(beats, bpm, beatsAvailable, { startAt, holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
+    }
+    shot.spec.launch = plan;
+    return { shotId: shot.shotId, ...plan };
+  });
+  return { version: 1, bpm, shots };
+}
+
+/**
+ * Reading-time QA for a planned launch timeline: every piece of copy must stay
+ * on screen at least its reading time (a built line stays until the cut; a
+ * swapped item until the next item arrives).
+ */
+export function launchReadingCheck(timeline) {
+  const BEAT = 60 / timeline.beat.bpm;
+  const failures = [];
+  for (const shot of timeline.shots) {
+    const L = shot.spec.launch; if (!L) continue;
+    const length = shot.durationFrames / timeline.fps;
+    const pieces = L.device === 'build' ? L.beats.map((text, i) => ({ text: L.beats.slice(0, i + 1).join(' '), from: L.at[i] * BEAT, to: length }))
+      // the lead is read once, with the first item; later items need only their own reading time
+      : L.device === 'swap' ? L.items.map((text, i) => ({ text: i === 0 ? [L.lead, text].filter(Boolean).join(' ') : text, from: (i === 0 && L.lead ? L.leadAt : L.at[i]) * BEAT, to: i < L.items.length - 1 ? L.at[i + 1] * BEAT : length }))
+        : [{ text: L.copy, from: L.at * BEAT, to: length }];
+    for (const p of pieces) {
+      // a built line accumulates, so only its newest words need fresh reading time
+      const need = L.device === 'build' ? Math.min(readingSecondsFor(p.text), readingSecondsFor(p.text.split(/\s+/).slice(-3).join(' ')) + 0.3) : readingSecondsFor(p.text);
+      if (p.to - p.from + 1e-9 < need) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.from).toFixed(3)), needs: Number(need.toFixed(3)) });
+    }
+  }
+  return { pass: failures.length === 0, failures };
+}
+function readingSecondsFor(text) { const v = String(text).replace(/\s+/g, '').length; return v ? 0.3 + 0.06 * v : 0; }
