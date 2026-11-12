@@ -343,7 +343,7 @@ async function syncToCloud() {
 function persist() {
   if (cloud) {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 3, records: {}, activeId: store.activeId, log: store.log.slice(-40), lastFormat: store.lastFormat, cloud: true }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 3, records: {}, activeId: store.activeId, log: store.log.slice(-40), lastFormat: store.lastFormat, lastLaunch: store.lastLaunch === true, cloud: true }));
     } catch { /* the bookmark is optional */ }
     scheduleCloudSync();
     return;
@@ -849,6 +849,8 @@ const FORMATS = {
   square: { width: 960, height: 960, label: '1:1 Square', short: '1:1' },
 };
 const formatOf = (record) => (FORMATS[record?.format] ? record.format : FORMATS[store.lastFormat] ? store.lastFormat : 'landscape');
+/** Launch style: camera-led, beat-locked kinetic type, rendered in the browser renderer. Opt-in. */
+const launchOf = (record) => (typeof record?.launch === 'boolean' ? record.launch : store.lastLaunch === true);
 
 /** The film's shape: its timeline's once built, otherwise the chosen format's. */
 function frameOf(record) {
@@ -911,7 +913,7 @@ function withBrand(context, record = activeRecord(), format = formatOf(record)) 
     return { width: product.width, height: product.height, ...(product.name ? { name: product.name } : {}), ...(thumb ? { thumb } : {}), ...(productLooks.get(product.id) || {}) };
   }) : undefined;
   const { width, height } = FORMATS[format];
-  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics, ...(record?.style && record.style !== 'auto' ? { style: record.style } : {}), ...(record?.fonts ? { fonts: record.fonts } : {}) };
+  return { ...context, logo, products, width, height, brandFont: brandKit.font?.metrics, ...(record?.style && record.style !== 'auto' ? { style: record.style } : {}), ...(record?.fonts ? { fonts: record.fonts } : {}), ...(launchOf(record) ? { launch: true } : {}) };
 }
 
 /** Rebuilds the shots in a new format before rendering (same storyboard). */
@@ -1045,6 +1047,7 @@ function formatPicker(record) {
     record.format = select.value;
     store.lastFormat = select.value;
     syncFormatPick();
+  syncLaunchPick();
     persist();
     if (record.project.state === 'RENDERING') rebuildShots(record);
   });
@@ -1057,6 +1060,25 @@ function syncFormatPick() {
   const built = record?.project?.timeline && !['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW', 'BUILDING'].includes(record.project.state);
   $('format-pick').title = built ? 'This film is built. Change its format on the “Shots built” card, or start a new chat.' : 'Pick the format before the shots are built: layout depends on it.';
 }
+
+function syncLaunchPick() {
+  const record = activeRecord();
+  const pick = $('launch-pick');
+  pick.value = launchOf(record) ? 'launch' : 'classic';
+  const built = record?.project?.timeline && !['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW', 'BUILDING'].includes(record.project.state);
+  const blocked = renderInfo?.launch?.available === false ? ` This server can’t render launch films yet: ${renderInfo.launch.reason}` : '';
+  pick.title = (built ? 'This film is built in its style. Start a new chat to make it in the other style.' : 'Pick the motion style before the shots are built.') + blocked;
+}
+
+$('launch-pick').addEventListener('change', () => {
+  const record = activeRecord();
+  const launch = $('launch-pick').value === 'launch';
+  store.lastLaunch = launch;
+  if (record && ['BRIEF', 'PLANNING', 'STORYBOARD_REVIEW'].includes(record.project.state)) record.launch = launch;
+  else if (record && record.project.state !== 'BRIEF') say(record, `New films will use ${launch ? 'the launch style' : 'classic motion'}. This one is already built; start a new chat to make it in that style.`);
+  persist();
+  render();
+});
 
 $('format-pick').addEventListener('change', () => {
   const record = activeRecord();
@@ -1074,6 +1096,11 @@ $('format-pick').addEventListener('change', () => {
 function photosUsed(timeline) {
   if (!timeline?.shots) return null;
   const used = new Set();
+  // launch films name their product shots in the launch plan
+  if (timeline.launch) {
+    for (const shot of timeline.launch.shots || []) for (const n of shot.products || []) used.add(n);
+    return used;
+  }
   for (const shot of timeline.shots) {
     for (const element of shot.spec?.elements || []) {
       if (element.type === 'image' && element.product) used.add(element.product);
@@ -2168,6 +2195,7 @@ function renderThread(record, { stick = false } = {}) {
   thread.style.setProperty('--frame-w', frame.width);
   thread.style.setProperty('--frame-h', frame.height);
   syncFormatPick();
+  syncLaunchPick();
   const nearBottom = threadScroll.scrollHeight - threadScroll.scrollTop - threadScroll.clientHeight < 160;
   if (thread.dataset.recordId !== record.id) {
     thread.replaceChildren();
@@ -2397,8 +2425,10 @@ let engineError = false;
 let renderInfo = null;
 
 /** Why this deployment can't render, or null when it can (or when we don't know yet). */
-function renderBlockedReason() {
-  return renderInfo && renderInfo.available === false ? renderInfo.reason || 'This deployment can’t render video.' : null;
+function renderBlockedReason(record = activeRecord()) {
+  if (renderInfo && renderInfo.available === false) return renderInfo.reason || 'This deployment can’t render video.';
+  if (record?.project?.timeline?.launch && renderInfo?.launch?.available === false) return renderInfo.launch.reason || 'This server can’t render launch films.';
+  return null;
 }
 
 async function loadEngine() {
@@ -2871,7 +2901,7 @@ async function enterCloud(client) {
       syncedJson.set(row.id, JSON.stringify(row.data));
     }
   }
-  store = { ...emptyStore(), records, activeId: records[local.activeId] ? local.activeId : rows[0]?.id || null, log: Array.isArray(local.log) ? local.log.slice(-LOG_LIMIT) : [], lastFormat: local.lastFormat };
+  store = { ...emptyStore(), records, activeId: records[local.activeId] ? local.activeId : rows[0]?.id || null, log: Array.isArray(local.log) ? local.log.slice(-LOG_LIMIT) : [], lastFormat: local.lastFormat, lastLaunch: local.lastLaunch === true };
   nodeCache.clear();
   thread.dataset.recordId = '';
   await loadBrandKit();

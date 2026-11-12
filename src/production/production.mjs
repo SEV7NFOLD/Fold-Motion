@@ -1135,9 +1135,12 @@ export function rebuildTimeline(storyboard, shotSpecs, context = {}) {
   });
   repairs.push(...limitFolds(specs, storyboard.shots.map((shot) => shot.id)));
   repairs.push(...enforceStyleKit(specs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
-  const timeline = buildTimeline(storyboard, specs, normalizedContext);
+  // edited launch films keep their beat timing and launch plan
+  if (normalizedContext.launch && !normalizedContext.beat) normalizedContext.beat = true;
+  const beat = prepareBeat(storyboard, normalizedContext);
+  const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, specs, normalizedContext), beat, normalizedContext);
   timeline.style = normalizedContext.style;
-    timeline.fonts = normalizedContext.fonts;
+  timeline.fonts = normalizedContext.fonts;
   return { timeline, acceptance: buildAcceptanceSpec(storyboard, normalizedContext), provider: 'rebuild', ...(repairs.length ? { repairs } : {}) };
 }
 

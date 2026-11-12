@@ -67,6 +67,16 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   (9% near-still frames, motion energy 2.54, longest still 0.20 s). Gemini's
   output with these instructions still needs a real-key test in the studio.
   Next: the studio (Phase 10) and sound (5b).
+- **Phase 10: the studio.** A Classic / Launch picker in the brief toolbar
+  sends `launch` with every planning request; studio edits keep the launch
+  plan; the standard render path sends launch films to the browser renderer
+  (queue, validation and storage unchanged); `/api/engine` reports whether
+  the server can render launch films; the Docker image installs Chromium. A
+  live-server run planned, compiled and rendered a brief end to end with
+  every QA check and the server's validation passing. The director chose to
+  keep the Render deployment free, so the Docker image leaves Chromium out by
+  default (`FOLD_LAUNCH=0`) and launch films render locally; Phase 11 (render
+  speed and memory) is what could bring them back onto a small server.
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every

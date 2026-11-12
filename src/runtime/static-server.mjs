@@ -14,6 +14,7 @@ import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 
 import { resolveBrandAssets } from '../production/brand-assets.mjs';
 import { loadStoredAssets, publicAuthConfig, requireUser, storeFilm, FILM_BUCKET } from './supabase-server.mjs';
+import { checkBrowserRenderer } from '../browser/render-browser.mjs';
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
 const MAX_RENDER_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SCENE_CONTEXT = {
@@ -278,6 +279,11 @@ async function handleRenderRequest(request, response, root) {
 
 /** Renders one film: the render script, QA validation, then storage when signed in. */
 async function performRender({ body, fold, projectRoot, onProgress }) {
+  // launch films need the browser renderer; say so up front rather than failing mid-render
+  if (body.timeline?.launch) {
+    const launch = await checkBrowserRenderer();
+    if (!launch.available) return { status: 503, payload: { success: false, error: launch.reason } };
+  }
   const requestFile = path.join(os.tmpdir(), `fold-render-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`);
   try {
     await writeFile(requestFile, JSON.stringify({
@@ -520,7 +526,7 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
           response.writeHead(405, { Allow: 'GET' }).end();
           return;
         }
-        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: await checkRenderAvailability(), auth: publicAuthConfig() });
+        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: { ...(await checkRenderAvailability()), launch: await checkBrowserRenderer() }, auth: publicAuthConfig() });
         return;
       }
       if (pathname === '/health') {

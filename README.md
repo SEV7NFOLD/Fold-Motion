@@ -96,6 +96,27 @@ both. A sleeping free Render instance takes about a minute to wake; the Studio
 starts waking it when it opens, and if a render still times out, press Render
 again.
 
+## Launch style
+
+In the studio, set the toolbar's motion style to **Launch** before sending a
+brief: the film is planned beat by beat (copy forms become motion devices:
+builds, product heroes and tiles, swaps, checklists, typed prompts, counts,
+lockups), cut on the music's beat with continuity transitions, and rendered
+in headless Chromium, which needs about 2 GB of memory, more than a free Render
+instance has. So the Docker image leaves Chromium out by default, and on the free
+deployment the studio says launch films can't render there; classic films render
+as before. **Render launch films on your own computer:**
+
+```
+npm install
+npx playwright install chromium
+npm start
+```
+
+Then open the studio at the local address it prints, pick Launch, and render.
+To render launch films on a server instead, build the image with
+`FOLD_LAUNCH=1` on an instance with about 2 GB of memory.
+
 ## Experimental browser renderer
 
 `npm run render:browser -- --input request.json` renders a film in headless

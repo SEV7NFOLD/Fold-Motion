@@ -353,3 +353,22 @@ export async function renderBrowserProject({
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   return { report, reportPath, videoPath };
 }
+
+let browserStatus;
+/**
+ * Whether this server can render launch films: Playwright must load and its
+ * Chromium must be installed. Checked once; the engine endpoint reports it.
+ */
+export function checkBrowserRenderer() {
+  browserStatus ??= (async () => {
+    try {
+      const { chromium } = await import('playwright');
+      const executable = chromium.executablePath();
+      await access(executable);
+      return { available: true, reason: null };
+    } catch {
+      return { available: false, reason: 'Launch films render in a headless browser, which isn’t installed on this server (it needs more memory than a free instance has). Render launch films on your own computer: npm install, npx playwright install chromium, then npm start and open the studio there. Classic films render here as usual.' };
+    }
+  })();
+  return browserStatus;
+}
