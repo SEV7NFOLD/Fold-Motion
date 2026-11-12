@@ -1,0 +1,373 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:Inter;src:url(../../../fonts/pairings/inter-medium.ttf);font-weight:500}
+@font-face{font-family:Inter;src:url(../../../fonts/pairings/inter-semibold.ttf);font-weight:600}
+@font-face{font-family:Inter;src:url(../../../fonts/pairings/inter-bold.ttf);font-weight:700}
+@font-face{font-family:Fraunces;src:url(../../../fonts/pairings/fraunces-italic.ttf);font-style:italic}
+:root{--ink:#0B0F19;--paper:#F3F5F9;--cyan:#00F0FF;--electric:#2F5BFF;--violet:#8B5CF6;--text:#F5F7FB;--muted:#8A93A6;--surface:#12182B}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--ink)}
+body{font-family:Inter,sans-serif;font-weight:600;-webkit-font-smoothing:antialiased}
+.scene{position:absolute;inset:0;overflow:hidden;visibility:hidden}
+.dark{background:var(--ink);color:var(--text)} .light{background:var(--paper);color:var(--ink)}
+.blob{position:absolute;width:1500px;height:1500px;border-radius:50%;left:0;top:0}
+.world{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0}
+.abs{position:absolute;left:0;top:0}
+.w{position:absolute;left:0;top:0;white-space:pre;transform-origin:50% 60%;line-height:1}
+.serif{font-family:Fraunces,serif;font-style:italic;font-weight:400;background:linear-gradient(100deg,var(--cyan),#6F8BFF 55%,var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;padding:0 .05em}
+.card{background:#fff;border-radius:30px;box-shadow:0 1px 0 rgba(11,15,25,.06),0 30px 90px rgba(47,91,255,.20);border:1px solid rgba(11,15,25,.07)}
+.ghost{background:#fff;border-radius:22px;box-shadow:0 20px 60px rgba(47,91,255,.14);border:1px solid rgba(11,15,25,.06);padding:30px;overflow:hidden}
+.ghost i{display:block;height:13px;border-radius:7px;background:#E3E7EF;margin:0 0 13px}
+.frame{position:absolute;border-radius:16px;overflow:hidden;border:2px solid rgba(255,255,255,.22);background:var(--surface)}
+</style></head><body>
+
+<section class="scene dark" id="A"><div class="world" id="wA"></div></section>
+<section class="scene light" id="B"><div class="world" id="wB"></div></section>
+<section class="scene dark" id="C"><div class="world" id="wC"></div></section>
+<section class="scene dark" id="D"><div class="world" id="wD"></div></section>
+
+<script>
+const W = 1920, H = 1080, BEAT = 0.5, b = (n) => n * BEAT;     // 120 BPM: 1 beat = 15 frames
+const clamp = (x, a = 0, c = 1) => Math.min(c, Math.max(a, x));
+const prog = (t, a, c) => clamp((t - a) / (c - a));
+const lerp = (a, c, x) => a + (c - a) * x;
+const outExpo = (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inCubic = (x) => x * x * x;
+const io = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const ioQuint = (x) => (x < .5 ? 16 * x ** 5 : 1 - Math.pow(-2 * x + 2, 5) / 2);
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const el = (tag, cls, parent, css = '', html = '') => { const n = document.createElement(tag); if (cls) n.className = cls; if (css) n.style.cssText = css; if (html) n.innerHTML = html; parent.appendChild(n); return n; };
+const $ = (id) => document.getElementById(id);
+
+// A value that moves between keys: each step eases in over its own duration and they add up.
+function track(t, start, keys, ease = outExpo) {
+  let v = start, prev = start;
+  for (const [at, value, dur] of keys) { v += (value - prev) * ease(prog(t, b(at), b(at + dur))); prev = value; }
+  return v;
+}
+// Camera: the world point (x, y) sits at screen centre, at scale s, rotated r degrees.
+function camera(world, x, y, s, r = 0) {
+  world.style.transform = `translate(${W / 2}px,${H / 2}px) rotate(${r}deg) scale(${s}) translate(${-x}px,${-y}px)`;
+}
+// Words pop in place within two frames; the camera does the travelling.
+function pop(n, t0, t, from = 0.9) {
+  const o = t >= t0 ? clamp((t - t0) / 0.07) : 0;
+  const s = lerp(from, 1, outExpo(prog(t, t0, t0 + b(0.4))));
+  return { o, s };
+}
+// Soft light per scene, drifting and reacting to the camera for depth.
+function blobs(scene, theme, seed) {
+  const set = theme === 'dark' ? [['0,240,255', .30], ['47,91,255', .42], ['139,92,246', .34]] : [['0,240,255', .22], ['47,91,255', .17], ['139,92,246', .2]];
+  return set.map(([c, a], i) => { const d = el('div', 'blob', scene); scene.prepend(d); d.style.background = `radial-gradient(closest-side, rgba(${c},${a}), rgba(${c},${a * .45}) 45%, rgba(${c},0))`; return { d, i, seed }; });
+}
+function drawBlobs(list, t, cx = 0, cy = 0) {
+  for (const { d, i, seed } of list) {
+    const ph = seed + i * 2.1;
+    const x = W * (.5 + [-.2, .17, .02][i]) + Math.sin(t * 1.5 + ph) * 230 - cx * (.08 + i * .04) - 750;
+    const y = H * (.55 + [.1, -.12, .3][i]) + Math.cos(t * 1.25 + ph) * 160 - cy * (.08 + i * .04) - 750;
+    d.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) scale(${(.9 + .15 * Math.sin(t * 1.1 + ph)).toFixed(3)})`;
+  }
+}
+// Lay a line of words out in world space; returns spans with their x positions and widths.
+function line(parent, parts, size, y, gap = 0.27) {
+  const spans = parts.map(([text, cls]) => el('span', `w ${cls || ''}`, parent, `font-size:${size}px;letter-spacing:-.034em`, text));
+  const widths = spans.map((s) => s.getBoundingClientRect().width);
+  return { spans, widths, size, y, gap: gap * size };
+}
+function place(L, xs) { L.spans.forEach((s, i) => { s.dataset.x = xs[i]; }); }
+
+const SC = { A: $('A'), B: $('B'), C: $('C'), D: $('D') };
+const BL = { A: blobs(SC.A, 'dark', 1), B: blobs(SC.B, 'light', 2), C: blobs(SC.C, 'dark', 4), D: blobs(SC.D, 'dark', 6) };
+const M = {};
+
+function setup() {
+  // ---------- A: "Your idea deserves motion."
+  const A = line($('wA'), [['Your'], ['idea'], ['deserves'], ['motion', 'serif'], ['\u00a0', '']], 132, 470);
+  // the period is drawn as a true circle, so the camera can fly into exactly what's on screen
+  const dprobe = el('span', 'w serif', $('wA'), 'font-size:132px', 'motion<i style="display:inline-block;width:0;height:0;vertical-align:baseline"></i>');
+  const pr = dprobe.getBoundingClientRect(); const base = dprobe.lastChild.getBoundingClientRect().top - pr.top; dprobe.remove();
+  A.widths[4] = 132 * 0.2;
+  let x = 0; const xs = [];
+  A.widths.forEach((w, i) => { xs.push(x); x += w + (i === 3 ? -A.size * 0.05 : A.gap); });
+  const total = x - A.gap; const x0 = (W - total) / 2;
+  M.A = { ...A, xs: xs.map((v) => v + x0) };
+  M.A.spans.forEach((s, i) => { s.style.left = `${M.A.xs[i]}px`; s.style.top = `${A.y}px`; });
+  const r = A.size * 0.068;
+  M.dot = { x: M.A.xs[3] + A.widths[3] + r * 0.9, y: A.y + base - r, r };
+  M.dotEl = el('div', 'abs', $('wA'), `width:${M.dot.r * 2}px;height:${M.dot.r * 2}px;border-radius:50%;left:${M.dot.x - M.dot.r}px;top:${M.dot.y - M.dot.r}px;background:linear-gradient(135deg,#6F8BFF,var(--violet))`);
+
+  // ---------- B: "Turn a [slot] into a film." → selection → card → type → click
+  const wB = $('wB');
+  M.B = line(wB, [['Turn'], ['a'], ['into'], ['a film.']], 104, 488);
+  M.slotWords = ['headline', 'launch', 'product', 'brief'];
+  M.slot = M.slotWords.map((w) => el('span', 'w', wB, 'font-size:104px;letter-spacing:-.034em;color:var(--electric)', w));
+  M.slotW = M.slot.map((s) => s.getBoundingClientRect().width);
+  M.hl = el('div', 'abs', wB, 'background:var(--electric);border-radius:14px;opacity:0');
+  wB.appendChild(M.slot[3]);   // "brief" above the highlight
+  // ghost cards behind (living UI), in their own parallax layer
+  M.ghostLayer = el('div', 'world', SC.B, ''); SC.B.insertBefore(M.ghostLayer, wB);
+  M.g1 = el('div', 'abs ghost', M.ghostLayer, 'width:380px;height:200px', '<i style="width:55%"></i><i style="width:80%"></i><div style="display:flex;gap:12px;align-items:flex-end;height:70px;margin-top:6px"><b class="bar" style="width:34px;background:#C9D4FF;border-radius:6px"></b><b class="bar" style="width:34px;background:#9DB0FF;border-radius:6px"></b><b class="bar" style="width:34px;background:var(--electric);border-radius:6px"></b><b class="bar" style="width:34px;background:#C9D4FF;border-radius:6px"></b></div>');
+  M.g2 = el('div', 'abs ghost', M.ghostLayer, 'width:340px;height:170px', '<div style="display:flex;gap:16px;align-items:center"><svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="#E3E7EF" stroke-width="5"/><circle class="spin" cx="22" cy="22" r="17" fill="none" stroke="var(--electric)" stroke-width="5" stroke-linecap="round" stroke-dasharray="30 200"/></svg><i style="width:150px;margin:0"></i></div><i style="width:85%;margin-top:26px"></i><div style="height:10px;border-radius:5px;background:#E3E7EF;margin-top:6px;overflow:hidden"><b class="prog" style="display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--electric))"></b></div>');
+  M.card = el('div', 'abs card', wB, 'opacity:0');
+  M.cardGeo = { x: 350, y: 462, w: 1220, h: 156 };
+  M.typed = el('div', 'abs', M.card, 'left:52px;top:54px;font-weight:500;font-size:40px;letter-spacing:-.015em;color:var(--ink);white-space:pre', '<span id="tx"></span><span id="caret" style="display:inline-block;width:3px;height:48px;background:var(--electric);vertical-align:-8px;margin-left:3px"></span>');
+  M.btn = el('div', 'abs', M.card, 'left:auto;right:26px;top:26px;height:104px;padding:0 44px;border-radius:22px;background:var(--electric);color:#fff;font-size:34px;letter-spacing:-.01em;display:flex;align-items:center;overflow:hidden', '<span id="ripple" style="position:absolute;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.55);left:0;top:0"></span><span style="position:relative">Create film</span>');
+  Object.assign(M.card.style, { left: '350px', top: '462px', width: '1220px', height: '156px' });
+  const br = M.btn.getBoundingClientRect();
+  M.btnW = br.width;
+  M.btnC = { x: 350 + 1220 - 26 - br.width / 2, y: 462 + 26 + 52 };
+  M.expand = el('div', 'abs', wB, 'background:var(--electric);border-radius:22px;opacity:0');
+  M.cursor = el('div', 'abs', SC.B, 'width:56px;height:56px;opacity:0', '<svg viewBox="0 0 24 24" width="56" height="56"><path d="M4 2.5l15.5 9.2-6.9 1.4 3.9 7.6-2.9 1.4-3.9-7.6-5.2 4.6z" fill="#fff" stroke="#0B0F19" stroke-width="1.4" stroke-linejoin="round"/></svg>');
+
+  // ---------- C: checklist, then a whip-pan to the formats
+  const wC = $('wC');
+  const rows = ['Every word, exactly as approved.', 'Your fonts, your colors.', 'Cut to the beat.'];
+  M.rows = rows.map((r, i) => {
+    const row = el('div', 'abs', wC, 'display:flex;align-items:center;gap:40px;font-size:76px;letter-spacing:-.03em;white-space:nowrap',
+      `<svg width="66" height="66" viewBox="0 0 64 64"><circle cx="32" cy="32" r="29" fill="none" stroke="rgba(245,247,251,.18)" stroke-width="3"/><circle class="spin" cx="32" cy="32" r="29" fill="none" stroke="var(--cyan)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="44 200"/><circle class="fillc" cx="32" cy="32" r="0" fill="url(#cg${i})"/><path class="tick" d="M19 33.5l8.5 8.5L45.5 23" fill="none" stroke="#0B0F19" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="cg${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00F0FF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs></svg><span>${r}</span>`);
+    return row;
+  });
+  const lw = Math.max(...M.rows.map((r) => r.getBoundingClientRect().width));
+  M.rowX = (W - lw) / 2; M.rowY = [380, 510, 640];
+  M.rows.forEach((r, i) => { r.style.left = `${M.rowX}px`; r.style.top = `${M.rowY[i] - 60}px`; const p = r.querySelector('.tick'); const L = p.getTotalLength(); p.style.strokeDasharray = L; p.dataset.len = L; });
+  const OX = 2400; M.OX = OX;   // the formats live to the right in the same world
+  const sizes = [[448, 252], [180, 320], [290, 290]], gap = 64;
+  let fx = OX + (W - (sizes.reduce((s, [w]) => s + w, 0) + gap * 2)) / 2;
+  M.frames = sizes.map(([w, h], i) => {
+    const f = el('div', 'frame', wC, `width:${w}px;height:${h}px;left:${fx}px;top:${700 - h}px`);
+    el('div', 'abs', f, `inset:0;width:100%;height:100%;background:radial-gradient(circle at ${[30, 70, 50][i]}% ${[70, 30, 60][i]}%,rgba(47,91,255,.6),rgba(139,92,246,.28) 45%,transparent 75%)`).classList.add('fb');
+    const words = (i === 0 ? ['Volt', 'Runner'] : ['Volt', 'Runner']).map((wd) => el('span', 'abs', f, `font-weight:700;letter-spacing:-.03em;font-size:${[46, 38, 42][i]}px;white-space:pre`, wd));
+    const bar = el('div', 'abs', f, `left:14px;right:14px;top:${h - 16}px;height:4px;border-radius:2px;background:rgba(255,255,255,.15);overflow:hidden`, '<b style="display:block;height:100%;width:0;background:var(--cyan)"></b>');
+    const r = { f, x: fx, y: 700 - h, w, h, words, bar: bar.firstChild, vertical: i > 0 };
+    fx += w + gap; return r;
+  });
+  M.frames.forEach((r) => {
+    const ws = r.words.map((n) => n.getBoundingClientRect());
+    if (r.vertical) { const lh = ws[0].height * 0.95; r.words.forEach((n, k) => { n.style.left = `${(r.w - ws[k].width) / 2}px`; n.style.top = `${r.h / 2 - lh + k * lh}px`; }); }
+    else { const tw = ws[0].width + ws[1].width + 12; n0(r, ws, tw); }
+  });
+  function n0(r, ws, tw) { r.words[0].style.left = `${(r.w - tw) / 2}px`; r.words[1].style.left = `${(r.w - tw) / 2 + ws[0].width + 12}px`; r.words.forEach((n) => { n.style.top = `${r.h / 2 - ws[0].height / 2}px`; }); }
+  M.cap = line(wC, [['One story.'], ['Every format.']], 64, 820, 0.3);
+  const cw = M.cap.widths[0] + M.cap.gap + M.cap.widths[1];
+  M.cap.spans[0].style.left = `${OX + (W - cw) / 2}px`; M.cap.spans[1].style.left = `${OX + (W - cw) / 2 + M.cap.widths[0] + M.cap.gap}px`;
+  M.cap.spans.forEach((s) => { s.style.top = '800px'; });
+  M.conv = el('div', 'abs', SC.C, 'width:16px;height:16px;border-radius:50%;background:var(--cyan);opacity:0;box-shadow:0 0 30px 8px rgba(0,240,255,.6)');
+
+  // ---------- D: lockup
+  const wD = $('wD');
+  M.mark = el('div', 'abs', wD, 'left:894px;top:292px;width:132px;height:164px', '<svg viewBox="-12 -12 436 536" width="132" height="164"><path id="mp" fill-rule="evenodd" fill="#F5F7FB" stroke="#F5F7FB" stroke-width="7" stroke-linejoin="round" d="M411 85 L0 86 L66 200 L202 203 L147 296 L105 225 L81 224 L147 340 L239 180 L79 179 L37 108 L372 108 L205 397 L188 368 L323 133 L87 133 L98 153 L280 154 L285 156 L164 367 L168 378 L205 440 Z"/><circle id="md1" cx="205.4" cy="490.9" r="0" fill="#00F0FF"/><circle id="md2" cx="205.4" cy="20.2" r="20.6" fill="#00F0FF"/></svg>');
+  M.markLen = $('mp').getTotalLength(); $('mp').style.strokeDasharray = M.markLen;
+  const name = 'FOLD Motion';
+  const probe = el('span', 'w', wD, 'font-size:124px;font-weight:700;letter-spacing:-.045em', name);
+  const pw = probe.getBoundingClientRect().width; probe.remove();
+  const R = rng(9); let lx = (W - pw) / 2;
+  M.letters = [...name].map((ch, i) => {
+    const s = el('span', 'w', wD, 'font-size:124px;font-weight:700;letter-spacing:-.045em', ch === ' ' ? '\u00a0' : ch);
+    const w = s.getBoundingClientRect().width; s.style.left = `${lx}px`; s.style.top = '520px';
+    const L = { s, x: lx, dx: (R() - .5) * 360, dy: (R() - .5) * 220, z: 1.8 + R() * 1.6, rot: (R() - .5) * 30, delay: i * 0.07 };
+    lx += w; return L;
+  });
+  M.sheen = el('div', 'abs', wD, `left:${(W - pw) / 2}px;top:520px;font-size:124px;font-weight:700;letter-spacing:-.045em;white-space:pre;line-height:1;color:transparent;-webkit-background-clip:text;background-clip:text;mix-blend-mode:screen`, name);
+  M.tag = el('span', 'w serif', wD, 'font-size:72px;top:690px', 'Ideas into motion.');
+  const tw = M.tag.getBoundingClientRect().width; M.tag.style.left = `${(W - tw) / 2}px`;
+}
+
+function show(id, on) { SC[id].style.visibility = on ? 'visible' : 'hidden'; }
+
+function frame(t) {
+  show('A', t < b(5)); show('B', t >= b(5) && t < b(15.25)); show('C', t >= b(15.25) && t < b(24)); show('D', t >= b(24));
+
+  // ================= A
+  if (t < b(5)) {
+    const A = M.A; const at = [0.25, 1.25, 2.25, 3.25, 3.25];
+    const cx = A.xs.map((x, i) => x + A.widths[i] / 2);
+    // camera follows the newest word: fast start, long tail, plus a slow drift
+    const camX = track(t, cx[0], [[1.25, cx[1], 0.7], [2.25, cx[2], 0.7], [3.25, (cx[2] + cx[3]) / 2 + 40, 0.7]]) + t * 32;
+    let logS = track(t, Math.log(3.2), [[0.25, Math.log(1.2), 1.3], [1.6, Math.log(1.0), 1.6], [3.25, Math.log(1.08), 0.5]]);
+    let camY = A.y + A.size * 0.55;
+    // push into the period until it fills the frame
+    const push = prog(t, b(4.0), b(5.0));
+    if (push > 0) {
+      const e = Math.pow(push, 2.2);
+      logS = lerp(logS, Math.log(120), e);
+      const pe = ioQuint(clamp(push * 1.4));
+      const camX2 = lerp(camX, M.dot.x, pe); camY = lerp(camY, M.dot.y, pe);
+      camera($('wA'), camX2, camY, Math.exp(logS));
+    } else camera($('wA'), camX, camY, Math.exp(logS));
+    A.spans.forEach((s, i) => {
+      const p = pop(s, b(at[i]), t, 0.92);
+      // older words step back as attention moves on
+      const next = at.findIndex((a) => a > at[i]);
+      const dim = next >= 0 && i < 3 ? lerp(1, 0.38, outExpo(prog(t, b(at[next]), b(at[next] + 0.6)))) : 1;
+      s.style.opacity = p.o * dim; s.style.transform = `scale(${p.s})`;
+    });
+    // the dot takes over from the glyph and turns into the paper of the next scene
+    { const q = pop(M.dotEl, b(3.5), t, 0.3); M.dotEl.style.opacity = q.o; M.dotEl.style.transform = `scale(${q.s})`; }
+    const paper = prog(t, b(4.55), b(4.95));
+    M.dotEl.style.background = paper > 0 ? `linear-gradient(135deg, rgba(111,139,255,${1 - paper}), rgba(139,92,246,${1 - paper})), #F3F5F9` : 'linear-gradient(135deg,#6F8BFF,var(--violet))';
+    drawBlobs(BL.A, t, camX - W / 2, 0);
+  }
+
+  // ================= B (words, selection, card, typing, click, expand)
+  if (t >= b(5) && t < b(15.25)) {
+    const B = M.B; const seq = [5.75, 7, 8, 9];
+    let k = 0; seq.forEach((s, i) => { if (t >= b(s)) k = i; });
+    const sw = k === 0 ? M.slotW[0] : lerp(M.slotW[k - 1], M.slotW[k], outExpo(prog(t, b(seq[k]), b(seq[k] + 0.6))));
+    const g = B.gap; const total = B.widths[0] + g + B.widths[1] + g + sw + g + B.widths[2] + g + B.widths[3];
+    const x0 = (W - total) / 2; const xs = [x0, x0 + B.widths[0] + g]; const slotX = xs[1] + B.widths[1] + g;
+    xs.push(slotX + sw + g, slotX + sw + g + B.widths[2] + g);
+    const at = [5.25, 5.5, 6.0, 6.25];
+    // morph out: words fly apart while the highlight becomes the card
+    const out = io(prog(t, b(9.75), b(10.5)));
+    B.spans.forEach((s, i) => {
+      const p = pop(s, b(at[i]), t);
+      const dir = i < 2 ? -1 : 1;
+      s.style.left = `${xs[i] + dir * out * 260}px`; s.style.top = `${B.y}px`;
+      s.style.opacity = p.o * (1 - out); s.style.filter = out > 0.01 ? `blur(${(out * 14).toFixed(1)}px)` : 'none';
+      s.style.transform = `scale(${p.s})`;
+    });
+    M.slot.forEach((s, i) => {
+      const inP = outExpo(prog(t, b(seq[i]), b(seq[i] + 0.5)));
+      const outP = i < 3 ? inCubic(prog(t, b(seq[i + 1]), b(seq[i + 1] + 0.3))) : 0;
+      const y = B.y + (1 - inP) * 0.9 * 104 - outP * 0.9 * 104;
+      s.style.left = `${slotX}px`; s.style.top = `${y}px`;
+      s.style.opacity = t >= b(seq[i]) && outP < 1 ? clamp(inP * 2) * (1 - outP) * (i === 3 ? 1 - out : 1) : 0;
+      s.style.filter = inP < .97 ? `blur(${((1 - inP) * 8).toFixed(1)}px)` : 'none';
+    });
+    // selection highlight sweeps over "brief", text turns white
+    const sel = outExpo(prog(t, b(9.25), b(9.7)));
+    const hb = { x: slotX - 14, y: B.y - 8, w: (M.slotW[3] + 28) * sel, h: 104 * 1.12 };
+    M.slot[3].style.color = sel > 0.5 ? '#fff' : 'var(--electric)';
+    const cg = M.cardGeo; const mo = io(prog(t, b(9.8), b(10.6)));
+    if (sel > 0) {
+      M.hl.style.opacity = 1;
+      Object.assign(M.hl.style, { left: `${lerp(hb.x, cg.x, mo)}px`, top: `${lerp(hb.y, cg.y, mo)}px`, width: `${lerp(hb.w, cg.w, mo)}px`, height: `${lerp(hb.h, cg.h, mo)}px`, borderRadius: `${lerp(14, 30, mo)}px` });
+      const c = [lerp(47, 255, mo), lerp(91, 255, mo), 255].map(Math.round);
+      M.hl.style.background = `rgb(${c})`;
+      M.hl.style.boxShadow = `0 30px 90px rgba(47,91,255,${0.2 * mo})`;
+    } else M.hl.style.opacity = 0;
+    const cardOn = prog(t, b(10.45), b(10.6));
+    M.card.style.opacity = cardOn; if (cardOn >= 1) M.hl.style.opacity = 0;
+    // typing, with the caret
+    const text = 'A 15-second launch film for Volt Runner';
+    const n = Math.round(text.length * prog(t, b(10.75), b(12.75)));
+    $('tx').textContent = text.slice(0, n);
+    $('caret').style.opacity = (t >= b(10.75) && t < b(12.75)) || Math.floor(t / 0.25) % 2 === 0 ? 1 : 0;
+    // camera: settle, slow push toward the card, then a whip-zoom to the button
+    const cx0 = W / 2, cy0 = H / 2;
+    let s = Math.exp(track(t, Math.log(1.3), [[5.25, Math.log(1.02), 1.6], [6.6, Math.log(1.16), 3.2], [9.8, Math.log(1.0), 0.8], [10.6, Math.log(1.24), 2.3], [12.85, Math.log(2.3), 0.55]], io));
+    let cx = track(t, cx0 - 160, [[5.25, cx0 - 40, 1.6], [6.6, cx0 + 70, 3.2], [9.8, cx0, 0.8], [12.85, M.btnC.x, 0.55]], io) + Math.sin(t * 1.1) * 10;
+    let cy = track(t, cy0, [[6.6, cy0 - 18, 3.2], [9.8, cy0, 0.8], [12.85, M.btnC.y, 0.55]], io) + Math.cos(t * .9) * 6;
+    camera($('wB'), cx, cy, s);
+    // ghost cards: parallax and their own life
+    camera(M.ghostLayer, cx0 + (cx - cx0) * 0.55, cy0 + (cy - cy0) * 0.55, 1 + (s - 1) * 0.5);
+    [[M.g1, 230, 250, 10.4], [M.g2, 1390, 690, 10.6]].forEach(([gEl, gx, gy, a]) => {
+      const v = outExpo(prog(t, b(a), b(a + 1)));
+      gEl.style.opacity = v * 0.9; gEl.style.filter = 'blur(4px)';
+      gEl.style.transform = `translate(${gx + Math.sin(t * 1.1) * 18}px,${gy + (1 - v) * 80 + Math.cos(t * .9) * 12}px)`;
+    });
+    M.g1.querySelectorAll('.bar').forEach((bar, i) => { bar.style.height = `${(18 + 46 * (0.5 + 0.5 * Math.sin(t * 3 + i * 1.3))) * outExpo(prog(t, b(10.6), b(11.6)))}px`; });
+    M.g2.querySelector('.spin').style.transform = `rotate(${t * 400}deg)`; M.g2.querySelector('.spin').style.transformOrigin = '22px 22px';
+    M.g2.querySelector('.prog').style.width = `${100 * prog(t, b(10.75), b(13))}%`;
+    // cursor glides in (screen space), clicks on beat 14
+    const m = io(prog(t, b(13.2), b(13.95)));
+    const btnScreen = { x: W / 2, y: H / 2 };
+    const curX = lerp(1700, btnScreen.x + 30, m), curY = lerp(1000, btnScreen.y + 20, m);
+    M.cursor.style.opacity = t >= b(13.2) ? clamp((t - b(13.2)) / 0.12) : 0;
+    const dip = t >= b(14) ? 1 - 0.18 * Math.sin(Math.PI * prog(t, b(14), b(14.35))) : 1;
+    M.cursor.style.transform = `translate(${curX}px,${curY}px) scale(${(dip * 1.4).toFixed(3)})`;
+    const press = t >= b(14) ? 1 - 0.06 * Math.sin(Math.PI * prog(t, b(14), b(14.4))) : 1;
+    M.btn.style.transform = `scale(${press})`;
+    const rp = prog(t, b(14), b(14.8)); const rip = $('ripple');
+    rip.style.opacity = t >= b(14) ? (1 - rp) * 0.9 : 0;
+    rip.style.transform = `translate(${(M.btnW / 2 - 10).toFixed(1)}px,42px) scale(${(1 + outExpo(rp) * 24).toFixed(2)})`;
+    // the button grows into the dark scene
+    const ex = prog(t, b(14.45), b(15.25));
+    if (ex > 0) {
+      const e = io(ex); const bw = M.btnW, bh = 104;
+      const w = lerp(bw, 3200, e), h = lerp(bh, 2200, e);
+      Object.assign(M.expand.style, { opacity: 1, left: `${M.btnC.x - w / 2}px`, top: `${M.btnC.y - h / 2}px`, width: `${w}px`, height: `${h}px`, borderRadius: `${lerp(22, 0, e)}px` });
+      const c = [lerp(47, 11, e), lerp(91, 15, e), lerp(255, 25, e)].map(Math.round);
+      M.expand.style.background = `rgb(${c})`;
+      M.cursor.style.opacity = 1 - clamp(ex * 3);
+    } else M.expand.style.opacity = 0;
+    drawBlobs(BL.B, t, (cx - cx0) * 0.3, (cy - cy0) * 0.3);
+  }
+
+  // ================= C (checklist → whip → formats → converge)
+  if (t >= b(15.25) && t < b(24)) {
+    const at = [16, 17, 18];
+    const rowCy = M.rowY.map((y) => y - 4);
+    let cx = track(t, W / 2 - 60, [[16, W / 2 + 60, 3], [19.75, W / 2 + M.OX - 50, 0.55], [20.3, W / 2 + M.OX + 50, 3.2]], ioQuint) + Math.sin(t * 1.1) * 10;
+    let cy = track(t, rowCy[0] + 40, [[17, rowCy[1], 0.8], [18, rowCy[2] - 20, 0.8], [19, H / 2, 0.8], [20.3, H / 2 - 10, 1]]);
+    let s = Math.exp(track(t, Math.log(1.22), [[16, Math.log(1.12), 1.5], [19, Math.log(0.98), 0.8], [20.3, Math.log(1.0), 0.6], [20.6, Math.log(1.2), 2.6]]));
+    camera($('wC'), cx, cy, s, t > b(20) ? lerp(-1.6, 1.4, io(prog(t, b(20.2), b(23.2)))) : lerp(1, -1, io(prog(t, b(15.25), b(19.75)))));
+    M.rows.forEach((row, i) => {
+      const p = pop(row, b(at[i]), t, 0.94);
+      const dim = i < 2 ? lerp(1, 0.4, outExpo(prog(t, b(at[i + 1]), b(at[i + 1] + 0.5)))) : 1;
+      const back = outExpo(prog(t, b(19), b(19.5)));
+      row.style.opacity = p.o * lerp(dim, 1, back);
+      row.style.transform = `scale(${p.s})`; row.style.transformOrigin = '0 50%';
+      const spin = row.querySelector('.spin'); const sp = prog(t, b(at[i]), b(at[i] + 0.55));
+      spin.style.transformOrigin = '32px 32px'; spin.style.transform = `rotate(${sp * 540}deg)`;
+      spin.style.opacity = t >= b(at[i]) && sp < 1 ? 1 : 0;
+      const tick = row.querySelector('.tick'); const tp = outExpo(prog(t, b(at[i] + 0.5), b(at[i] + 0.95)));
+      tick.style.strokeDashoffset = (Number(tick.dataset.len) * (1 - tp)).toFixed(2);
+      row.querySelector('.fillc').setAttribute('r', (29 * outExpo(prog(t, b(at[i] + 0.45), b(at[i] + 0.85)))).toFixed(2));
+    });
+    // formats: pop with overshoot, play their own mini film, then converge to a point
+    const conv = io(prog(t, b(23.2), b(23.95)));
+    M.frames.forEach((r, i) => {
+      const a = 20.5 + i * 0.5;
+      const v = prog(t, b(a), b(a + 0.7));
+      const over = v <= 0 ? 0 : 1 + Math.sin(v * Math.PI) * 0.12 * (1 - v);
+      const sc = outExpo(v) * over;
+      const fcx = r.x + r.w / 2, fcy = r.y + r.h / 2;
+      const tx = (M.OX + W / 2 - fcx) * conv, ty = (302 - 10 - fcy) * conv;
+      r.f.style.opacity = t >= b(a) ? 1 - prog(conv, 0.85, 1) : 0;
+      r.f.style.transform = `translate(${tx}px,${ty}px) scale(${(sc * (1 - conv * 0.97)).toFixed(4)}) rotate(${conv * (i - 1) * 25}deg)`;
+      r.f.style.filter = conv > 0.05 ? `blur(${(conv * 6).toFixed(1)}px)` : 'none';
+      r.words.forEach((n, k) => { const q = pop(n, b(a + 0.35 + k * 0.3), t, 0.85); n.style.opacity = q.o; n.style.transform = `scale(${q.s})`; });
+      r.bar.style.width = `${100 * prog(t, b(a + 0.3), b(23.2))}%`;
+      r.f.querySelector('.fb').style.transform = `translate(${Math.sin(t * 1.4 + i) * 18}px,${Math.cos(t * 1.2 + i) * 14}px) scale(1.15)`;
+    });
+    M.cap.spans.forEach((sp, i) => { const q = pop(sp, b(22 + i * 0.5), t); sp.style.opacity = q.o * (1 - conv); sp.style.transform = `scale(${q.s})`; sp.style.filter = conv > .02 ? `blur(${(conv * 12).toFixed(1)}px)` : 'none'; });
+    // the converged point, in screen space, lands where the mark's top dot will be
+    const pt = prog(t, b(23.7), b(24));
+    M.conv.style.opacity = pt > 0 ? 1 : 0;
+    M.conv.style.transform = `translate(${960 - 8}px,${302 - 8}px) scale(${lerp(2.2, 1.6, pt)})`;
+    drawBlobs(BL.C, t, (cx - W / 2 - (t > b(20) ? M.OX : 0)) * 0.3, (cy - H / 2) * 0.3);
+  }
+
+  // ================= D (lockup)
+  if (t >= b(24)) {
+    const s = Math.exp(track(t, Math.log(1.0), [[24, Math.log(1.2), 6]], io));
+    camera($('wD'), W / 2 + Math.sin(t * .8) * 12, H / 2 + Math.sin(t * .6) * 8 - 30 * io(prog(t, b(24), b(30))), s, lerp(0.8, -0.8, io(prog(t, b(24), b(30)))));
+    const draw = outExpo(prog(t, b(24.1), b(25.3))); const fill = io(prog(t, b(24.8), b(25.6)));
+    $('mp').style.strokeDashoffset = (M.markLen * (1 - draw)).toFixed(1); $('mp').style.fillOpacity = fill;
+    const bd = prog(t, b(25.3), b(25.9)); const bs = bd <= 0 ? 0 : 1 + Math.sin(bd * Math.PI) * 0.4 * (1 - bd);
+    $('md1').setAttribute('r', (20.6 * Math.min(1, outExpo(bd) * 1.05) * bs).toFixed(2));
+    // letters fly in from depth with a focus pull
+    M.letters.forEach((L) => {
+      const v = outExpo(prog(t, b(25.4 + L.delay), b(25.4 + L.delay + 1.0)));
+      const sc = lerp(L.z, 1, v);
+      L.s.style.opacity = t >= b(25.4 + L.delay) ? clamp(v * 1.6) : 0;
+      L.s.style.filter = v < .98 ? `blur(${((1 - v) * 16).toFixed(1)}px)` : 'none';
+      L.s.style.transform = `translate(${(L.dx * (1 - v)).toFixed(1)}px,${(L.dy * (1 - v)).toFixed(1)}px) rotate(${(L.rot * (1 - v)).toFixed(2)}deg) scale(${sc.toFixed(3)})`;
+    });
+    // tagline: a colour wipe from left to right
+    const wp = prog(t, b(26.75), b(27.9));
+    const edge = lerp(-20, 120, io(wp));
+    M.tag.style.webkitMaskImage = M.tag.style.maskImage = `linear-gradient(90deg,#000 ${edge - 20}%,transparent ${edge}%)`;
+    M.tag.style.transform = `translateY(${(1 - outExpo(wp)) * 20}px)`;
+    // light sweep across the name
+    const sp = prog(t, b(28.2), b(29.4));
+    const sx = lerp(-30, 130, io(sp));
+    M.sheen.style.backgroundImage = sp > 0 && sp < 1 ? `linear-gradient(100deg,transparent ${sx - 12}%,rgba(255,255,255,.9) ${sx}%,transparent ${sx + 12}%)` : 'none';
+    drawBlobs(BL.D, t, 0, 0);
+  }
+}
+window.ready = document.fonts.ready.then(() => Promise.all(['500 40px Inter', '600 40px Inter', '700 40px Inter', 'italic 400 40px Fraunces'].map((f) => document.fonts.load(f)))).then(() => { setup(); frame(0); return true; });
+window.frame = frame;
+</script></body></html>
