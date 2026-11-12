@@ -40,6 +40,8 @@
     const [rr, gg, bb] = hh < 60 ? [c, x, 0] : hh < 120 ? [x, c, 0] : hh < 180 ? [0, c, x] : hh < 240 ? [0, x, c] : hh < 300 ? [x, 0, c] : [c, 0, x];
     return [rr + m, gg + m, bb + m].map((v) => Math.round(clamp(v) * 255));
   }
+  const IMAGES = window.FOLD_IMAGES || [];
+  const unsupported = [];
   const el = (tag, css, parent, text) => { const n = document.createElement(tag); n.style.cssText = css; if (text !== undefined) n.textContent = text; parent.appendChild(n); return n; };
 
   // ---------- themes: brand colour and paper; each one's ink is the other's background
@@ -137,6 +139,45 @@
       S.letters = tmp.map((s, i) => { s.style.left = `${x}px`; s.style.top = `${S.cy - fs * 0.55}px`; const Lt = { s, x, w: widths[i], rot: (R() - .5) * 40, z: 0.1 + R() * 0.3, d: i * Math.min(0.06, 1.0 / chars.length) }; x += widths[i]; return Lt; });
       S.spans = tmp; S.size = fs;
     }
+    if (L.device === 'product') {
+      // copy builds on the left; the product sits on the right as a hero (cutout) or a tile (photo)
+      S.group = el('div', `position:absolute;left:0;top:0;width:${W}px;height:${H}px;transform-origin:${S.cx}px ${S.cy}px`, world);
+      const g = S.group; const info = IMAGES[(L.products[0] || 1) - 1];
+      if (!info) unsupported.push({ shotId: shot.shotId, element: `product ${L.products[0]}`, reason: 'The product photo was not supplied to the renderer; the copy is shown alone.' });
+      const words = []; const chunkOf = [];
+      L.beats.forEach((chunk, c) => chunk.split(/\s+/).filter(Boolean).forEach((w) => { words.push(w); chunkOf.push(c); }));
+      Object.assign(S, layoutWords(g, words, { size: 112 * k, maxW: (info ? 0.42 : 0.78) * W, maxLines: 3, cx: info ? W * 0.3 : S.cx, cy: S.cy, ink: theme.ink, serifLast: false }), { words, chunkOf });
+      S.maxCam = 1.16;                     // the camera's closest push in this shot
+      if (info) {
+        const rx = W * 0.71, ry = H * 0.5;
+        if (info.cutout) {
+          const bw = info.box.x1 - info.box.x0, bh = info.box.y1 - info.box.y0;
+          // never more than 1.25× the product's real pixels, even at the closest push
+          let dh = Math.min(560 * k, (bh * 1.25) / S.maxCam); let dw = (dh * bw) / bh;
+          if (dw > 620 * k) { dw = 620 * k; dh = (dw * bh) / bw; }
+          const sc = dh / bh;
+          const left = rx - (info.box.x0 + bw / 2) * sc, top = ry - (info.box.y0 + bh / 2) * sc;
+          const haloR = Math.max(dw, dh) * 0.95;
+          const halo = el('div', `position:absolute;left:${rx - haloR}px;top:${ry - haloR}px;width:${2 * haloR}px;height:${2 * haloR}px;border-radius:50%;background:radial-gradient(closest-side,${theme.dark ? `rgba(${tones[0]},.32)` : 'rgba(255,255,255,.95)'},${theme.dark ? `rgba(${tones[2]},.12)` : `rgba(${tones[1]},.22)`} 55%,rgba(0,0,0,0))`, g);
+          const shadow = el('div', `position:absolute;left:${rx - dw * 0.75}px;top:${ry + dh / 2 - dw * 0.06}px;width:${dw * 1.5}px;height:${dw * 0.16}px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,${theme.dark ? .55 : .3}),rgba(0,0,0,0));filter:blur(${6 * k}px)`, g);
+          const wrap = el('div', `position:absolute;left:${left}px;top:${top}px;width:${info.w * sc}px;height:${info.h * sc}px;transform-origin:${(info.box.x0 + bw / 2) * sc}px ${info.box.y1 * sc}px`, g);
+          const img = el('img', 'position:absolute;left:0;top:0;width:100%;height:100%', wrap); img.src = info.src;
+          const sheen = el('div', `position:absolute;left:0;top:0;width:100%;height:100%;-webkit-mask-image:url(${info.src});-webkit-mask-size:100% 100%;mask-image:url(${info.src});mask-size:100% 100%;mix-blend-mode:screen`, wrap);
+          const box = el('div', `position:absolute;left:${info.box.x0 * sc}px;top:${info.box.y0 * sc}px;width:${dw}px;height:${dh}px`, wrap);
+          S.prod = { kind: 'hero', info, halo, shadow, wrap, img, sheen, box };
+        } else {
+          const aspect = info.w / info.h;
+          let tw, th;
+          if (aspect < 0.9) { th = 660 * k; tw = th * 0.8; } else if (aspect > 1.15) { tw = 720 * k; th = tw * 0.75; } else { tw = th = 600 * k; }
+          const push = 1.06; let cover = Math.max(tw / info.w, th / info.h);
+          const limit = 1.25 / (S.maxCam * push);
+          if (cover > limit) { const f = limit / cover; tw *= f; th *= f; cover = limit; }
+          const tile = el('div', `position:absolute;left:${rx - tw / 2}px;top:${ry - th / 2}px;width:${tw}px;height:${th}px;border-radius:${28 * k}px;overflow:hidden;box-shadow:0 ${30 * k}px ${80 * k}px rgba(0,0,0,${theme.dark ? .45 : .18});transform-origin:50% 50%`, g);
+          const img = el('img', 'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover', tile); img.src = info.src;
+          S.prod = { kind: 'tile', info, tile, img, box: tile };
+        }
+      }
+    }
     if (['type', 'check', 'count'].includes(L.device)) {
       S.group = el('div', `position:absolute;left:0;top:0;width:${W}px;height:${H}px;transform-origin:${S.cx}px ${S.cy}px`, world);
       const g = S.group; const ink = theme.ink;
@@ -230,6 +271,7 @@
       logS = lerp(logS, Math.log(1.0 + 0.05 * Math.sin(lt * 0.9)), settle);
       return { x: x + drift, y, s: Math.exp(logS), r: roll };
     }
+    if (L.device === 'product') return { x: S.cx + drift, y: S.cy + Math.sin(lt * 0.9) * 6 * k, s: lerp(1.12, 1.0, outExpo(prog(b, 0, 1.4))) * lerp(1, 1.04, prog(lt, 0, length)), r: roll };
     if (L.device === 'type') {
       const ease = outExpo(prog(b, 0, 1.2)); const zoom = outExpo(prog(b, L.clickAt - 0.8, L.clickAt - 0.25));   // the finished line holds before the zoom
       // while the text types, the camera travels steadily (a linear push and full drift), never waiting
@@ -291,6 +333,28 @@
         // the dot sits outside the span, so it follows the punch's scale about the span's centre
         const sc = lerp(2.2, 1, v); S.dotEl.style.opacity = s.style.opacity;
         S.dotEl.style.transform = `translate(${((S.dot.x - S.cx) * (sc - 1)).toFixed(1)}px,${((S.dot.y - (S.pos[0].y + S.size * 0.6)) * (sc - 1)).toFixed(1)}px) scale(${sc})`;
+      }
+    } else if (L.device === 'product') {
+      const lastAt = L.at[L.at.length - 1]; const restore = outExpo(prog(b, lastAt + 1, lastAt + 1.6));
+      S.spans.forEach((s, i) => {
+        const c = S.chunkOf[i]; const within = S.chunkOf.slice(0, i).filter((cc) => cc === c).length;
+        const p = pop((L.at[c] + within * 0.12) * BEAT, lt); const next = L.at[c + 1];
+        const dim = next !== undefined ? lerp(1, 0.42, outExpo(prog(b, next, next + 0.6))) : 1;
+        s.style.opacity = p.o * lerp(dim, 1, restore); s.style.transform = `scale(${p.s.toFixed(4)})`;
+      });
+      const P = S.prod;
+      if (P && P.kind === 'hero') {
+        const hb = outExpo(prog(b, 0, 1.3));
+        P.wrap.style.opacity = clamp(hb * 2); P.wrap.style.filter = hb < .98 ? `blur(${((1 - hb) * 14 * k).toFixed(1)}px)` : 'none';
+        P.wrap.style.transform = `translateY(${(Math.sin(lt * 2) * 7 * k + (1 - hb) * 30 * k).toFixed(1)}px) rotate(${(Math.sin(lt * 1.4) * 1.4).toFixed(2)}deg) scale(${lerp(0.82, 1, hb).toFixed(3)})`;
+        P.halo.style.opacity = hb; P.halo.style.transform = `scale(${(lerp(0.7, 1, hb) + Math.sin(lt * 1.6) * 0.03).toFixed(3)})`;
+        P.shadow.style.opacity = hb * (0.9 - Math.sin(lt * 2) * 0.12);
+        const sw = prog(b, lastAt + 0.5, lastAt + 1.7); const sx = lerp(-40, 140, io(sw));
+        P.sheen.style.background = sw > 0 && sw < 1 ? `linear-gradient(105deg,transparent ${sx - 14}%,rgba(255,255,255,.55) ${sx}%,transparent ${sx + 14}%)` : 'none';
+      } else if (P) {
+        const v = prog(b, 0, 0.8); const sc = v <= 0 ? 0 : outExpo(v) * (1 + Math.sin(v * Math.PI) * 0.1 * (1 - v));
+        P.tile.style.opacity = v > 0 ? 1 : 0; P.tile.style.transform = `scale(${sc.toFixed(4)})`;
+        P.img.style.transform = `scale(${lerp(1, 1.06, prog(lt, 0, S.end - S.start)).toFixed(4)})`;
       }
     } else if (L.device === 'type') {
       const cardIn = outExpo(prog(b, 0, 0.8));
@@ -403,14 +467,27 @@
         L.at.forEach((a, j) => { frame(S.start + Math.min((a + 0.6) * BEAT, S.end - S.start - (S.outBeats + 0.1) * BEAT)); bad += outside([S.lead, S.items[j]].filter(Boolean)); });
       } else if (L.device === 'punch') { frame(settle); drawn = S.spans[0].textContent; bad = outside(S.spans); }
       // typed copy is checked right after typing finishes, before the camera zooms onto the button
+      else if (L.device === 'product') {
+        frame(settle); drawn = S.spans.map((s) => s.textContent).join(' '); bad = outside(S.spans) + (S.prod ? outside([S.prod.box]) : 0);
+        // never more than 1.25× the photo's real pixels, measured on screen across the shot
+        if (S.prod) {
+          let worst = 0;
+          for (let j = 1; j <= 8; j += 1) {
+            frame(S.start + ((S.end - S.start - S.outBeats * BEAT) * j) / 8 - 1e-3);
+            const r = S.prod.img.getBoundingClientRect(); worst = Math.max(worst, r.width / S.prod.info.w, r.height / S.prod.info.h);
+          }
+          S.imageScale = Number(worst.toFixed(3));
+        }
+      }
       else if (L.device === 'type') { frame(S.start + (L.at + L.typeBeats + 0.1) * BEAT); drawn = S.typedText.nodeValue; bad = outside([S.card]); }
       else if (L.device === 'check') { frame(settle); drawn = S.rows.map((r) => r.label.textContent).join(' '); bad = outside(S.spans); }
       else if (L.device === 'count') { frame(settle); drawn = S.parts.map((p) => p.textContent).join(''); bad = outside(S.spans); }
       else { frame(settle); drawn = S.letters.map((Lt) => Lt.s.textContent.replace('\u00a0', ' ')).join(''); bad = outside(S.spans); }
       const copyMatches = norm(drawn) === norm(L.device === 'type' ? L.text : L.copy);
-      return { shotId: S.shot.shotId, device: L.device, transition: L.out, theme: L.theme, copyMatches, lettersOutsideSafeArea: bad, pass: copyMatches && bad === 0 };
+      const imageOk = S.imageScale === undefined || S.imageScale <= 1.25 + 1e-3;
+      return { shotId: S.shot.shotId, device: L.device, transition: L.out, theme: L.theme, copyMatches, lettersOutsideSafeArea: bad, ...(S.imageScale !== undefined ? { imageScale: S.imageScale, imageRole: S.prod.kind } : {}), pass: copyMatches && bad === 0 && imageOk };
     });
   }
 
-  window.FOLD_RENDER = { frame, check, unsupported: [] };
+  window.FOLD_RENDER = { frame, check, unsupported };
 })();

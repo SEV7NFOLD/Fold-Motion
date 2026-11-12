@@ -121,3 +121,59 @@ test('the launch runtime draws the UI kit with exact copy and in frame', needsBr
   const scene = await openScene(timeline);
   try { for (const shot of await scene.check()) assert.ok(shot.pass, JSON.stringify(shot)); } finally { await scene.close(); }
 });
+
+// ---------- product images (synthetic PNGs, so no client photos live in the repo)
+import { deflateSync } from 'node:zlib';
+function png(width, height, pixel) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y += 1) { raw[y * (width * 4 + 1)] = 0; for (let x = 0; x < width; x += 1) { const [r, g, b, a] = pixel(x, y); raw.set([r, g, b, a], y * (width * 4 + 1) + 1 + x * 4); } }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return `data:image/png;base64,${Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]).toString('base64')}`;
+}
+// a bottle-like cutout (small, like a real low-resolution packshot) and an opaque photo
+const CUTOUT = png(150, 200, (x, y) => (x > 50 && x < 100 && y > 30 && y < 180 ? [42, 38, 144, 255] : [0, 0, 0, 0]));
+const PHOTO = png(400, 500, (x, y) => [200 + (x % 40), 120 + (y % 60), 160, 255]);
+
+async function productTimeline(size = C) {
+  const ctx = { ...size, products: [{ width: 150, height: 200 }, { width: 400, height: 500 }] };
+  const base = (await createCreativePlan('A calm skincare launch', ctx, null)).storyboard;
+  const copy = [['Relax & unwind.', 2.5], ['Aromatherapy bath oil.', 3.5, 1], ['Cleansing balm for all skin types.', 3.5, 2], ['amaranthine', 2]];
+  const storyboard = { ...base, musicMood: 'premium', shots: copy.map(([t, d, p], i) => ({ ...base.shots[Math.min(i, base.shots.length - 1)], id: `p${i}`, durationSeconds: d, onScreenCopy: t, ...(p ? { product: p } : {}) })) };
+  return (await compileCreativePlan(storyboard, { ...ctx, launch: true }, null)).timeline;
+}
+
+test('product shots come from the storyboard choice, or from the pipeline’s product image elements', async () => {
+  const { productsOf } = await import('../src/production/launch.mjs');
+  assert.deepEqual(productsOf({ spec: { elements: [] } }, { product: 2 }), [2]);
+  assert.deepEqual(productsOf({ spec: { elements: [{ type: 'image', role: 'product', product: 1 }, { type: 'image', role: 'product', product: 1 }] } }, {}), [1]);
+  assert.deepEqual(productsOf({ spec: { elements: [{ type: 'text' }] } }, {}), []);
+  const timeline = await productTimeline();
+  assert.deepEqual(timeline.launch.shots.map((s) => s.device), ['build', 'product', 'product', 'lockup']);
+  assert.deepEqual(timeline.launch.shots.slice(1, 3).map((s) => s.products), [[1], [2]]);
+  assert.equal(launchReadingCheck(timeline).pass, true);
+});
+
+test('a cutout becomes a hero and a photo a tile, never shown above 1.25× their real pixels', needsBrowser, async () => {
+  const timeline = await productTimeline();
+  const scene = await openScene(timeline, { products: [CUTOUT, PHOTO] });
+  try {
+    const checks = await scene.check();
+    for (const r of checks) assert.ok(r.pass, JSON.stringify(r));
+    const [hero, tile] = checks.filter((r) => r.device === 'product');
+    assert.equal(hero.imageRole, 'hero'); assert.equal(tile.imageRole, 'tile');
+    assert.ok(hero.imageScale <= 1.25 && tile.imageScale <= 1.25, JSON.stringify({ hero, tile }));
+    assert.ok(hero.imageScale > 1, 'the tiny cutout is drawn as large as the rule allows, not larger');
+  } finally { await scene.close(); }
+});
+
+test('a missing product photo is reported, never silently dropped', needsBrowser, async () => {
+  const timeline = await productTimeline({ ...C, width: 960, height: 540 });
+  const scene = await openScene(timeline, { products: [CUTOUT, null] });
+  try {
+    assert.ok(scene.unsupported.some((u) => /product 2/.test(u.element)), JSON.stringify(scene.unsupported));
+    for (const r of await scene.check()) assert.equal(r.copyMatches, true);
+  } finally { await scene.close(); }
+});

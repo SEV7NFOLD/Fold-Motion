@@ -20,7 +20,7 @@ import { minimumBeats } from './pacing.mjs';
 
 const DETERMINERS = new Set(['a', 'an', 'the', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'every']);
 
-export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup', 'type', 'check', 'count']);
+export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup', 'type', 'check', 'count', 'product']);
 export const LAUNCH_TRANSITIONS = Object.freeze(['fly-into', 'flip', 'whip', 'collapse']);
 // Beats each transition takes from the end of the outgoing shot (copy must be read before it starts).
 export const TRANSITION_BEATS = Object.freeze({ 'fly-into': 1, collapse: 0.75, flip: 0.5, whip: 0.25 });
@@ -139,8 +139,21 @@ export function countParts(copy) {
   return { before: text.slice(0, start), number: digits, value, after: text.slice(start + digits.length), grouped: digits.includes(',') };
 }
 
-function deviceFor(copy, index, count) {
+/**
+ * The product photos a shot shows (1-based, as in the existing pipeline): from the
+ * storyboard shot's `product` field (a director's or planner's choice), else from
+ * the shot's product image elements (the recipes guarantee one product shot).
+ */
+export function productsOf(shot, storyboardShot) {
+  const chosen = [].concat(storyboardShot?.product ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 1);
+  if (chosen.length) return [...new Set(chosen)];
+  const fromElements = (shot.spec?.elements || []).filter((e) => e.type === 'image' && e.role === 'product').map((e) => Number(e.product)).filter((n) => Number.isInteger(n) && n >= 1);
+  return [...new Set(fromElements)];
+}
+
+function deviceFor(copy, index, count, products = []) {
   const words = String(copy).trim().split(/\s+/).filter(Boolean);
+  if (products.length) return 'product';
   if (quotedText(copy)) return 'type';
   if (index === count - 1 && count > 1 && words.length <= 6) return 'lockup';
   if (index > 0 && checklistRows(copy)) return 'check';
@@ -155,7 +168,8 @@ export function planLaunch(timeline, storyboard) {
   if (!timeline.beat) throw new Error('planLaunch needs a beat-timed timeline (compile with context.beat).');
   const { bpm, framesPerBeat } = timeline.beat;
   const copies = timeline.shots.map((_, index) => storyboard.shots[index]?.onScreenCopy ?? '');
-  const devices = timeline.shots.map((_, index) => deviceFor(copies[index], index, timeline.shots.length));
+  const productLists = timeline.shots.map((shot, index) => productsOf(shot, storyboard.shots[index]));
+  const devices = timeline.shots.map((_, index) => deviceFor(copies[index], index, timeline.shots.length, productLists[index]));
   const { out, theme } = planTransitions(devices, copies);
   const shots = timeline.shots.map((shot, index) => {
     const copy = storyboard.shots[index]?.onScreenCopy ?? '';
@@ -170,7 +184,11 @@ export function planLaunch(timeline, storyboard) {
     const startAt = index === 0 ? 0.5 : 0;
     const device = devices[index];
     const BEAT = 60 / bpm;
-    if (device === 'type') {
+    if (device === 'product') {
+      // copy builds beside the product, the same way a build does
+      const beats = words.length <= 7 ? wordBeats(copy) : splitIntoBeats(copy).map((b) => b.text);
+      plan = { device: 'product', copy, products: productLists[index], beats, at: schedule(beats, bpm, beatsAvailable, { startAt: Math.max(startAt, 0.5), holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
+    } else if (device === 'type') {
       // typed at about 18 characters a second, then the cursor clicks the card's button
       const text = quotedText(copy);
       const typeBeats = Math.max(1, Math.round(((text.length / 18) / BEAT) * 2) / 2);
@@ -215,7 +233,7 @@ export function launchReadingCheck(timeline) {
   for (const shot of timeline.shots) {
     const L = shot.spec.launch; if (!L) continue;
     const length = shot.durationFrames / timeline.fps - (L.out ? TRANSITION_BEATS[L.out] * BEAT : 0);
-    const pieces = L.device === 'build' ? L.beats.map((text, i) => ({ text: L.beats.slice(0, i + 1).join(' '), from: L.at[i] * BEAT, to: length }))
+    const pieces = (L.device === 'build' || L.device === 'product') ? L.beats.map((text, i) => ({ text: L.beats.slice(0, i + 1).join(' '), from: L.at[i] * BEAT, to: length }))
       // the lead is read once, with the first item; later items need only their own reading time
       : L.device === 'swap' ? L.items.map((text, i) => ({ text: i === 0 ? [L.lead, text].filter(Boolean).join(' ') : text, from: (i === 0 && L.lead ? L.leadAt : L.at[i]) * BEAT, to: i < L.items.length - 1 ? L.at[i + 1] * BEAT : length }))
         : L.device === 'check' ? L.rows.map((text, i) => ({ text, from: L.at[i] * BEAT, to: length }))
@@ -227,9 +245,10 @@ export function launchReadingCheck(timeline) {
     for (const p of pieces) {
       // a built line is read as it grows: the newest words need their reading time, and the
       // whole line a quick skim (0.4 s + 0.03 s per character), whichever is longer
-      const newest = L.device === 'build' ? L.beats[pieces.indexOf(p)] : p.text;
+      const built = L.device === 'build' || L.device === 'product';
+      const newest = built ? L.beats[pieces.indexOf(p)] : p.text;
       // typed text is read as it types, so once typed it needs only a skim
-      const need = L.device === 'build' ? Math.max(readingSecondsFor(newest), 0.4 + 0.03 * p.text.replace(/\s+/g, '').length) : readingSecondsFor(p.text);
+      const need = built ? Math.max(readingSecondsFor(newest), 0.4 + 0.03 * p.text.replace(/\s+/g, '').length) : readingSecondsFor(p.text);
       if (p.settled !== undefined && p.to - p.settled + 1e-9 < p.hold) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.settled).toFixed(3)), needs: p.hold, finished: true });
       if (p.to - p.from + 1e-9 < need) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.from).toFixed(3)), needs: Number(need.toFixed(3)) });
     }

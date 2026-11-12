@@ -106,7 +106,7 @@ function run(command, args, { input } = {}) {
 }
 
 /** Opens the scene in Chromium and returns helpers to draw and capture it. */
-export async function openScene(timeline, { launch } = {}) {
+export async function openScene(timeline, { launch, products = [] } = {}) {
   const chromium = launch ? null : await loadPlaywright();
   const browser = launch ? await launch() : await chromium.launch({ args: ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none'] });
   const page = await browser.newPage({ viewport: { width: timeline.width, height: timeline.height }, deviceScaleFactor: 1 });
@@ -116,6 +116,29 @@ export async function openScene(timeline, { launch } = {}) {
   await page.evaluate(async (families) => {
     await Promise.all(families.map((family) => document.fonts.load(`100px "${family}"`, 'AaBb')));
   }, Object.values(fonts).map((f) => f.family));
+  // Product photos are decoded before the runtime runs, and each is measured: its size and,
+  // for photos with transparency (cutouts), the bounds of the product itself.
+  if (timeline.launch && products.some(Boolean)) {
+    await page.evaluate(async (uris) => {
+      window.FOLD_IMAGES = await Promise.all(uris.map(async (src) => {
+        if (!src) return null;
+        const img = new Image(); img.src = src; await img.decode();
+        const w = img.naturalWidth, h = img.naturalHeight; const f = Math.min(1, 320 / Math.max(w, h));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * f)); c.height = Math.max(1, Math.round(h * f));
+        const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+        const d = g.getImageData(0, 0, c.width, c.height).data;
+        let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1, clear = 0;
+        for (let y = 0; y < c.height; y += 1) for (let x = 0; x < c.width; x += 1) {
+          const a = d[(y * c.width + x) * 4 + 3];
+          if (a < 16) clear += 1; else { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+        }
+        // a cutout: a meaningful share of fully transparent pixels around the product
+        const cutout = clear / (c.width * c.height) > 0.08 && x1 >= 0;
+        const box = cutout ? { x0: x0 / f, y0: y0 / f, x1: (x1 + 1) / f, y1: (y1 + 1) / f } : { x0: 0, y0: 0, x1: w, y1: h };
+        return { src, w, h, cutout, box };
+      }));
+    }, products);
+  }
   // Launch timelines get the launch runtime; everything else the general scene runtime.
   const runtime = timeline.launch ? 'launch-runtime.js' : 'scene-runtime.js';
   await page.addScriptTag({ content: await readFile(path.join(HERE, runtime), 'utf8') });
@@ -152,6 +175,7 @@ export async function renderBrowserProject({
   music = 'auto',
   samples = Number(process.env.BROWSER_RENDER_SAMPLES) || 4,
   shutter = 0.5,
+  assets,
   outputRoot = path.resolve('output'),
   launch,
 }) {
@@ -226,7 +250,7 @@ export async function renderBrowserProject({
     else encoder.stdin.once('drain', resolve);
   });
 
-  const scene = await openScene(timeline, { launch });
+  const scene = await openScene(timeline, { launch, products: (assets?.products || []).map((p) => p?.dataUri || null) });
   let browserQA;
   const stills = [];
   try {
