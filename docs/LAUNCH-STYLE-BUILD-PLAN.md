@@ -15,9 +15,11 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
 - **Phase 1 has started.** Built and tested: the beat clock
   (`src/production/beat-clock.mjs`), pacing by mood (`src/production/pacing.mjs`),
   copy into beats (`src/production/beats.mjs`), and the silent tempo-labelled
-  export in both renderers. Next: wire the beat clock into `buildTimeline` for
-  launch films, give `composeScore` a fixed tempo, and add `beatSync` to the
-  render report.
+  export in both renderers (PR #38). Then the wiring: `context.beat` aligns
+  cuts to beats and reveals to half-beats, FOLD Score plays at the film's
+  tempo, and `beatSync` is in every beat film's render report. Offline
+  storyboards now pick their mood with `moodForBrief`. **Phase 1 is done**;
+  Phase 2's splitter is built and waits to be used by the launch devices.
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every

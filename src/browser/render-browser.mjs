@@ -15,6 +15,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluateCreativeQA, validateTimeline } from '../production/production.mjs';
+import { beatGrid, measureBeatSync, timelineBeatEvents } from '../production/beat-clock.mjs';
 import { composeScore, encodeWav, masterScore } from '../audio/fold-score.mjs';
 import { instrumentBand } from '../audio/band.mjs';
 
@@ -272,6 +273,14 @@ export async function renderBrowserProject({
     duration: { pass: Number.isFinite(actualDuration) && Math.abs(actualDuration - timeline.durationInSeconds) <= 1 / timeline.fps, expected: timeline.durationInSeconds, actual: actualDuration },
     ...(audio ? { audio } : {}),
   };
+  if (timeline.beat) {
+    productionQA.beatSync = {
+      ...measureBeatSync(beatGrid({ bpm: timeline.beat.bpm, fps: timeline.fps, durationInSeconds: timeline.durationInSeconds }), timelineBeatEvents(timeline)),
+      bpm: timeline.beat.bpm,
+      ...(score ? { scoreBpm: score.bpm } : {}),
+    };
+    if (score && score.bpm !== timeline.beat.bpm) productionQA.beatSync.pass = false;
+  }
   productionQA.pass = Object.values(productionQA).every((check) => check.pass);
 
   // Layout QA is shared with the SVG engine (the browser draws the engine's layout);

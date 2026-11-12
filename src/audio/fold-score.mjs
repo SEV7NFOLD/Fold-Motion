@@ -271,14 +271,15 @@ function reverb(left, right, { room = 0.82, damp = 0.35 } = {}) {
  * key, cues, sync }. `mood` is a MOODS key or 'auto' (from `text`).
  */
 export function composeScore(timeline, { mood = 'auto', text = '', band } = {}) {
-  const chosen = MOODS[mood] ? mood : chooseMood(text);
+  // A film with beat timing fixes the mood and tempo up front; the music follows that grid.
+  const chosen = MOODS[timeline.beat?.mood] ? timeline.beat.mood : MOODS[mood] ? mood : chooseMood(text);
   const style = MOODS[chosen];
   const random = prng(`${timeline.id || 'film'}|${chosen}`);
   const duration = timeline.totalFrames / timeline.fps;
   const length = Math.round(duration * SAMPLE_RATE);
   const cues = extractCues(timeline);
   const cuts = cues.filter((cue) => cue.type === 'cut').map((cue) => cue.time);
-  const bpm = chooseTempo(cuts, style.bpm);
+  const bpm = Number.isFinite(timeline.beat?.bpm) ? timeline.beat.bpm : chooseTempo(cuts, style.bpm);
   const beat = 60 / bpm;
   const music = new Bus(length);
   const drums = new Bus(length);

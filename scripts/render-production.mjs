@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { beatGrid, measureBeatSync, timelineBeatEvents } from '../src/production/beat-clock.mjs';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -562,14 +563,23 @@ export async function renderProductionProject({
     && manifest.frames.length === timeline.totalFrames * 2
     && encodedFrameCount === timeline.totalFrames
     && manifest.frames.every((frame) => /^[a-f\d]{64}$/i.test(frame.sha256) && frame.sizeBytes > 0);
+  // Beat-timed films: every cut and reveal must sit within a frame of the beat grid,
+  // and the score must play at the film's tempo.
+  const beatSync = timeline.beat ? {
+    ...measureBeatSync(beatGrid({ bpm: timeline.beat.bpm, fps: timeline.fps, durationInSeconds: timeline.durationInSeconds }), timelineBeatEvents(timeline)),
+    bpm: timeline.beat.bpm,
+    ...(score ? { scoreBpm: score.bpm } : {}),
+  } : null;
+  if (beatSync && score && score.bpm !== timeline.beat.bpm) beatSync.pass = false;
   const productionQA = {
-    pass: stream?.width === output.width
+    pass: (beatSync ? beatSync.pass : true) && stream?.width === output.width
       && stream?.height === output.height
       && Math.abs(actualRate - expectedRate) < 0.01
       && Math.abs(actualDuration - timeline.durationInSeconds) <= 1 / timeline.fps
       && frameIntegrityPass
       && (audioQA ? audioQA.pass : true),
     ...(audioQA ? { audio: audioQA } : {}),
+    ...(beatSync ? { beatSync } : {}),
     dimensions: {
       pass: stream?.width === output.width && stream?.height === output.height,
       expected: { width: output.width, height: output.height },
