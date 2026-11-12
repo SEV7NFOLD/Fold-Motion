@@ -25,6 +25,9 @@ video. It is the deterministic heart of FOLD Motion: protect it.
 - Check FFmpeg and FFprobe exist before promising a render; report missing
   tools plainly.
 - Never switch render backends or bypass ffprobe validation silently.
+  The experimental browser renderer (`npm run render:browser`) is a separate,
+  explicitly chosen backend: its runs end in `-browser`, its report says
+  `experimental: true`, and it lists anything it can't draw under `unsupported`.
 - Keep `renderShotSvg` a pure function of the shot and `progress`. No
   `Date.now()`, no unseeded randomness, no accumulated state. Identical input
   must give identical frames (compare frame hashes with

@@ -96,6 +96,17 @@ both. A sleeping free Render instance takes about a minute to wake; the Studio
 starts waking it when it opens, and if a render still times out, press Render
 again.
 
+## Experimental browser renderer
+
+`npm run render:browser -- --input request.json` renders a film in headless
+Chromium instead of SVG: the same layout and copy, plus 3D camera moves,
+per-letter motion, glow, light sweeps, a real 3D fold transition and motion
+blur. `npm run compare -- --brief "Your brief"` renders one film both ways
+and stacks them into a single video in `output/compare/`. It's opt-in,
+about 10x slower than the SVG engine, and doesn't draw product photos or
+uploaded brand fonts yet. Setup: `npm install`, then
+`npx playwright install chromium`.
+
 ## The v2 engine
 
 Gemini directs each shot by choosing a recipe (`title-reveal`, `statement`,

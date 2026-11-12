@@ -10,12 +10,17 @@
     "qa:validate": "node scripts/qa/validate-production.mjs",
     "render:scene-01": "node scripts/render-scene-01.mjs",
     "start": "node scripts/serve.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "render:browser": "node scripts/render-browser.mjs",
+    "compare": "node --expose-gc scripts/compare-renderers.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@resvg/resvg-js": "2.6.2"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
   }
 }
