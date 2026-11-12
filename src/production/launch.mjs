@@ -96,10 +96,19 @@ export function wordBeats(copy) {
   return beats;
 }
 
+/** Beats a built line needs after its last piece lands: the piece's reading time, or a skim of the whole line. */
+function builtLastBeats(beats, bpm) {
+  const chars = beats.join('').replace(/\s+/g, '').length;
+  const skim = Math.ceil(((0.4 + 0.03 * chars) / (60 / bpm)) * 2 - 1e-9) / 2;
+  return Math.max(minimumBeats(beats[beats.length - 1], bpm), skim);
+}
+
 /** Beat offsets (from the shot start) for a run of copy pieces that must fit in `available` beats. */
-function schedule(pieces, bpm, available, { startAt = 0.5, holdOf } = {}) {
+function schedule(pieces, bpm, available, { startAt = 0.5, holdOf, lastReadBeats } = {}) {
   const holds = pieces.map((piece, i) => Math.max(1, holdOf(piece, i)));
-  const lastRead = minimumBeats(pieces[pieces.length - 1], bpm);
+  // the time reserved after the last piece matches what the reading check asks of it,
+  // so a longer shot can only make reading easier
+  const lastRead = lastReadBeats ?? minimumBeats(pieces[pieces.length - 1], bpm);
   const room = Math.max(0.5 * (pieces.length - 1), available - startAt - lastRead);
   const used = holds.slice(0, -1).reduce((s, h) => s + h, 0);
   const scale = used > room && used > 0 ? room / used : 1;
@@ -144,9 +153,9 @@ export function countParts(copy) {
  * storyboard shot's `product` field (a director's or planner's choice), else from
  * the shot's product image elements (the recipes guarantee one product shot).
  */
-export function productsOf(shot, storyboardShot) {
+export function productsOf(shot, storyboardShot, { useElements = true } = {}) {
   const chosen = [].concat(storyboardShot?.product ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 1);
-  if (chosen.length) return [...new Set(chosen)];
+  if (chosen.length || !useElements) return [...new Set(chosen)];
   const fromElements = (shot.spec?.elements || []).filter((e) => e.type === 'image' && e.role === 'product').map((e) => Number(e.product)).filter((n) => Number.isInteger(n) && n >= 1);
   return [...new Set(fromElements)];
 }
@@ -168,7 +177,9 @@ export function planLaunch(timeline, storyboard) {
   if (!timeline.beat) throw new Error('planLaunch needs a beat-timed timeline (compile with context.beat).');
   const { bpm, framesPerBeat } = timeline.beat;
   const copies = timeline.shots.map((_, index) => storyboard.shots[index]?.onScreenCopy ?? '');
-  const productLists = timeline.shots.map((shot, index) => productsOf(shot, storyboard.shots[index]));
+  // when the storyboard names its product shots, those choices are final
+  const useElements = !storyboard.shots.some((s) => Number(s.product) >= 1);
+  const productLists = timeline.shots.map((shot, index) => productsOf(shot, storyboard.shots[index], { useElements }));
   const devices = timeline.shots.map((_, index) => deviceFor(copies[index], index, timeline.shots.length, productLists[index]));
   const { out, theme } = planTransitions(devices, copies);
   const shots = timeline.shots.map((shot, index) => {
@@ -187,7 +198,7 @@ export function planLaunch(timeline, storyboard) {
     if (device === 'product') {
       // copy builds beside the product, the same way a build does
       const beats = words.length <= 7 ? wordBeats(copy) : splitIntoBeats(copy).map((b) => b.text);
-      plan = { device: 'product', copy, products: productLists[index], beats, at: schedule(beats, bpm, beatsAvailable, { startAt: Math.max(startAt, 0.5), holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
+      plan = { device: 'product', copy, products: productLists[index], beats, at: schedule(beats, bpm, beatsAvailable, { startAt: Math.max(startAt, 0.5), holdOf: (p) => minimumBeats(p, bpm) / 2, lastReadBeats: builtLastBeats(beats, bpm) }) };
     } else if (device === 'type') {
       // typed at about 18 characters a second, then the cursor clicks the card's button
       const text = quotedText(copy);
@@ -213,7 +224,7 @@ export function planLaunch(timeline, storyboard) {
       // short lines build word by word; longer ones in short phrases
       const beats = words.length <= 7 ? wordBeats(copy) : splitIntoBeats(copy).map((b) => b.text);
       // a built line stays on screen, so each beat needs only part of its reading time before the next arrives
-      plan = { device: 'build', copy, beats, at: schedule(beats, bpm, beatsAvailable, { startAt, holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
+      plan = { device: 'build', copy, beats, at: schedule(beats, bpm, beatsAvailable, { startAt, holdOf: (p) => minimumBeats(p, bpm) / 2, lastReadBeats: builtLastBeats(beats, bpm) }) };
     }
     Object.assign(plan, { out: out[index], theme: theme[index] });
     shot.spec.launch = plan;
@@ -256,3 +267,101 @@ export function launchReadingCheck(timeline) {
   return { pass: failures.length === 0, failures };
 }
 function readingSecondsFor(text) { const v = String(text).replace(/\s+/g, '').length; return v ? 0.3 + 0.06 * v : 0; }
+
+/**
+ * Launch pacing for a storyboard (docs/LAUNCH-STYLE-BUILD-PLAN.md, Phases 1b and 7).
+ *
+ * - Product numbers must name uploaded photos; when photos are uploaded and no
+ *   shot uses one, middle shots get them.
+ * - Each shot's minimum length is found with the real planner and reading check:
+ *   plan, check, lengthen only the failing shots by half a beat, repeat.
+ * - Spare time is shared in proportion to need, in whole beats, so cuts already
+ *   sit on the beat. A requested total (`keepTotal`) stays exact; when the copy
+ *   can't fit it, the repairs say so instead of hiding it.
+ * Mutates storyboard shot durations (and products); returns repair notes.
+ */
+export function fitLaunchStoryboard(storyboard, context, { bpm, keepTotal = false } = {}) {
+  const repairs = []; const fps = context.fps; const shots = storyboard.shots;
+  const count = context.products?.length || 0;
+  for (const shot of shots) {
+    if (shot.product === undefined) continue;
+    const n = Number(shot.product);
+    if (!(Number.isInteger(n) && n >= 1 && n <= count)) { repairs.push(`${shot.id}: product ${shot.product} is not an uploaded photo; removed.`); delete shot.product; } else shot.product = n;
+  }
+  if (count && !shots.some((s) => s.product)) {
+    // photos go to plain lines (lists, checklists, quotes and numbers have devices of their own);
+    // a photo whose file name appears in a line goes there first, the rest in order
+    const middle = shots.map((s, i) => i).filter((i) => i > 0 && i < shots.length - 1);
+    const plain = (i) => !listParts(shots[i].onScreenCopy) && !checklistRows(shots[i].onScreenCopy) && !quotedText(shots[i].onScreenCopy) && !countParts(shots[i].onScreenCopy);
+    let free = middle.filter(plain); if (!free.length) free = middle.length ? [middle[0]] : [0];
+    const photos = Array.from({ length: count }, (_, k) => k + 1); const placed = new Map();
+    for (const n of photos) {
+      const words = String(context.products[n - 1]?.name || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4);
+      const hit = free.find((i) => !placed.has(i) && words.some((w) => shots[i].onScreenCopy.toLowerCase().includes(w)));
+      if (hit !== undefined) placed.set(hit, n);
+    }
+    for (const n of photos) { if ([...placed.values()].includes(n)) continue; const i = free.find((j) => !placed.has(j)); if (i === undefined) { repairs.push(`Product photo ${n} is not used: no plain line was left for it.`); continue; } placed.set(i, n); }
+    for (const [i, n] of [...placed].sort((a, b) => a[0] - b[0])) { shots[i].product = n; repairs.push(`${shots[i].id} shows product photo ${n}.`); }
+  }
+  const BEAT = 60 / bpm; const fpb = (60 * fps) / bpm;
+  let beats = shots.map(() => 2);
+  for (let iteration = 0; iteration < 120; iteration += 1) {
+    const timeline = { fps, beat: { bpm, framesPerBeat: fpb }, shots: shots.map((s, i) => ({ shotId: s.id, durationFrames: Math.round(beats[i] * fpb), spec: { elements: [] } })) };
+    planLaunch(timeline, storyboard);
+    const failing = new Set(launchReadingCheck(timeline).failures.map((f) => f.shotId));
+    // a typed prompt's click must land before the cut
+    timeline.shots.forEach((shot, i) => { const L = shot.spec.launch; if (L.device === 'type' && L.clickAt + 0.5 > beats[i] - (L.out ? TRANSITION_BEATS[L.out] : 0)) failing.add(shot.shotId); });
+    if (!failing.size) break;
+    beats = beats.map((b, i) => (failing.has(shots[i].id) ? b + 0.5 : b));
+  }
+  // whole beats, and never under a second; the end card holds on purpose (two extra beats)
+  const need = beats.map((b, i) => Math.max(Math.ceil(b), Math.ceil(1 / BEAT)) + (i === shots.length - 1 ? 2 : 0));
+  const current = shots.reduce((s, shot) => s + shot.durationSeconds, 0);
+  const needSeconds = need.reduce((s, b) => s + b, 0) * BEAT;
+  // a free length is a whole number of beats; only a requested length can leave a remainder on the last shot
+  const totalBeats = keepTotal ? Math.floor(current / BEAT + 1e-9) : Math.ceil(Math.max(current, needSeconds * 1.1) / BEAT - 1e-9);
+  const totalSeconds = keepTotal ? current : totalBeats * BEAT;
+  let out;
+  if (need.reduce((s, b) => s + b, 0) > totalBeats) {
+    repairs.push(`The copy needs about ${needSeconds.toFixed(1)}s to be read at ${bpm} BPM, but the film is ${totalSeconds.toFixed(1)}s; some lines will be rushed and QA will flag them. Shorten the copy or lengthen the film.`);
+    const sum = need.reduce((s, b) => s + b, 0);
+    out = need.map((b) => Math.max(1, Math.floor((b * totalBeats) / sum)));
+  } else {
+    const spare = totalBeats - need.reduce((s, b) => s + b, 0); const sum = need.reduce((s, b) => s + b, 0);
+    out = need.map((b) => b + Math.floor((spare * b) / sum));
+  }
+  let left = totalBeats - out.reduce((s, b) => s + b, 0);
+  for (let i = 0; left > 0; i = (i + 1) % out.length, left -= 1) out[i] += 1;
+  // frames: whole beats, with any remainder of a requested total on the last shot
+  const frames = out.map((b) => Math.round(b * fpb));
+  frames[frames.length - 1] += Math.round(totalSeconds * fps) - frames.reduce((s, f) => s + f, 0);
+  shots.forEach((shot, i) => { shot.durationSeconds = frames[i] / fps; });
+  return repairs;
+}
+
+/**
+ * An offline launch storyboard (no AI provider): the brief's own sentences as
+ * shots, skipping sentences that are instructions about the film, and closing on
+ * the brand the instruction names ("A calm launch film for amaranthine skincare"
+ * -> "amaranthine skincare"). `base` is the offline planner's storyboard, used
+ * as the template for every other field.
+ */
+export function launchStoryboardFromBrief(prompt, base) {
+  // a closing quotation mark ends a sentence too, so a quoted prompt stays on its own
+  const sentences = String(prompt).match(/[“"][^”"]+[”"]|[^.!?\n“"]+[.!?]*/g)?.map((x) => x.trim()).filter(Boolean) || [];
+  const instruction = /^(?:make|create|build|write|generate|produce|an?|the)\b.*\b(?:film|video|spot|ad|advert|promo|reel|launch)\b/i;
+  const brand = sentences.map((x) => /\bfor\s+(.+?)[.!?]*$/i.exec(x)).find((m, i) => m && instruction.test(sentences[i]))?.[1];
+  // runs of two to four very short sentences ("Exact fit. Grip. Glow.") become one checklist line
+  const lines = [];
+  for (const x of sentences.filter((y) => !instruction.test(y))) {
+    const short = /[.!?]$/.test(x) && x.split(/\s+/).length <= 2 && !/^[“"]/.test(x);
+    const prev = lines[lines.length - 1];
+    if (short && prev && prev.short && prev.parts.length < 4) prev.parts.push(x); else lines.push({ parts: [x], short });
+  }
+  const merged = lines.map((l) => l.parts.join(' '));
+  const closing = brand && brand.split(/\s+/).length <= 6 ? brand : null;
+  const copy = [...merged, ...(closing ? [closing] : [])].slice(0, 7);
+  if (copy.length < 2) return base;
+  const template = base.shots;
+  return { ...base, shots: copy.map((text, i) => ({ ...template[Math.min(i, template.length - 1)], id: `shot-${String(i + 1).padStart(2, '0')}`, durationSeconds: 2.5, onScreenCopy: text })) };
+}

@@ -1,7 +1,7 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { alignDurations, beatGrid, chooseBeatTempo, snapReveals } from './beat-clock.mjs';
 import { moodForBrief } from './pacing.mjs';
-import { planLaunch } from './launch.mjs';
+import { fitLaunchStoryboard, launchStoryboardFromBrief, planLaunch } from './launch.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
@@ -963,7 +963,7 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   const onScreenText = provider && !normalizedContext.headline && !normalizedContext.subheadline ? onScreenTextFromBrief(prompt) : [];
   let generatedStoryboard = provider?.generateStoryboard
     ? await provider.generateStoryboard(prompt, normalizedContext)
-    : buildMockStoryboard(prompt, normalizedContext);
+    : (normalizedContext.launch ? launchStoryboardFromBrief(prompt, buildMockStoryboard(prompt, normalizedContext)) : buildMockStoryboard(prompt, normalizedContext));
   // The end card's text belongs on the end card. If the model reused it earlier in
   // the film, it gets one rewrite with a note saying exactly what to change.
   // Two problems get one rewrite with a note saying exactly what to change: shots
@@ -1069,6 +1069,11 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   if (beats && storyboard.shots.length >= beats.beats.length && Math.abs(beats.total - normalizedContext.durationInSeconds) < 0.05) {
     fitShotsToBeats(storyboard, beats.beats, normalizedContext.fps);
     if (provider) repairs.push(`Cuts land on the brief's beats (${beats.beats.map((seconds) => `${Number(seconds.toFixed(2))}s`).join(', ')}): ${storyboard.shots.map((shot) => `${Number(shot.durationSeconds.toFixed(2))}s`).join(', ')}.`);
+  }
+  // Launch films: every shot gets the time its copy and device need, on whole beats.
+  if (normalizedContext.launch) {
+    const bpm = chooseBeatTempo(MOOD_OPTIONS.includes(storyboard.musicMood) ? storyboard.musicMood : 'premium', normalizedContext.fps);
+    repairs.push(...fitLaunchStoryboard(storyboard, normalizedContext, { bpm, keepTotal: requestedSeconds !== undefined }));
   }
   return {
     storyboard,

@@ -1,6 +1,6 @@
 import { STYLE_KITS } from '../production/style-kits.mjs';
 import { EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
-import { SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
+import { LAUNCH_DIRECTOR, SHOT_COMPILER, STORYBOARD_DIRECTOR } from './prompts/index.mjs';
 import { MOTION_OPTIONS } from '../production/motion.mjs';
 import { RECIPE_OPTIONS, TEXT_CASE_OPTIONS, TRANSITION_OPTIONS } from '../production/recipes.mjs';
 
@@ -464,6 +464,8 @@ export class GeminiAIProvider extends BaseAIProvider {
         purpose: { type: 'STRING' },
         durationSeconds: { type: 'NUMBER' },
         onScreenCopy: { type: 'STRING' },
+        // launch films: the uploaded photo (1-based) this shot shows
+        product: { type: 'INTEGER' },
         mainVisual: { type: 'STRING' },
         composition: { type: 'STRING' },
         cameraBehavior: { type: 'STRING' },
@@ -513,6 +515,7 @@ export class GeminiAIProvider extends BaseAIProvider {
       [
         'Create a concise FOLD Motion creative storyboard and acceptance criteria as JSON. Return only a raw JSON value with no markdown, conversational preamble, or explanatory text.',
         STORYBOARD_DIRECTOR,
+        ...(context.launch ? [LAUNCH_DIRECTOR] : []),
         'Include 4 to 8 purposeful shots (3 for films under 6 seconds). Keep every shot duration positive and include copy, camera/motion behavior, transitions, and shot acceptance criteria.',
         'When the production context contains a headline or subheadline, preserve that text exactly in the storyboard copy. Do not replace supplied copy with generic phrases.',
         'Use the supplied primary and accent colors throughout the visual direction and acceptance criteria.',
