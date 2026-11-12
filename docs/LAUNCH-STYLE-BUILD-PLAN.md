@@ -10,6 +10,39 @@ phase lists what to build, where, and the tests that prove it is done. Do
 not start a phase until the previous one passes. Follow `AGENTS.md` and
 `skills/fold-motion/SKILL.md` throughout.
 
+## Status
+
+- **Phase 0 is done.** The director approved golden film v2 on the second
+  round (v1 scored 4/10). It lives in `assets/benchmarks/launch/` with its
+  contact sheet, scene file and sound script. Every phase below is measured
+  against it.
+
+## What the references taught us
+
+Studying the four references frame by frame, and measuring them, showed why
+v1 failed and v2 worked. These rules outrank anything else in this plan.
+
+1. **The camera animates; words pop.** Words appear within 2–3 frames with a
+   small scale settle. The camera does the travelling: open huge and zoom
+   out, chase the newest word (fast start, long tail), whip-pan, push in
+   until type crops. Never give every element the same entrance.
+2. **Nothing is ever still.** Every hold keeps a slow camera drift, zoom or
+   roll, and UI keeps living (counters, charts, spinners, typing).
+3. **Continuity, not cuts.** Each scene is born from an element of the one
+   before: fly into a period until it becomes the next background, a text
+   selection that morphs into a card, a button that grows into the next
+   scene, a whip-pan through one shared world, shapes that collapse into
+   the logo's dot.
+4. **Contrast.** Tiny type next to frame-filling type; slow drifts broken by
+   fast whips; calm holds, then bursts.
+5. **Depth.** Letters fly in from depth with a focus pull; parallax layers;
+   out-of-focus UI behind the type.
+6. **Micro-detail.** Older words fade to grey as attention moves; selection
+   highlights; colour wipes; spin-then-tick checks.
+7. **Sound is half the film.** A continuous musical bed from real
+   instruments, a groove with a shape (build, drop to silence, impact), and
+   a sound on most motion peaks.
+
 ## What "reference grade" means
 
 The four reference films (a SaaS text animation, the Bleap fintech launch,
@@ -18,8 +51,16 @@ Do **not** copy their frames, layouts or wording: those designs belong to
 their owners, and a copy would only fit their briefs. Match their *quality*,
 measured by the criteria below. A film is reference grade when all hold.
 
+Targets marked *measured* come from analysing the four references and the
+approved benchmark (v1 → v2 shown where useful).
+
 | # | Criterion | How it's checked |
 | --- | --- | --- |
+| M1 | Near-still frames under 25% (*measured*: references 7–28%; v1 76% → v2 13%) | `stillShare`: frame-difference energy on a 160×90 greyscale render |
+| M2 | Mean motion energy 2.3 or more, no still stretch over 0.5 s (*measured*: v1 1.36 → v2 2.38) | `motionEnergy` on the same render |
+| M3 | 70% or more of motion peaks have an audio onset within 2 frames (*measured*: Google countdown 75%; v2 73%) | `picSync` |
+| M4 | Stereo correlation 0.90 or lower; midrange (250 Hz–2 kHz) 12–22% of energy (*measured*: v2 0.86, 17.6%) | `stereoWidth`, `bandBalance` |
+| M5 | Loudness −13 LUFS ±1, true peak −1.5 dBFS or lower | `ebur128` |
 | 1 | Every cut and every word entrance lands on a beat or half-beat | `beatSync` QA: 100% of events within 1 frame of the grid |
 | 2 | Never more than 6 words of new copy on screen at once; most beats show 1–3 | `beatDensity` QA over the timeline |
 | 3 | Copy across all beats concatenates to the approved copy exactly | `copyIntegrity` QA (extends repair checks) |
@@ -148,6 +189,24 @@ pure function of the frame.
 - Tests per device: frames are deterministic; the settled frame matches the
   layout; entrances start on beat frames.
 
+### Phase 4b: Camera and continuity
+
+The rules that took v1 to v2 (see *What the references taught us*).
+
+- `src/production/camera.mjs`: a camera per shot (world point at screen
+  centre, scale, roll) built from eased keys, plus a continuous drift so no
+  shot ever settles. Zooms ease in log-scale.
+- Continuity transitions as shot-to-shot links in the timeline:
+  `fly-into` (camera dives into an element until it becomes the next
+  background), `morph` (one element's box, radius and colour become the next
+  shot's element), `grow` (a UI element expands into the next scene),
+  `travel` (whip-pan through one world), `collapse` (elements converge into
+  a point that the next shot uses).
+- Motion blur by sub-frame sampling (4 samples, 180° shutter) for whips and
+  zooms; deterministic.
+- Tests: M1 and M2 pass for every eval brief; the benchmark scene's camera
+  moves can be expressed with the new camera keys.
+
 ### Phase 5: Soft light and depth
 
 - Gradient blob field: 2–3 large ellipses, heavily blurred, in the accent
@@ -157,6 +216,26 @@ pure function of the frame.
 - Performance: blur is the costly part. Cache static blob layers per shot and
   keep a Full HD frame under the current render time per frame +50%.
 - Tests: render time budget test; the blob field is deterministic.
+
+### Phase 5b: Sound design
+
+FOLD Score already ships real CC0 instruments; v1 sounded robotic because of
+how they were arranged. Rebuild the arrangement, following
+`assets/benchmarks/launch/source/score.py`:
+
+- A continuous string bed per scene chord (cellos and violins, slow attack,
+  wide), a piano arpeggio pulse, pulsing bass ducked under the kick.
+- A groove with a shape: starts on the first strong scene change, thins
+  while UI is busy, drops to silence before the hero action, impacts on the
+  reveal, drops out under a cymbal swell before the lockup, lands on a hit.
+- Humanised timing (±6 ms) and velocity (±15%) on everything except the
+  hits that mark visual events.
+- Sound effects from the timeline's events: tuned plucks on word pops,
+  flicks on swaps, keyboard ticks, two-part clicks, whooshes panned with the
+  camera, dings on checks, thumps on tile pops, an arpeggio on the logo.
+- Reverb send, stereo width, a master EQ (trim lows, lift mids), and
+  loudness to −13 LUFS with a true-peak limiter.
+- Tests: M3, M4 and M5 pass; every effect sits within one frame of its event.
 
 ### Phase 6: UI kit
 
@@ -169,6 +248,56 @@ checkbox list, counter, and a prompt/search bar with a caret.
 - Devices `chip`, `click`, `count` and `check` use the kit.
 - Tests: each component renders at 16:9, 9:16 and 1:1; counters only show
   numbers present in the copy.
+
+### Phase 6b: Product images
+
+Images join the motion system; they never sit still and they are never
+altered. FOLD Motion's promise covers products as well as words: the
+product in the film is the product in the photo.
+
+**Each upload gets a role.**
+- *Cutout*: a transparent PNG, or a photo on a plain background that can be
+  keyed cleanly (uniform corners and edges). The hero object.
+- *Photo*: lifestyle or full-bleed shots. These live in rounded-square tiles
+  (1:1, or 4:5 in vertical films).
+- *Detail*: tight crops cut from a high-resolution photo (label, texture,
+  sole) to give a film several shots from one image.
+
+**Motion per role.**
+- `hero` (cutout): floats with a soft contact shadow, a slow 2.5D tilt
+  (±6°), parallax against the type, a light sweep masked to its shape, and a
+  focus pull on entry.
+- `tile` (photo): pops with a small overshoot or morphs out of a card;
+  inside the tile, a slow push toward the image's focal point, so the
+  picture is never still.
+- `image-swap`: one tile cycles product angles or colourways on the beat,
+  like the word swap.
+- `grid`: the camera travels through a grid of image tiles and type cells,
+  as in the Bleap reference.
+- `inline`: a small product chip inside a sentence ("Meet [product] Volt
+  Runner"); the camera can then dive into it to open the next shot.
+- `dive`: the camera flies into a tile until the photo fills the frame.
+- `formats`: the product plays inside the 16:9, 9:16 and 1:1 frames.
+
+**Rules.**
+- Uniform scaling only; no stretching, recolouring of the product, or
+  generated product imagery.
+- Each image gets a focal box (detected from detail and contrast, or set by
+  the director). Crops must keep the whole focal box inside the tile with a
+  margin.
+- Never upscale more than 1.25×; detail crops need the source pixels to
+  back them. If an image is too small, it gets a smaller role.
+- Text never sits on a busy part of an image without a scrim; contrast stays
+  4.5:1.
+- The light field takes its colours from the image's dominant colours (the
+  existing palette grading), so photos and background belong together.
+- Background keying runs only when the background is plain enough to key
+  cleanly; anything else stays a photo. Nothing is cut out silently with a
+  guess.
+
+**Tests:** role detection on a fixture set (cutouts, studio shots,
+lifestyle, low-resolution); focal-box crop safety; no upscaling beyond
+1.25×; text contrast over images; motion targets M1 and M2 still pass.
 
 ### Phase 7: Planner
 
@@ -205,7 +334,8 @@ score is advice for the loop, not a replacement for the director's approval.
 ### Phase 9: Eval set
 
 Ten fixed briefs covering the range: a SaaS feature launch, a fintech app, a
-developer tool, a consumer app, a hardware product with a photo, an event, a
+developer tool, a consumer app, a hardware product with photos (a cutout and
+a lifestyle shot), an event, a
 price announcement, a vertical social cut, a light-palette brand and a
 dark-palette brand.
 
