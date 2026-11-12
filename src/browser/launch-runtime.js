@@ -102,7 +102,7 @@
     const L = shot.launch; const theme = THEME[L.theme || 'brand'];
     const scene = el('div', `position:absolute;inset:0;overflow:hidden;background:${theme.bg};visibility:hidden`, root);
     const lights = tones.map((c, i) => {
-      const a = (theme.dark ? [.30, .38, .28] : [.20, .16, .19])[i];
+      const a = (theme.dark ? [.30, .38, .28] : [.30, .24, .28])[i];
       return el('div', `position:absolute;left:0;top:0;width:${1500 * k}px;height:${1500 * k}px;border-radius:50%;background:radial-gradient(closest-side,rgba(${c},${a}),rgba(${c},${a * .45}) 45%,rgba(${c},0))`, scene);
     });
     const world = el('div', `position:absolute;left:0;top:0;width:${W}px;height:${H}px;transform-origin:0 0`, scene);
@@ -136,6 +136,61 @@
       let x = S.cx - total / 2;
       S.letters = tmp.map((s, i) => { s.style.left = `${x}px`; s.style.top = `${S.cy - fs * 0.55}px`; const Lt = { s, x, w: widths[i], rot: (R() - .5) * 40, z: 0.1 + R() * 0.3, d: i * Math.min(0.06, 1.0 / chars.length) }; x += widths[i]; return Lt; });
       S.spans = tmp; S.size = fs;
+    }
+    if (['type', 'check', 'count'].includes(L.device)) {
+      S.group = el('div', `position:absolute;left:0;top:0;width:${W}px;height:${H}px;transform-origin:${S.cx}px ${S.cy}px`, world);
+      const g = S.group; const ink = theme.ink;
+      if (L.device === 'type') {
+        let fs = 54 * k; const pad = 60 * k, btn = 124 * k, gapB = 30 * k;
+        const probe = el('span', `position:absolute;white-space:pre;font-family:${SANS};font-weight:500;font-size:${fs}px;letter-spacing:-.015em`, g, L.text);
+        let tw = probe.getBoundingClientRect().width; probe.remove();
+        const maxText = 1500 * k - pad - btn - gapB * 2;
+        if (tw > maxText) { fs *= maxText / tw; tw = maxText; }
+        const cw = tw + pad + btn + gapB * 2 + 3 * k, ch = 184 * k;
+        const x0 = S.cx - cw / 2, y0 = S.cy - ch / 2;
+        const cardBg = theme.dark ? 'rgba(255,255,255,0.075)' : '#FFFFFF';
+        const cardEdge = theme.dark ? 'inset 0 0 0 1px rgba(255,255,255,0.16)' : `0 30px 90px rgba(${tones[0]},0.22), 0 1px 0 rgba(0,0,0,0.05)`;
+        S.card = el('div', `position:absolute;left:${x0}px;top:${y0}px;width:${cw}px;height:${ch}px;border-radius:${30 * k}px;background:${cardBg};box-shadow:${cardEdge};transform-origin:50% 50%`, g);
+        S.typed = el('span', `position:absolute;left:${pad}px;top:${(ch - fs * 1.15) / 2}px;white-space:pre;font-family:${SANS};font-weight:500;font-size:${fs}px;letter-spacing:-.015em;color:${ink};line-height:1.15`, S.card, '');
+        S.caret = el('span', `display:inline-block;width:${3 * k}px;height:${fs * 1.1}px;background:${accent};vertical-align:${-fs * 0.18}px;margin-left:${3 * k}px`, S.typed);
+        S.typedText = document.createTextNode(''); S.typed.insertBefore(S.typedText, S.caret);
+        S.btn = el('div', `position:absolute;right:${gapB}px;top:${(ch - btn) / 2}px;width:${btn}px;height:${btn}px;border-radius:${24 * k}px;background:${accentGradient};overflow:hidden;transform-origin:50% 50%`, S.card);
+        S.btn.innerHTML = `<svg viewBox="0 0 24 24" style="position:absolute;left:30%;top:30%;width:40%;height:40%"><path d="M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4z" fill="#fff"/></svg>`;
+        S.ripple = el('div', `position:absolute;left:${btn / 2 - 10 * k}px;top:${btn / 2 - 10 * k}px;width:${20 * k}px;height:${20 * k}px;border-radius:50%;background:rgba(255,255,255,.6);opacity:0`, S.btn);
+        S.btnC = { x: x0 + cw - gapB - btn / 2, y: y0 + ch / 2 };
+        S.cardC = { x: S.cx, y: S.cy };
+        S.cursor = el('div', `position:absolute;left:0;top:0;width:${46 * k}px;height:${46 * k}px;opacity:0`, g);
+        S.cursor.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%"><path d="M4 2.5l15.5 9.2-6.9 1.4 3.9 7.6-2.9 1.4-3.9-7.6-5.2 4.6z" fill="#fff" stroke="#0B0F19" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+        S.spans = [S.typed]; S.pos = [{ x: x0 + pad, y: y0, w: tw, h: ch }]; S.size = fs;
+      } else if (L.device === 'check') {
+        const fs = 76 * k, rowH = 124 * k, icon = 66 * k;
+        S.rows = L.rows.map((text, i) => {
+          const row = el('div', `position:absolute;left:0;top:0;display:flex;align-items:center;gap:${36 * k}px;white-space:nowrap;transform-origin:0 50%`, g);
+          row.innerHTML = `<svg width="${icon}" height="${icon}" viewBox="0 0 64 64"><circle cx="32" cy="32" r="29" fill="none" stroke="${theme.dark ? 'rgba(245,247,251,.2)' : 'rgba(11,15,25,.14)'}" stroke-width="3.5"/><circle class="spin" cx="32" cy="32" r="29" fill="none" stroke="${accent}" stroke-width="4" stroke-linecap="round" stroke-dasharray="44 200"/><circle class="fillc" cx="32" cy="32" r="0" fill="url(#cg${index}-${i})"/><path class="tick" d="M19 33.5l8.5 8.5L45.5 23" fill="none" stroke="${theme.dark ? THEME.paper.ink : '#FFFFFF'}" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="cg${index}-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="rgb(${tones[2]})"/></linearGradient></defs></svg>`;
+          const label = el('span', `font-family:${SANS};font-weight:600;font-size:${fs}px;letter-spacing:-.03em;color:${ink}`, row, text);
+          const tick = row.querySelector('.tick'); const len = tick.getTotalLength(); tick.style.strokeDasharray = len;
+          return { row, label, tick, len, spin: row.querySelector('.spin'), fill: row.querySelector('.fillc') };
+        });
+        const bw = Math.max(...S.rows.map((r) => r.row.getBoundingClientRect().width));
+        const top = S.cy - (S.rows.length * rowH) / 2;
+        S.rows.forEach((r, i) => { r.y = top + i * rowH; r.row.style.left = `${S.cx - bw / 2}px`; r.row.style.top = `${r.y}px`; });
+        S.spans = S.rows.map((r) => r.label);
+        S.pos = S.rows.map((r) => ({ x: S.cx - bw / 2 + icon + 36 * k, y: r.y + (rowH - fs) / 2, w: r.label.getBoundingClientRect().width, h: fs }));
+        S.rowH = rowH; S.size = fs;
+      } else {
+        let fs = 200 * k;
+        const mk = (text, cls) => el('span', `position:absolute;left:0;top:0;white-space:pre;line-height:1;font-family:${SANS};font-weight:600;font-size:${fs}px;letter-spacing:-.04em;color:${ink};font-variant-numeric:tabular-nums;${cls || ''}`, g, text);
+        const parts = [mk(L.before), mk(L.number, `background:${accentGradient};-webkit-background-clip:text;background-clip:text;color:transparent`), mk(L.after)];
+        let widths = parts.map((p) => p.getBoundingClientRect().width); let total = widths.reduce((a, b) => a + b, 0);
+        // sized for the camera's closest push (about 1.18×), so the line stays inside the safe area all shot
+        if (total > 1380 * k) { fs *= (1380 * k) / total; parts.forEach((p) => { p.style.fontSize = `${fs}px`; }); widths = parts.map((p) => p.getBoundingClientRect().width); total = widths.reduce((a, b) => a + b, 0); }
+        let x = S.cx - total / 2; const y = S.cy - fs * 0.55;
+        parts.forEach((p, i) => { p.style.left = `${x}px`; p.style.top = `${y}px`; x += widths[i]; });
+        // the number keeps its final width (tabular digits, right-aligned) so the line doesn't wobble while it counts
+        parts[1].style.width = `${widths[1]}px`; parts[1].style.textAlign = 'right';
+        S.parts = parts; S.spans = parts; S.size = fs;
+        S.pos = [{ x: S.cx - total / 2, y, w: total, h: fs }];
+      }
     }
     // fly-into: the line's closing period becomes a true circle the camera can dive into
     if (L.out === 'fly-into' && S.spans && S.pos) {
@@ -175,6 +230,22 @@
       logS = lerp(logS, Math.log(1.0 + 0.05 * Math.sin(lt * 0.9)), settle);
       return { x: x + drift, y, s: Math.exp(logS), r: roll };
     }
+    if (L.device === 'type') {
+      const ease = outExpo(prog(b, 0, 1.2)); const zoom = outExpo(prog(b, L.clickAt - 0.8, L.clickAt - 0.25));   // the finished line holds before the zoom
+      // while the text types, the camera travels steadily (a linear push and full drift), never waiting
+      const sBase = lerp(1.35, 1.04, ease) * lerp(1, 1.2, prog(b, L.at, L.clickAt));
+      const travel = (lt - length / 2) * 30 * k;
+      return { x: lerp(S.cardC.x + drift + travel, S.btnC.x, zoom), y: lerp(S.cardC.y + Math.sin(lt * 1.3) * 8 * k, S.btnC.y, zoom), s: Math.exp(lerp(Math.log(sBase), Math.log(2.3), zoom)), r: roll * 1.4 * (1 - zoom) };
+    }
+    if (L.device === 'check') {
+      let y = S.rows[0].y + S.rowH / 2;
+      L.at.forEach((a, i) => { if (i) y = lerp(y, S.rows[i].y + S.rowH / 2, outExpo(prog(b, a, a + 0.8))); });
+      const back = io(prog(b, L.at[L.at.length - 1] + 1, L.at[L.at.length - 1] + 2));
+      // after the last tick the camera keeps moving: a slow push and a sideways drift, never a parked frame
+      const after = prog(b, L.at[L.at.length - 1] + 1, length / BEAT);
+      return { x: S.cx + drift * 1.6 + after * 60 * k, y: lerp(y, S.cy, back), s: lerp(lerp(1.24, 1.12, outExpo(prog(b, 0, 1.2))), 1.0, back) * lerp(1, 1.16, after), r: roll * 1.5 };
+    }
+    if (L.device === 'count') return { x: S.cx + drift * 1.4, y: S.cy, s: lerp(1.3, 1.0, outExpo(prog(b, 0, 1.4))) * lerp(1, 1.18, prog(lt, 0, length)), r: roll * 1.5 };
     if (L.device === 'swap') return { x: S.cx + drift, y: S.cy, s: lerp(1.25, 1.06, outExpo(prog(b, 0, 1.2))) * lerp(1, 1.1, io(prog(lt, 0, length))), r: roll };
     if (L.device === 'punch') return { x: S.cx + drift * 0.6, y: S.cy, s: lerp(1.0, 1.22, io(prog(lt, 0, length))), r: roll * 1.4 };
     return { x: S.cx + drift * 0.4, y: S.cy, s: lerp(1.0, 1.1, io(prog(lt, 0, length))), r: roll * 0.5 };
@@ -184,6 +255,7 @@
   const pop = (t0, t, from = 0.9) => ({ o: t >= t0 ? clamp((t - t0) / 0.07) : 0, s: lerp(from, 1, outExpo(prog(t, t0, t0 + 0.4 * BEAT))) });
   function draw(S, lt, collapse = 0) {
     const b = lt / BEAT; const L = S.L;
+    if (S.group) S.group.style.transform = collapse > 0 ? `scale(${(1 - collapse * 0.97).toFixed(4)})` : 'none';
     const toward = (x, y) => (collapse > 0 ? { dx: (S.cx - x) * collapse, dy: (S.cy - y) * collapse, s: 1 - collapse * 0.97 } : { dx: 0, dy: 0, s: 1 });
     if (L.device === 'build') {
       const lastAt = L.at[L.at.length - 1];
@@ -220,6 +292,37 @@
         const sc = lerp(2.2, 1, v); S.dotEl.style.opacity = s.style.opacity;
         S.dotEl.style.transform = `translate(${((S.dot.x - S.cx) * (sc - 1)).toFixed(1)}px,${((S.dot.y - (S.pos[0].y + S.size * 0.6)) * (sc - 1)).toFixed(1)}px) scale(${sc})`;
       }
+    } else if (L.device === 'type') {
+      const cardIn = outExpo(prog(b, 0, 0.8));
+      S.card.style.opacity = clamp(b / 0.2); S.card.style.transform = `translateY(${((1 - cardIn) * 40 * k).toFixed(1)}px) scale(${lerp(0.96, 1, cardIn).toFixed(4)})`;
+      const n = Math.round(L.text.length * prog(b, L.at, L.at + L.typeBeats));
+      S.typedText.nodeValue = L.text.slice(0, n);
+      const typing = b >= L.at && b < L.at + L.typeBeats;
+      S.caret.style.opacity = typing || Math.floor(lt / 0.25) % 2 === 0 ? 1 : 0;
+      const m = io(prog(b, L.clickAt - 0.9, L.clickAt - 0.05));
+      const cx = lerp(S.btnC.x + 260 * k, S.btnC.x + 6 * k, m), cy = lerp(S.btnC.y + 200 * k, S.btnC.y + 8 * k, m);
+      const dip = b >= L.clickAt ? 1 - 0.18 * Math.sin(Math.PI * prog(b, L.clickAt, L.clickAt + 0.5)) : 1;
+      S.cursor.style.opacity = b >= L.clickAt - 0.9 ? clamp((b - (L.clickAt - 0.9)) * 4) : 0;
+      S.cursor.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) scale(${dip.toFixed(3)})`;
+      S.btn.style.transform = `scale(${b >= L.clickAt ? (1 - 0.07 * Math.sin(Math.PI * prog(b, L.clickAt, L.clickAt + 0.5))).toFixed(4) : 1})`;
+      const rp = prog(b, L.clickAt, L.clickAt + 1);
+      S.ripple.style.opacity = b >= L.clickAt ? ((1 - rp) * 0.9).toFixed(3) : 0; S.ripple.style.transform = `scale(${(1 + outExpo(rp) * 9).toFixed(2)})`;
+    } else if (L.device === 'check') {
+      const lastAt = L.at[L.at.length - 1]; const restore = outExpo(prog(b, lastAt + 1, lastAt + 1.6));
+      S.rows.forEach((r, i) => {
+        const a = L.at[i]; const p = pop(a * BEAT, lt, 0.94);
+        const dim = i < S.rows.length - 1 ? lerp(1, 0.45, outExpo(prog(b, L.at[i + 1], L.at[i + 1] + 0.5))) : 1;
+        r.row.style.opacity = p.o * lerp(dim, 1, restore); r.row.style.transform = `scale(${p.s})`;
+        const sp = prog(b, a, a + 0.55); r.spin.style.transformOrigin = '32px 32px'; r.spin.style.transform = `rotate(${(sp * 540).toFixed(1)}deg)`; r.spin.style.opacity = b >= a && sp < 1 ? 1 : 0;
+        r.tick.style.strokeDashoffset = (r.len * (1 - outExpo(prog(b, a + 0.5, a + 0.95)))).toFixed(2);
+        r.fill.setAttribute('r', (29 * outExpo(prog(b, a + 0.45, a + 0.85))).toFixed(2));
+      });
+    } else if (L.device === 'count') {
+      const p = pop(L.at * BEAT, lt, 0.9); const v = prog(b, L.at, L.at + L.countBeats);
+      const value = Math.round(L.value * (1 - Math.pow(1 - v, 4)));
+      S.parts[1].textContent = L.grouped ? value.toLocaleString('en-US') : String(value);
+      const land = b >= L.at + L.countBeats ? 1 + 0.08 * Math.sin(Math.PI * prog(b, L.at + L.countBeats, L.at + L.countBeats + 0.5)) : 1;
+      S.parts.forEach((part) => { part.style.opacity = p.o; part.style.transform = `scale(${(p.s * land).toFixed(4)})`; part.style.transformOrigin = `${S.cx - parseFloat(part.style.left)}px 55%`; });
     } else if (L.device === 'lockup') {
       // letters burst out of the centre (where a collapse left its point) and fly to their places
       S.letters.forEach((Lt) => {
@@ -299,8 +402,12 @@
         drawn = [L.lead, ...S.items.map((n) => n.textContent)].filter(Boolean).join(' ');
         L.at.forEach((a, j) => { frame(S.start + Math.min((a + 0.6) * BEAT, S.end - S.start - (S.outBeats + 0.1) * BEAT)); bad += outside([S.lead, S.items[j]].filter(Boolean)); });
       } else if (L.device === 'punch') { frame(settle); drawn = S.spans[0].textContent; bad = outside(S.spans); }
+      // typed copy is checked right after typing finishes, before the camera zooms onto the button
+      else if (L.device === 'type') { frame(S.start + (L.at + L.typeBeats + 0.1) * BEAT); drawn = S.typedText.nodeValue; bad = outside([S.card]); }
+      else if (L.device === 'check') { frame(settle); drawn = S.rows.map((r) => r.label.textContent).join(' '); bad = outside(S.spans); }
+      else if (L.device === 'count') { frame(settle); drawn = S.parts.map((p) => p.textContent).join(''); bad = outside(S.spans); }
       else { frame(settle); drawn = S.letters.map((Lt) => Lt.s.textContent.replace('\u00a0', ' ')).join(''); bad = outside(S.spans); }
-      const copyMatches = norm(drawn) === norm(L.copy);
+      const copyMatches = norm(drawn) === norm(L.device === 'type' ? L.text : L.copy);
       return { shotId: S.shot.shotId, device: L.device, transition: L.out, theme: L.theme, copyMatches, lettersOutsideSafeArea: bad, pass: copyMatches && bad === 0 };
     });
   }

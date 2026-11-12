@@ -91,3 +91,33 @@ test('continuity: a fly-into once, alternating flips and whips, a collapse into 
   });
   assert.equal(launchReadingCheck(timeline).pass, true);
 });
+
+test('UI kit: quotes type, short sentences check, numbers count, and every split joins back exactly', async () => {
+  const { quotedText, checklistRows, countParts } = await import('../src/production/launch.mjs');
+  assert.equal(quotedText('“A 15-second launch film for Volt Runner”'), 'A 15-second launch film for Volt Runner');
+  assert.equal(quotedText('"Plan my launch"'), 'Plan my launch');
+  assert.equal(quotedText('Not a quote'), null);
+  assert.deepEqual(checklistRows('Exact copy. Your fonts. On the beat.'), ['Exact copy.', 'Your fonts.', 'On the beat.']);
+  assert.equal(checklistRows('Turn a brief into a film.'), null, 'one sentence is not a list');
+  assert.equal(checklistRows('One. Two. Three. Four. Five.'), null, 'more than four rows is too many');
+  for (const c of ['3 formats, one story.', 'Save 50% today', 'Join 12,000 teams', '10x faster.']) {
+    const r = countParts(c); assert.ok(r, c); assert.equal(r.before + r.number + r.after, c);
+  }
+  assert.equal(countParts('Join 12,000 teams').value, 12000);
+  assert.equal(countParts('Every word, exact.'), null);
+});
+
+test('UI kit planning: devices from the copy, the click after the typing, and time to read', async () => {
+  const timeline = await launchTimeline([['Your idea deserves motion.', 3], ['“A 15-second launch film for Volt Runner”', 4], ['Exact copy. Your fonts. On the beat.', 4], ['3 formats, one story.', 2.5], ['Ideas into motion.', 2.5]]);
+  assert.deepEqual(timeline.launch.shots.map((s) => s.device), ['build', 'type', 'check', 'count', 'lockup']);
+  const type = timeline.shots[1].spec.launch;
+  assert.ok(type.clickAt >= type.at + type.typeBeats + 0.5, 'the cursor clicks after the typing');
+  assert.ok(type.clickAt < timeline.shots[1].durationFrames / timeline.beat.framesPerBeat, 'and before the cut');
+  assert.deepEqual(launchReadingCheck(timeline), { pass: true, failures: [] });
+});
+
+test('the launch runtime draws the UI kit with exact copy and in frame', needsBrowser, async () => {
+  const timeline = await launchTimeline([['Your idea deserves motion.', 3], ['“A 15-second launch film for Volt Runner”', 4], ['Exact copy. Your fonts. On the beat.', 4], ['3 formats, one story.', 2.5], ['Ideas into motion.', 2.5]], { size: { ...C, width: 960, height: 540 } });
+  const scene = await openScene(timeline);
+  try { for (const shot of await scene.check()) assert.ok(shot.pass, JSON.stringify(shot)); } finally { await scene.close(); }
+});

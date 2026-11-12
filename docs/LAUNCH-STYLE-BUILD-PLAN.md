@@ -41,6 +41,14 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   frames (benchmark 13%), motion energy 2.46 (2.38), longest still 0.47 s
   (0.20 s). Still to come: the UI kit and image roles (Phases 6–6b), the
   planner (7), sound design (5b) and render speed (11).
+- **Phase 6: the UI kit.** `type` (prompt card, caret, cursor click with a
+  macro zoom), `check` (spin-then-tick rows) and `count` (a number rolling
+  to its value), each chosen from the copy without inventing words. A
+  16-second engine film using all three passes every QA check: 8% near-still
+  frames, longest still 0.33 s, motion energy 2.20 (just under the 2.3
+  target; UI moments carry less raw motion than kinetic type). Tuning showed
+  that the camera must never park after a device finishes, and that small UI
+  on paper scenes needs size to read as motion. Next: product images (6b).
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every
