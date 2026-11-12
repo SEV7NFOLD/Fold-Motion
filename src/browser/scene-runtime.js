@@ -18,10 +18,6 @@
   const FPS = DATA.fps;
   const PERSPECTIVE = Math.round(W * 0.85);
   const STRIPS = 4;
-  // Looks: 'default' keeps the SVG engine's appearance; 'paper' prints each shot's
-  // type on a sheet of paper that unfolds in 3D under a raking light.
-  const PAPER = DATA.look === 'paper';
-  const PAPER_COLOR = '#EDE7DC';
 
   // ---------- math
   const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -90,9 +86,6 @@
   // ---------- one drawable copy of a shot's typography (the "plate")
   function buildPlate(shot, holder) {
     const id = `p${instanceCount += 1}`;
-    const primary = shot.palette?.primary || '#0B0F19';
-    const ink = luminance(primary) < 0.2 ? primary : '#14161C';
-    const deepAccent = mixHex(shot.palette?.accent || '#00F0FF', '#000000', 0.45);
     const plate = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'plate' }, holder);
     const defs = svg('defs', {}, plate);
     const glow = svg('filter', { id: `${id}-glow`, x: '-50%', y: '-50%', width: '200%', height: '200%' }, defs);
@@ -125,8 +118,8 @@
           gradientCount += 1;
           const gid = `${id}-em${gradientCount}`;
           const g = svg('linearGradient', { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
-          svg('stop', { offset: 0, 'stop-color': PAPER ? deepAccent : el.emphasis.from || el.fill }, g);
-          svg('stop', { offset: 1, 'stop-color': PAPER ? mixHex(deepAccent, '#000000', 0.25) : el.emphasis.to || el.fill }, g);
+          svg('stop', { offset: 0, 'stop-color': el.emphasis.from || el.fill }, g);
+          svg('stop', { offset: 1, 'stop-color': el.emphasis.to || el.fill }, g);
           emphasisFill = `url(#${gid})`;
         }
         const group = svg('g', {}, plate);
@@ -150,10 +143,10 @@
           chars.forEach((ch, k) => {
             if (ch === ' ') { wordIndex += 1; return; }
             const isEmphasis = emphasized.has(wordIndex);
-            const attrs = { x: positions[k], y: baseline, 'font-size': size, style: `font-family:${family}`, fill: isEmphasis && emphasisFill ? emphasisFill : (PAPER ? ink : el.fill || '#ffffff') };
+            const attrs = { x: positions[k], y: baseline, 'font-size': size, style: `font-family:${family}`, fill: isEmphasis && emphasisFill ? emphasisFill : (el.fill || '#ffffff') };
             const node = svg('text', attrs, group);
             node.textContent = ch;
-            if (isEmphasis && !PAPER) node.setAttribute('filter', `url(#${id}-glow)`);
+            if (isEmphasis) node.setAttribute('filter', `url(#${id}-glow)`);
             letters.push({ node, el, role: el.role, ch, x: positions[k], baseline, size, order: order++, word: wordIndex, line: lineIndex, emphasis: isEmphasis });
             if (el.role === 'title' && shot.spec.sweep) {
               const s = svg('text', { ...attrs, fill: `url(#${id}-sheen)` }, sheenGroup);
@@ -167,7 +160,7 @@
         const w = Number(el.width) || 0;
         const h = Math.max(1, Number(el.height) || 1);
         const x = el.type === 'line' ? Number(el.x) - w / 2 : Number(el.x);
-        const r = svg('rect', { x, y: Number(el.y) - (el.type === 'line' ? h / 2 : 0), width: w, height: h, fill: PAPER ? deepAccent : el.fill || shot.palette.accent, filter: el.type === 'line' && !PAPER ? `url(#${id}-glow)` : '' }, plate);
+        const r = svg('rect', { x, y: Number(el.y) - (el.type === 'line' ? h / 2 : 0), width: w, height: h, fill: el.fill || shot.palette.accent, filter: el.type === 'line' ? `url(#${id}-glow)` : '' }, plate);
         if (el.opacity !== undefined) r.setAttribute('opacity', el.opacity);
         accents.push({ node: r, el, cx: x + w / 2, cy: Number(el.y) });
       } else if (el.type === 'circle') {
@@ -211,8 +204,6 @@
 
     // Accordion: strips nested in one another, each showing its slice of a plate copy.
     const fold = div('layer fold', world);
-    // A soft shadow under the paper sheet.
-    const sheetShadow = PAPER ? div('fill', fold, `background:rgba(0,0,0,.55);filter:blur(${Math.round(W / 40)}px);transform:translate3d(0,${Math.round(H * 0.03)}px,-60px)`) : null;
     const sheet = div('sheet', fold, `width:${W}px;height:${H}px`);
     const strips = [];
     let parent = sheet;
@@ -223,8 +214,7 @@
       const inner = div('inner', face, `left:${-k * sw}px;width:${W}px;height:${H}px`);
       const plate = buildPlate(shot, inner);
       const shade = div('fill', face);
-      const glint = div('fill', face, 'mix-blend-mode:screen');
-      strips.push({ strip, plate, shade, inner, glint });
+      strips.push({ strip, plate, shade, inner });
       parent = strip;
     }
     fold.style.display = 'none';
@@ -233,7 +223,7 @@
     const revealEnd = Math.max(0.6, ...(shot.spec.elements || []).map((el) => (el.reveal ? (Number(el.reveal.start) || 0) + (Number(el.reveal.duration) || 0.8) : 0)));
     const duration = shot.durationFrames / FPS;
     return {
-      shot, index, primary, accent, light, world, echoLayer, flatLayer, flat, fold, sheet, sheetShadow, strips,
+      shot, index, primary, accent, light, world, echoLayer, flatLayer, flat, fold, sheet, strips,
       start: shot.startFrame / FPS, duration, revealEnd,
       transitionWindow: Math.min(0.5, duration * 0.25),
       seed: 101 + index * 7919,
@@ -411,11 +401,6 @@
       if (tout === 'zoom') { scale *= lerp(1, 3.2, easeIn(q)); opacity *= 1 - prog(q, 0.65, 1); }
       if (tout === 'fold') { foldAngle = Math.max(foldAngle, easeIO(q) * 88); opacity *= 1 - prog(q, 0.8, 1); }
     }
-    if (PAPER) {
-      // Every shot's sheet unfolds in, and sits a little back so its edges show.
-      scale *= 0.8;
-      foldAngle = Math.max(foldAngle, lerp(82, 0, spring(t - 0.04, 4.4, 0.72)));
-    }
 
     drawBackground(S, t, 1);
     S.world.style.transform = `translateX(${cam.x}px) rotateX(${cam.rx}deg) rotateY(${cam.ry}deg) translateZ(${z}px) scale(${scale})`;
@@ -423,34 +408,22 @@
     if (S.echoLayer) S.echoLayer.echoText.setAttribute('transform', `translate(${lerp(W * 0.04, -W * 0.04, prog(t, 0, S.duration))} 0)`);
     if (S.echoLayer) S.echoLayer.style.opacity = (1 - foldAngle / 88) * clamp(t / 0.6);
 
-    if (foldAngle > 0.05 || PAPER) {
+    if (foldAngle > 0.05) {
       S.flatLayer.style.display = 'none';
       S.fold.style.display = '';
       const a = foldAngle; const ar = (a * Math.PI) / 180;
       // The sheet materialises as it folds, so the flat frame looks unchanged.
-      const solid = PAPER ? 1 : easeOut(clamp(a / 30));
-      // The raking light pass, once the type has landed.
-      const lp = easeIO(prog(t, S.revealEnd - 0.3, S.revealEnd + 1.3));
-      const lx = lerp(-W * 0.3, W * 1.3, lp);
-      const li = Math.sin(Math.PI * lp) * (PAPER ? 1 : 0);
+      const solid = easeOut(clamp(a / 30));
       S.strips.forEach((st, k) => {
         st.strip.style.transform = `rotateY(${k === 0 ? a : k % 2 ? -2 * a : 2 * a}deg)`;
         const facing = k % 2 === 0;
-        st.inner.style.background = PAPER ? PAPER_COLOR : rgba(S.card, solid);
-        st.inner.style.boxShadow = PAPER ? '' : `inset ${facing ? 2 : -2}px 0 0 ${rgba(S.accent, 0.35 * solid)}`;
-        if (PAPER) {
-          const x = lx - k * (W / STRIPS); const band = W * 0.14;
-          st.glint.style.background = li > 0.01 ? `linear-gradient(100deg,transparent ${x - band * 1.6}px,${rgba(S.accent, 0.22 * li)} ${x - band * 0.5}px,rgba(235,255,255,${0.7 * li}) ${x}px,${rgba(S.accent, 0.22 * li)} ${x + band * 0.5}px,transparent ${x + band * 1.6}px)` : 'none';
-        }
-        const dark = Math.sin(ar) * (facing ? (PAPER ? 0.18 : 0.15) : 0.6) * solid;
+        st.inner.style.background = rgba(S.card, solid);
+        st.inner.style.boxShadow = `inset ${facing ? 2 : -2}px 0 0 ${rgba(S.accent, 0.35 * solid)}`;
+        const dark = Math.sin(ar) * (facing ? 0.15 : 0.6) * solid;
         st.shade.style.background = `linear-gradient(90deg,rgba(0,0,0,${dark * (facing ? 0.5 : 1)}),rgba(0,0,0,${dark * (facing ? 1 : 0.6)}))`;
         updatePlate(S, st.plate, t);
       });
       S.sheet.style.transform = `translateX(${(W - W * Math.cos(ar)) / 2}px)`;
-      if (S.sheetShadow) {
-        S.sheetShadow.style.width = `${W * Math.cos(ar)}px`;
-        S.sheetShadow.style.left = `${(W - W * Math.cos(ar)) / 2}px`;
-      }
     } else {
       S.fold.style.display = 'none';
       S.flatLayer.style.display = '';
@@ -474,11 +447,6 @@
     return shots.map((S) => {
       const settle = clamp(S.revealEnd + 0.6, 0, Math.max(0, S.duration - S.transitionWindow - 0.05));
       frame(S.start + settle);
-      // Measure the flat layer: in the paper look the strips are what's visible, and
-      // hidden letters have no geometry. At the settled moment the sheet is flat, so
-      // the flat layer sits exactly where the strips do.
-      const foldShown = S.fold.style.display !== 'none';
-      if (foldShown) { updatePlate(S, S.flat, settle); S.flatLayer.style.display = ''; S.fold.style.display = 'none'; }
       const titles = S.flat.letters.filter((L) => L.role === 'title');
       const expected = (S.shot.spec.elements || []).filter((el) => el.type === 'text' && el.role === 'title').map((el) => String(el.shown ?? el.content ?? '')).join('');
       const drawn = titles.map((L) => L.ch).join('');
@@ -495,7 +463,6 @@
         const b = L.node.getBoundingClientRect();
         return b.width > 0 && (b.left < marginX || b.top < marginY || b.right > W - marginX || b.bottom > H - marginY);
       }).length;
-      if (foldShown) { S.flatLayer.style.display = 'none'; S.fold.style.display = ''; }
       return {
         shotId: S.shot.shotId,
         settledAt: Number(settle.toFixed(3)),

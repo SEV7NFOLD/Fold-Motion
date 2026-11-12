@@ -325,7 +325,7 @@ error.
 | `npm run health` | Check runtime prerequisites |
 | `npm run render:scene-01` | Render the sample scene |
 | `npm run render:browser -- --input request.json` | Experimental: render the same request in headless Chromium (see below). Prints `RENDER_REPORT:<path>`; the run folder ends in `-browser` |
-| `npm run compare -- --brief "…"` | Render one offline-planned film with both renderers and stack them into `output/compare/*.mp4` (also takes `--input`, `--seconds`, `--look paper`) |
+| `npm run compare -- --brief "…"` | Render one offline-planned film with both renderers and stack them into `output/compare/*.mp4` (also takes `--input`) |
 
 FFmpeg and FFprobe must be installed for rendering. The Docker image includes
 them; check with `ffmpeg -version` before promising a render elsewhere.
@@ -343,9 +343,7 @@ real 3D accordion for `fold`, and motion blur (4 samples across a
 180-degree shutter, blended by FFmpeg `tmix`; grain is added after the
 blend). It adds FOLD Score audio, checks with FFprobe, and its own QA at
 each shot's settled moment: copy drawn exactly, title letters inside the
-safe area, and letters advancing left to right. `--look paper` prints each shot's type in ink on a paper sheet that
-unfolds in 3D under a raking accent light (accents deepen to read on
-paper); `--look default` keeps the SVG engine's appearance. Not supported yet: product
+safe area, and letters advancing left to right. Not supported yet: product
 photos (`image` elements) and uploaded brand fonts; both are listed under
 `unsupported` in the report, never dropped silently. It is about 10x slower
 than the SVG engine (Chromium's capture is the cost), so it isn't wired

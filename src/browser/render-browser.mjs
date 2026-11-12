@@ -47,9 +47,7 @@ export async function timelineFonts(timeline) {
 }
 
 /** The self-contained page: fonts inlined, data in a global, runtime added after fonts load. */
-export const LOOK_OPTIONS = Object.freeze(['default', 'paper']);
-
-export async function buildScenePage(timeline, fonts, { look = 'default' } = {}) {
+export async function buildScenePage(timeline, fonts) {
   const faces = await Promise.all(Object.values(fonts).map(async ({ family, file }) => {
     const data = (await readFile(file)).toString('base64');
     const format = file.endsWith('.otf') ? 'opentype' : 'truetype';
@@ -59,7 +57,6 @@ export async function buildScenePage(timeline, fonts, { look = 'default' } = {})
     width: timeline.width,
     height: timeline.height,
     fps: timeline.fps,
-    look: LOOK_OPTIONS.includes(look) ? look : 'default',
     totalFrames: timeline.totalFrames,
     palette: timeline.palette,
     fonts: Object.fromEntries(Object.entries(fonts).map(([id, { family }]) => [id, `"${family}"`])),
@@ -102,12 +99,12 @@ function run(command, args, { input } = {}) {
 }
 
 /** Opens the scene in Chromium and returns helpers to draw and capture it. */
-export async function openScene(timeline, { launch, look } = {}) {
+export async function openScene(timeline, { launch } = {}) {
   const chromium = launch ? null : await loadPlaywright();
   const browser = launch ? await launch() : await chromium.launch({ args: ['--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none'] });
   const page = await browser.newPage({ viewport: { width: timeline.width, height: timeline.height }, deviceScaleFactor: 1 });
   const { fonts, missing } = await timelineFonts(timeline);
-  await page.setContent(await buildScenePage(timeline, fonts, { look }), { waitUntil: 'load' });
+  await page.setContent(await buildScenePage(timeline, fonts), { waitUntil: 'load' });
   // Fonts must be ready before the runtime measures any text.
   await page.evaluate(async (families) => {
     await Promise.all(families.map((family) => document.fonts.load(`100px "${family}"`, 'AaBb')));
@@ -146,14 +143,12 @@ export async function renderBrowserProject({
   music = 'auto',
   samples = Number(process.env.BROWSER_RENDER_SAMPLES) || 4,
   shutter = 0.5,
-  look = 'default',
   outputRoot = path.resolve('output'),
   launch,
 }) {
   const validation = validateTimeline(timeline);
   if (!validation.valid) throw new Error(`Timeline validation failed: ${validation.errors.join(' ')}`);
   const S = Math.max(1, Math.min(8, Math.round(samples)));
-  if (!LOOK_OPTIONS.includes(look)) throw new Error(`Unknown look "${look}". Use one of: ${LOOK_OPTIONS.join(', ')}.`);
   const projectId = timeline.id.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
   const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-browser`;
   const outputDirectory = path.join(outputRoot, projectId, runId);
@@ -222,7 +217,7 @@ export async function renderBrowserProject({
     else encoder.stdin.once('drain', resolve);
   });
 
-  const scene = await openScene(timeline, { launch, look });
+  const scene = await openScene(timeline, { launch });
   let browserQA;
   const stills = [];
   try {
@@ -288,7 +283,6 @@ export async function renderBrowserProject({
     experimental: true,
     renderedAt: new Date().toISOString(),
     renderer: BROWSER_RENDERER,
-    look,
     motionBlur: { samplesPerFrame: S, shutterDegrees: Math.round(shutter * 360) },
     productionQA,
     creativeQA,

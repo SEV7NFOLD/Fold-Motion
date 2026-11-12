@@ -3,8 +3,8 @@
  * Renders the same timeline with the SVG engine and the experimental browser
  * renderer, then stacks the two films into one labelled comparison video.
  *
- *   npm run compare -- --brief "A sneaker drop called Volt Runner" [--seconds 6]
- *   npm run compare -- --input <render-request.json> [--look paper]
+ *   npm run compare -- --brief "A sneaker drop called Volt Runner"
+ *   npm run compare -- --input <render-request.json>
  *
  * A brief is planned with the offline planner (no AI keys needed), so the
  * comparison is about rendering, not about what the model wrote.
@@ -25,7 +25,7 @@ if (arg('--input')) {
   request = JSON.parse(await readFile(arg('--input'), 'utf8'));
 } else {
   const brief = arg('--brief') || 'Ideas into motion. FOLD Motion turns a brief into a finished film.';
-  const context = { width: 1920, height: 1080, fps: 30, ...(arg('--seconds') ? { durationInSeconds: Number(arg('--seconds')) } : {}), primaryColor: arg('--primary') || '#0B0F19', accentColor: arg('--accent') || '#00F0FF' };
+  const context = { width: 1920, height: 1080, fps: 30, primaryColor: arg('--primary') || '#0B0F19', accentColor: arg('--accent') || '#00F0FF' };
   const { storyboard, acceptance } = await createCreativePlan(brief, context, null);
   const { timeline } = await compileCreativePlan(storyboard, context, null);
   request = { timeline, storyboard, acceptance, context };
@@ -35,8 +35,7 @@ const samples = arg('--samples') ? Number(arg('--samples')) : undefined;
 console.log('Rendering with the SVG engine…');
 const svg = await renderProductionProject({ ...request, resolution: 'hd' });
 console.log('Rendering with the browser renderer…');
-const look = arg('--look') || 'default';
-const browser = await renderBrowserProject({ ...request, look, ...(samples ? { samples } : {}) });
+const browser = await renderBrowserProject({ ...request, ...(samples ? { samples } : {}) });
 
 const svgVideo = path.join(path.dirname(svg.reportPath), 'production.mp4');
 const outDir = path.join(ROOT, 'output', 'compare');
@@ -46,7 +45,7 @@ const font = path.join(ROOT, 'assets', 'fonts', 'Montserrat-SemiBold.ttf').repla
 const label = (text) => `drawtext=fontfile='${font}':text='${text}':x=36:y=30:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=14`;
 const filter = [
   `[0:v]scale=1280:-2,${label('SVG engine (current)')}[a]`,
-  `[1:v]scale=1280:-2,${label(`Browser renderer, ${look} look (experimental)`)}[b]`,
+  `[1:v]scale=1280:-2,${label('Browser renderer (experimental)')}[b]`,
   '[a][b]vstack=inputs=2[v]',
 ].join(';');
 await new Promise((resolve, reject) => {
