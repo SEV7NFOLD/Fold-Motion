@@ -102,7 +102,8 @@ again.
 Chromium instead of SVG: the same layout and copy, plus 3D camera moves,
 per-letter motion, glow, light sweeps, a real 3D fold transition and motion
 blur. `npm run compare -- --brief "Your brief"` renders one film both ways
-and stacks them into a single video in `output/compare/`. It's opt-in,
+and stacks them into a single video in `output/compare/`. Add `--look paper`
+to print the type on a paper sheet that unfolds in 3D under a raking light. It's opt-in,
 about 10x slower than the SVG engine, and doesn't draw product photos or
 uploaded brand fonts yet. Setup: `npm install`, then
 `npx playwright install chromium`.

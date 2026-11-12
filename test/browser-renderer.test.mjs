@@ -89,3 +89,14 @@ test('a browser render produces a validated film with the experimental label', n
     await rm(outputRoot, { recursive: true, force: true });
   }
 });
+
+test('the paper look still draws the exact copy in frame, and rejects unknown looks', needsBrowser, async () => {
+  const { timeline } = await plan('A sneaker drop called Volt Runner. Available Friday.');
+  const scene = await openScene(timeline, { look: 'paper' });
+  try {
+    for (const shot of await scene.check()) assert.ok(shot.pass, `${shot.shotId}: ${JSON.stringify(shot)}`);
+  } finally {
+    await scene.close();
+  }
+  await assert.rejects(renderBrowserProject({ ...(await plan()), look: 'neon' }), /Unknown look "neon"/);
+});
