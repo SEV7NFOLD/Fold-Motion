@@ -20,7 +20,7 @@ import { minimumBeats } from './pacing.mjs';
 
 const DETERMINERS = new Set(['a', 'an', 'the', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'every']);
 
-export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup']);
+export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup', 'type', 'check', 'count']);
 export const LAUNCH_TRANSITIONS = Object.freeze(['fly-into', 'flip', 'whip', 'collapse']);
 // Beats each transition takes from the end of the outgoing shot (copy must be read before it starts).
 export const TRANSITION_BEATS = Object.freeze({ 'fly-into': 1, collapse: 0.75, flip: 0.5, whip: 0.25 });
@@ -112,9 +112,39 @@ function schedule(pieces, bpm, available, { startAt = 0.5, holdOf } = {}) {
   return at;
 }
 
+/** The text inside quotation marks when the whole copy is a quote (a prompt or brief), else null. */
+export function quotedText(copy) {
+  const m = /^\s*["“](.+?)["”]\s*$/.exec(String(copy));
+  return m ? m[1] : null;
+}
+/** Two to four short sentences ("Exact copy. Your fonts. On the beat.") as checklist rows, else null. */
+export function checklistRows(copy) {
+  const text = String(copy).trim();
+  const rows = text.match(/[^.!?]+[.!?]+/g);
+  if (!rows || rows.join('').replace(/\s+/g, '') !== text.replace(/\s+/g, '')) return null;
+  const clean = rows.map((r) => r.trim());
+  if (clean.length < 2 || clean.length > 4 || clean.some((r) => r.split(/\s+/).length > 6)) return null;
+  return clean;
+}
+/** The first number in a short line ("3 formats, one story."), split around it so the parts join back exactly. */
+export function countParts(copy) {
+  const text = String(copy);
+  const words = text.trim().split(/\s+/);
+  if (words.length > 6) return null;
+  const m = /(^|[^\d.,])(\d{1,3}(?:,\d{3})*|\d+)(?![\d.,]\d)/.exec(text);
+  if (!m) return null;
+  const start = m.index + m[1].length; const digits = m[2];
+  const value = Number(digits.replace(/,/g, ''));
+  if (!Number.isFinite(value) || value <= 0 || value > 1e7) return null;
+  return { before: text.slice(0, start), number: digits, value, after: text.slice(start + digits.length), grouped: digits.includes(',') };
+}
+
 function deviceFor(copy, index, count) {
   const words = String(copy).trim().split(/\s+/).filter(Boolean);
+  if (quotedText(copy)) return 'type';
   if (index === count - 1 && count > 1 && words.length <= 6) return 'lockup';
+  if (index > 0 && checklistRows(copy)) return 'check';
+  if (index > 0 && countParts(copy)) return 'count';
   if (index > 0 && index < count - 1 && listParts(copy)) return 'swap';
   if (index > 0 && words.length <= 2) return 'punch';
   return 'build';
@@ -138,7 +168,21 @@ export function planLaunch(timeline, storyboard) {
     let plan;
     // the opening shot waits half a beat for the camera's zoom; later shots land content on the cut
     const startAt = index === 0 ? 0.5 : 0;
-    if (last) {
+    const device = devices[index];
+    const BEAT = 60 / bpm;
+    if (device === 'type') {
+      // typed at about 18 characters a second, then the cursor clicks the card's button
+      const text = quotedText(copy);
+      const typeBeats = Math.max(1, Math.round(((text.length / 18) / BEAT) * 2) / 2);
+      const at = startAt + 0.5;
+      // the click comes at least half a beat after typing ends, and before the outgoing transition
+      plan = { device: 'type', copy, text, at, typeBeats, clickAt: Math.max(at + typeBeats + 0.5, Math.min(beatsAvailable - 0.5, at + typeBeats + 1)) };
+    } else if (device === 'check') {
+      const rows = checklistRows(copy);
+      plan = { device: 'check', copy, rows, at: schedule(rows, bpm, beatsAvailable, { startAt, holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
+    } else if (device === 'count') {
+      plan = { device: 'count', copy, ...countParts(copy), at: startAt, countBeats: 1.5 };
+    } else if (last) {
       plan = { device: 'lockup', copy, at: startAt };
     } else if (list) {
       // the lead is read with the first item, so the first item holds for both (less the half-beat the lead led by)
@@ -174,12 +218,19 @@ export function launchReadingCheck(timeline) {
     const pieces = L.device === 'build' ? L.beats.map((text, i) => ({ text: L.beats.slice(0, i + 1).join(' '), from: L.at[i] * BEAT, to: length }))
       // the lead is read once, with the first item; later items need only their own reading time
       : L.device === 'swap' ? L.items.map((text, i) => ({ text: i === 0 ? [L.lead, text].filter(Boolean).join(' ') : text, from: (i === 0 && L.lead ? L.leadAt : L.at[i]) * BEAT, to: i < L.items.length - 1 ? L.at[i + 1] * BEAT : length }))
-        : [{ text: L.copy, from: L.at * BEAT, to: length }];
+        : L.device === 'check' ? L.rows.map((text, i) => ({ text, from: L.at[i] * BEAT, to: length }))
+          // typed and counted lines are read as they appear (typing runs near reading speed), and their
+          // finished state must also stay on screen a moment: 0.3 s for typing, 0.4 s for the final number
+          : L.device === 'type' ? [{ text: L.text, from: L.at * BEAT, to: length, settled: (L.at + L.typeBeats) * BEAT, hold: 0.3 }]
+            : L.device === 'count' ? [{ text: L.copy, from: L.at * BEAT, to: length, settled: (L.at + L.countBeats) * BEAT, hold: 0.4 }]
+              : [{ text: L.copy, from: L.at * BEAT, to: length }];
     for (const p of pieces) {
       // a built line is read as it grows: the newest words need their reading time, and the
       // whole line a quick skim (0.4 s + 0.03 s per character), whichever is longer
       const newest = L.device === 'build' ? L.beats[pieces.indexOf(p)] : p.text;
+      // typed text is read as it types, so once typed it needs only a skim
       const need = L.device === 'build' ? Math.max(readingSecondsFor(newest), 0.4 + 0.03 * p.text.replace(/\s+/g, '').length) : readingSecondsFor(p.text);
+      if (p.settled !== undefined && p.to - p.settled + 1e-9 < p.hold) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.settled).toFixed(3)), needs: p.hold, finished: true });
       if (p.to - p.from + 1e-9 < need) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.from).toFixed(3)), needs: Number(need.toFixed(3)) });
     }
   }
