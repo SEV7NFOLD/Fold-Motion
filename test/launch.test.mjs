@@ -10,7 +10,7 @@ async function launchTimeline(copy, { size = C } = {}) {
   const storyboard = { ...base, musicMood: 'energetic', shots: copy.map(([text, d], i) => ({ ...base.shots[Math.min(i, base.shots.length - 1)], id: `shot-${i + 1}`, durationSeconds: d, onScreenCopy: text })) };
   return (await compileCreativePlan(storyboard, { ...size, launch: true }, null)).timeline;
 }
-const DEMO = [['Your idea deserves motion.', 3], ['Turn a brief into a film.', 2.5], ['Exact.', 1], ['With neroli, mandarin, frankincense & lavender.', 4.5], ['Ideas into motion.', 2.5]];
+const DEMO = [['Your idea deserves motion.', 3], ['Turn a brief into a film.', 2.5], ['Exact.', 1], ['With neroli, mandarin, frankincense & lavender.', 5], ['Ideas into motion.', 2.5]];
 
 let browser = false;
 try { const { chromium } = await import('playwright'); const b = await chromium.launch(); await b.close(); browser = true; } catch { browser = false; }
@@ -73,4 +73,21 @@ test('a list item keeps its determiner, and the first item is timed with its lea
   assert.equal(listParts('With your fonts, your colors & your beat.').lead, 'With');
   const timeline = await launchTimeline([['Your idea deserves motion.', 3], ['With your fonts, your colors & your beat.', 4], ['Ideas into motion.', 2.5]]);
   assert.deepEqual(launchReadingCheck(timeline), { pass: true, failures: [] });
+});
+
+test('continuity: a fly-into once, alternating flips and whips, a collapse into the lockup, and themes that follow', async () => {
+  const { planTransitions, TRANSITION_BEATS } = await import('../src/production/launch.mjs');
+  const plan = planTransitions(['build', 'build', 'punch', 'swap', 'lockup'], ['Your idea deserves motion.', 'Turn a brief into a film.', 'Exact.', 'With a, b & c.', 'Ideas into motion.']);
+  assert.deepEqual(plan.out, ['fly-into', 'flip', 'whip', 'collapse', null]);
+  assert.deepEqual(plan.theme, ['brand', 'paper', 'brand', 'brand', 'brand']);
+  const noPeriod = planTransitions(['build', 'build', 'build'], ['Hello there', 'Fast', 'The end']);
+  assert.deepEqual(noPeriod.out, ['flip', 'whip', null], 'no closing period, no fly-into');
+  // transition beats are reserved: copy is read before the transition starts
+  const timeline = await launchTimeline(DEMO);
+  timeline.shots.forEach((shot) => {
+    const L = shot.spec.launch; if (!L.out) return;
+    const lastAt = [].concat(L.at).slice(-1)[0];
+    assert.ok(lastAt < shot.durationFrames / timeline.beat.framesPerBeat - TRANSITION_BEATS[L.out], `${shot.shotId}: copy lands before the ${L.out}`);
+  });
+  assert.equal(launchReadingCheck(timeline).pass, true);
 });

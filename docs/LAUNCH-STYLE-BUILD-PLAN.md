@@ -34,6 +34,13 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   under 25%), motion energy 1.28 (target 2.3), longest still 0.63 s (target
   0.5 s). Missing: continuity transitions, light/dark flips, the UI kit and
   bigger scale contrast (Phases 4b–6).
+- **Phase 4b: continuity and flips.** fly-into, flip, whip and collapse
+  transitions; brand/paper themes whose inks are each other's backgrounds;
+  per-scene cameras with roll and stronger drift. The same film now meets
+  every motion target and matches the hand-built benchmark: 11% near-still
+  frames (benchmark 13%), motion energy 2.46 (2.38), longest still 0.47 s
+  (0.20 s). Still to come: the UI kit and image roles (Phases 6–6b), the
+  planner (7), sound design (5b) and render speed (11).
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every

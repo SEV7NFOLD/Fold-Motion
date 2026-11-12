@@ -21,6 +21,33 @@ import { minimumBeats } from './pacing.mjs';
 const DETERMINERS = new Set(['a', 'an', 'the', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'every']);
 
 export const LAUNCH_DEVICES = Object.freeze(['build', 'swap', 'punch', 'lockup']);
+export const LAUNCH_TRANSITIONS = Object.freeze(['fly-into', 'flip', 'whip', 'collapse']);
+// Beats each transition takes from the end of the outgoing shot (copy must be read before it starts).
+export const TRANSITION_BEATS = Object.freeze({ 'fly-into': 1, collapse: 0.75, flip: 0.5, whip: 0.25 });
+
+/**
+ * Continuity between shots, and the light/dark theme each shot sits in:
+ * - into a closing lockup: `collapse` (the words converge; the lockup bursts out)
+ * - a build or punch ending in a period, once per film: `fly-into` (the camera
+ *   dives into the dot until it becomes the next background)
+ * - otherwise alternating `flip` (a feathered circle opens the next scene) and
+ *   `whip` (a fast push).
+ * fly-into and flip switch theme (brand colour ↔ paper); whip and collapse keep it.
+ */
+export function planTransitions(devices, copies) {
+  const out = []; const theme = ['brand']; let flew = false; let alternate = 'flip';
+  for (let i = 0; i < devices.length; i += 1) {
+    if (i === devices.length - 1) { out.push(null); break; }
+    let t;
+    if (devices[i + 1] === 'lockup') t = 'collapse';
+    else if (!flew && ['build', 'punch'].includes(devices[i]) && /\.["'”’)]*\s*$/.test(copies[i])) { t = 'fly-into'; flew = true; }
+    else { t = alternate; alternate = alternate === 'flip' ? 'whip' : 'flip'; }
+    out.push(t);
+    const switches = t === 'fly-into' || t === 'flip';
+    theme.push(switches ? (theme[i] === 'brand' ? 'paper' : 'brand') : theme[i]);
+  }
+  return { out, theme };
+}
 
 /**
  * A list sentence split into a lead and items whose raw slices join back to the
@@ -85,13 +112,25 @@ function schedule(pieces, bpm, available, { startAt = 0.5, holdOf } = {}) {
   return at;
 }
 
+function deviceFor(copy, index, count) {
+  const words = String(copy).trim().split(/\s+/).filter(Boolean);
+  if (index === count - 1 && count > 1 && words.length <= 6) return 'lockup';
+  if (index > 0 && index < count - 1 && listParts(copy)) return 'swap';
+  if (index > 0 && words.length <= 2) return 'punch';
+  return 'build';
+}
+
 /** Plans devices and beat timings for a beat-timed timeline. Returns the plan; also sets shot.spec.launch. */
 export function planLaunch(timeline, storyboard) {
   if (!timeline.beat) throw new Error('planLaunch needs a beat-timed timeline (compile with context.beat).');
   const { bpm, framesPerBeat } = timeline.beat;
+  const copies = timeline.shots.map((_, index) => storyboard.shots[index]?.onScreenCopy ?? '');
+  const devices = timeline.shots.map((_, index) => deviceFor(copies[index], index, timeline.shots.length));
+  const { out, theme } = planTransitions(devices, copies);
   const shots = timeline.shots.map((shot, index) => {
     const copy = storyboard.shots[index]?.onScreenCopy ?? '';
-    const beatsAvailable = shot.durationFrames / framesPerBeat;
+    // the outgoing transition's beats are reserved: copy must be read before it starts
+    const beatsAvailable = shot.durationFrames / framesPerBeat - (out[index] ? TRANSITION_BEATS[out[index]] : 0);
     const words = copy.trim().split(/\s+/).filter(Boolean);
     // a lockup assembles letter by letter, so it's only for short closing lines
     const last = index === timeline.shots.length - 1 && timeline.shots.length > 1 && words.length <= 6;
@@ -114,6 +153,7 @@ export function planLaunch(timeline, storyboard) {
       // a built line stays on screen, so each beat needs only part of its reading time before the next arrives
       plan = { device: 'build', copy, beats, at: schedule(beats, bpm, beatsAvailable, { startAt, holdOf: (p) => minimumBeats(p, bpm) / 2 }) };
     }
+    Object.assign(plan, { out: out[index], theme: theme[index] });
     shot.spec.launch = plan;
     return { shotId: shot.shotId, ...plan };
   });
@@ -130,14 +170,16 @@ export function launchReadingCheck(timeline) {
   const failures = [];
   for (const shot of timeline.shots) {
     const L = shot.spec.launch; if (!L) continue;
-    const length = shot.durationFrames / timeline.fps;
+    const length = shot.durationFrames / timeline.fps - (L.out ? TRANSITION_BEATS[L.out] * BEAT : 0);
     const pieces = L.device === 'build' ? L.beats.map((text, i) => ({ text: L.beats.slice(0, i + 1).join(' '), from: L.at[i] * BEAT, to: length }))
       // the lead is read once, with the first item; later items need only their own reading time
       : L.device === 'swap' ? L.items.map((text, i) => ({ text: i === 0 ? [L.lead, text].filter(Boolean).join(' ') : text, from: (i === 0 && L.lead ? L.leadAt : L.at[i]) * BEAT, to: i < L.items.length - 1 ? L.at[i + 1] * BEAT : length }))
         : [{ text: L.copy, from: L.at * BEAT, to: length }];
     for (const p of pieces) {
-      // a built line accumulates, so only its newest words need fresh reading time
-      const need = L.device === 'build' ? Math.min(readingSecondsFor(p.text), readingSecondsFor(p.text.split(/\s+/).slice(-3).join(' ')) + 0.3) : readingSecondsFor(p.text);
+      // a built line is read as it grows: the newest words need their reading time, and the
+      // whole line a quick skim (0.4 s + 0.03 s per character), whichever is longer
+      const newest = L.device === 'build' ? L.beats[pieces.indexOf(p)] : p.text;
+      const need = L.device === 'build' ? Math.max(readingSecondsFor(newest), 0.4 + 0.03 * p.text.replace(/\s+/g, '').length) : readingSecondsFor(p.text);
       if (p.to - p.from + 1e-9 < need) failures.push({ shotId: shot.shotId, text: p.text, seconds: Number((p.to - p.from).toFixed(3)), needs: Number(need.toFixed(3)) });
     }
   }
