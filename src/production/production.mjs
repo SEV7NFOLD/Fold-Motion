@@ -1,6 +1,7 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
 import { alignDurations, beatGrid, chooseBeatTempo, snapReveals } from './beat-clock.mjs';
 import { moodForBrief } from './pacing.mjs';
+import { planLaunch } from './launch.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
@@ -1212,10 +1213,11 @@ function prepareBeat(storyboard, context) {
   return { storyboard: alignedStoryboard, grid, beat: { bpm, mood, framesPerBeat: grid.framesPerBeat, cuts: 'beat', reveals: 'half-beat' } };
 }
 
-function finishBeat(timeline, prepared) {
+function finishBeat(timeline, prepared, context = {}) {
   if (!prepared) return timeline;
   snapReveals(timeline, prepared.grid);
   timeline.beat = prepared.beat;
+  if (context.launch) timeline.launch = planLaunch(timeline, prepared.storyboard);
   return timeline;
 }
 
@@ -1225,6 +1227,8 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   const normalizedContext = normalizeProductionContext(context);
   normalizedContext.style = resolveStyle(storyboard, normalizedContext);
   normalizedContext.fonts = resolvePairing(storyboard, normalizedContext);
+  // The launch style always runs on a beat.
+  if (normalizedContext.launch && !normalizedContext.beat) normalizedContext.beat = true;
   const beat = prepareBeat(storyboard, normalizedContext);
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
@@ -1232,7 +1236,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
     ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
     strengthenDirection(shotSpecs, storyboard);
     enforceStyleKit(shotSpecs, normalizedContext.style);
-    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat);
+    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat, normalizedContext);
     timeline.style = normalizedContext.style;
     timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: 'mock-provider' };
@@ -1262,7 +1266,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   repairs.push(...strengthenDirection(shotSpecs, storyboard));
   repairs.push(...enforceStyleKit(shotSpecs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
   try {
-    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat);
+    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat, normalizedContext);
     timeline.style = normalizedContext.style;
     timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };

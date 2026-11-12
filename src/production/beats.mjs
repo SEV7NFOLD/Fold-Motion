@@ -13,7 +13,7 @@
  * whitespace included: `beats.map((b) => b.raw).join('') === copy`.
  */
 
-const FUNCTION_WORDS = new Set(['a', 'an', 'the', 'to', 'of', 'in', 'on', 'for', 'with', 'and', '&', 'or', 'but', 'at', 'by', 'from', 'into', 'onto', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'as', 'is', 'are', 'be', 'than', 'via', 'per', 'until', 'before', 'after', 'since', 'over', 'under', 'about', 'through', 'within', 'without', 'across', 'every', 'all', 'no', 'not', 'so', 'if', 'when', 'while']);
+export const FUNCTION_WORDS = new Set(['a', 'an', 'the', 'to', 'of', 'in', 'on', 'for', 'with', 'and', '&', 'or', 'but', 'at', 'by', 'from', 'into', 'onto', 'your', 'our', 'my', 'its', 'their', 'this', 'that', 'these', 'those', 'as', 'is', 'are', 'be', 'than', 'via', 'per', 'until', 'before', 'after', 'since', 'over', 'under', 'about', 'through', 'within', 'without', 'across', 'every', 'all', 'no', 'not', 'so', 'if', 'when', 'while']);
 const UNITS = new Set(['seconds', 'second', 'sec', 'secs', 's', 'min', 'mins', 'minute', 'minutes', 'hour', 'hours', 'hr', 'hrs', 'day', 'days', 'week', 'weeks', 'month', 'months', 'year', 'years', 'ml', 'l', 'g', 'kg', 'mg', 'oz', 'lb', 'lbs', 'cm', 'mm', 'm', 'km', 'gb', 'mb', 'tb', 'am', 'pm', 'off', 'percent', 'x', 'fps', 'bpm', 'k']);
 const MONTHS = new Set(['jan', 'january', 'feb', 'february', 'mar', 'march', 'apr', 'april', 'may', 'jun', 'june', 'jul', 'july', 'aug', 'august', 'sep', 'sept', 'september', 'oct', 'october', 'nov', 'november', 'dec', 'december']);
 const NUMBER = /^[($€£¥]?\d[\d.,:/]*(?:%|x|k|m|ml|g|s)?$/i;

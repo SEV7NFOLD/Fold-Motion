@@ -20,6 +20,20 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   tempo, and `beatSync` is in every beat film's render report. Offline
   storyboards now pick their mood with `moodForBrief`. **Phase 1 is done**;
   Phase 2's splitter is built and waits to be used by the launch devices.
+- **Phases 3–4 have started** (`context.launch`): a launch planner
+  (`src/production/launch.mjs`) and a browser runtime
+  (`src/browser/launch-runtime.js`) with four devices (build, swap, punch,
+  lockup), a camera that animates, whip-pans onto every cut, and
+  reading-time QA. Next: rebalance shot lengths by reading need before beat
+  alignment (a four-item swap in three seconds at 120 BPM can't be read, and
+  QA rightly fails it), then the type device, flips and continuity
+  transitions.
+- **First engine-made launch film** (13 s, five shots, 120 BPM): every QA
+  check passes (beat sync on 14 events, exact copy on all devices, reading
+  time), but it is calmer than the benchmark: 25% near-still frames (target
+  under 25%), motion energy 1.28 (target 2.3), longest still 0.63 s (target
+  0.5 s). Missing: continuity transitions, light/dark flips, the UI kit and
+  bigger scale contrast (Phases 4b–6).
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every
