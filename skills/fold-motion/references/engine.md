@@ -328,6 +328,7 @@ error.
 | `npm run health` | Check runtime prerequisites |
 | `npm run render:scene-01` | Render the sample scene |
 | `npm run render:browser -- --input request.json` | Experimental: render the same request in headless Chromium (see below). Prints `RENDER_REPORT:<path>`; the run folder ends in `-browser` |
+| `npm run studio` | The one-click local studio (also `Start FOLD Motion.cmd` / `.command`): installs on first run, asks once for a Gemini key (saved to `.env`), loads `.env`, starts the studio on this computer only and opens the browser; opens the running studio if it's already up |
 | `npm run compare -- --brief "…"` | Render one offline-planned film with both renderers and stack them into `output/compare/*.mp4` (also takes `--input`) |
 
 FFmpeg and FFprobe must be installed for rendering. The Docker image includes

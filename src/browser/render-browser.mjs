@@ -367,7 +367,7 @@ export function checkBrowserRenderer() {
       await access(executable);
       return { available: true, reason: null };
     } catch {
-      return { available: false, reason: 'Launch films render in a headless browser, which isn’t installed on this server (it needs more memory than a free instance has). Render launch films on your own computer: npm install, npx playwright install chromium, then npm start and open the studio there. Classic films render here as usual.' };
+      return { available: false, reason: 'Launch films render in a headless browser, which isn’t installed on this server (it needs more memory than a free instance has). Render launch films on your own computer: double-click Start FOLD Motion in the project folder (it installs what it needs the first time), then pick Launch there. Classic films render here as usual.' };
     }
   })();
   return browserStatus;
