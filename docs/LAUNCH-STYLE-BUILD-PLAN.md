@@ -57,6 +57,16 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
   frames, longest still 0.33 s, motion energy 1.82 (just under the calm
   target of 2.0). Not yet: label-detail crops, the dive into a photo,
   several products in one shot, image swaps.
+- **Phase 7: the planner.** Launch instructions for Gemini (`LAUNCH_DIRECTOR`)
+  and a `product` field in the storyboard schema; a launch-aware offline
+  planner; pacing set by the real planner and reading check, so a longer
+  shot can only read better (tested across devices and tempos), with a
+  deliberate end-card hold. **A brief now goes straight to a film:** the
+  Volt Runner brief planned itself as build → type → check → count → lockup
+  and rendered with every QA check passing and every motion target met
+  (9% near-still frames, motion energy 2.54, longest still 0.20 s). Gemini's
+  output with these instructions still needs a real-key test in the studio.
+  Next: the studio (Phase 10) and sound (5b).
 - **Product images were prototyped** with three amaranthine photos (a small
   cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
   calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every
