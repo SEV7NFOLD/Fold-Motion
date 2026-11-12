@@ -12,6 +12,11 @@ not start a phase until the previous one passes. Follow `AGENTS.md` and
 
 ## Status
 
+- **Product images were prototyped** with three amaranthine photos (a small
+  cutout and two lifestyle shots): an 8-second segment at 120 BPM and a
+  calm 10-second cut at 96 BPM. Image roles and the 1.25× rule held on every
+  frame; the director found the 120 BPM cut too fast for the brand, which
+  led to *Pacing follows the brand's mood*.
 - **Phase 0 is done.** The director approved golden film v2 on the second
   round (v1 scored 4/10). It lives in `assets/benchmarks/launch/` with its
   contact sheet, scene file and sound script. Every phase below is measured
@@ -39,7 +44,12 @@ v1 failed and v2 worked. These rules outrank anything else in this plan.
    out-of-focus UI behind the type.
 6. **Micro-detail.** Older words fade to grey as attention moves; selection
    highlights; colour wipes; spin-then-tick checks.
-7. **Sound is half the film.** A continuous musical bed from real
+7. **Pacing follows the brand's mood.** A product segment for a calm
+   skincare brand, cut at the benchmark's 120 BPM, felt rushed to the
+   director; the same segment at 96 BPM fit the brand. Energetic tech
+   launches run about 120 BPM; calm, premium and wellness brands run
+   90–100 BPM, with longer holds, softer drums and fewer ideas per second.
+8. **Sound is half the film.** A continuous musical bed from real
    instruments, a groove with a shape (build, drop to silence, impact), and
    a sound on most motion peaks.
 
@@ -56,8 +66,8 @@ approved benchmark (v1 → v2 shown where useful).
 
 | # | Criterion | How it's checked |
 | --- | --- | --- |
-| M1 | Near-still frames under 25% (*measured*: references 7–28%; v1 76% → v2 13%) | `stillShare`: frame-difference energy on a 160×90 greyscale render |
-| M2 | Mean motion energy 2.3 or more, no still stretch over 0.5 s (*measured*: v1 1.36 → v2 2.38) | `motionEnergy` on the same render |
+| M1 | Near-still frames under 25% for energetic films, under 35% for calm ones (*measured*: references 7–28%; v1 76% → v2 13%; product segment 23% at 120 BPM, 26% at 96 BPM) | `stillShare`: frame-difference energy on a 160×90 greyscale render |
+| M2 | Mean motion energy 2.3 or more (2.0 for calm); no still stretch over 0.5 s (1.2 s for calm) (*measured*: v1 1.36 → v2 2.38) | `motionEnergy` on the same render |
 | M3 | 70% or more of motion peaks have an audio onset within 2 frames (*measured*: Google countdown 75%; v2 73%) | `picSync` |
 | M4 | Stereo correlation 0.90 or lower; midrange (250 Hz–2 kHz) 12–22% of energy (*measured*: v2 0.86, 17.6%) | `stereoWidth`, `bandBalance` |
 | M5 | Loudness −13 LUFS ±1, true peak −1.5 dBFS or lower | `ebur128` |
@@ -148,6 +158,26 @@ word entrance to it.
   one frame of a grid point. Reuse `measureSync`.
 - Tests: grid math at 24, 25, 30 and 60 fps; quantization; a launch timeline
   passes `beatSync`; non-launch films behave exactly as before (frame hashes).
+
+### Phase 1b: Pacing by mood
+
+- The storyboard's mood picks the tempo from FOLD Score's ranges: energetic
+  118–128 BPM, editorial 104–114, premium calm 84–96, warm 78–90. Product,
+  wellness and luxury briefs lean calm unless the brief asks for energy.
+- Beats per idea scale with the mood: a calm film gets about 1.5× the beats
+  per scene of an energetic one, so fewer ideas fit the same length. The
+  planner trims scenes rather than squeezing them.
+- Minimum reading time: a beat that adds copy holds it on screen for at
+  least 0.3 s + 0.06 s per character before the next change, whatever the
+  tempo. Swaps of single words may go faster only after the first.
+- Calm films use softer drums (lighter kick, no claps or tambourine),
+  longer camera drifts and softer transitions.
+- Sound effects are placed on the visual motion peaks, not only on the beat
+  grid: when a transition peaks between beats, its hit moves to the peak
+  (the product segment missed two peaks until its hits were re-timed).
+- QA targets M1–M3 read their thresholds from the film's mood.
+- Tests: the same brief planned as energetic and as calm gets the expected
+  tempo and scene count; every copy beat meets the reading-time minimum.
 
 ### Phase 2: Copy into beats
 
