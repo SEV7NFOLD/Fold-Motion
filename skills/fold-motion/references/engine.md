@@ -381,6 +381,8 @@ Generate responses always include `provider`, `telemetry`, and when present
 | `QA` → `APPROVED` | `finalCutApproved: true` and both QA gates passed |
 | `APPROVED` → `DELIVERED` | Video and source artifacts under `/output/` |
 
+**Beat timing** (launch style, opt-in): compiling with `context.beat` (`true`, or `{ mood, bpm }`) makes the tempo come first. The mood is the given one, else the storyboard's `musicMood`, else `moodForBrief`; the tempo comes from `chooseBeatTempo`. Shot lengths are adjusted so every cut lands on a beat (total length and the one-second minimum per shot kept), every reveal start snaps to the nearest half-beat, and the timeline records `beat: { bpm, mood, framesPerBeat, cuts: 'beat', reveals: 'half-beat' }`. FOLD Score then plays at that tempo and mood (the beat's mood wins over an explicit one), and the render report adds `productionQA.beatSync` (events checked, offenders, and the score's tempo), which fails the render if an event drifts more than a frame or the score's tempo differs. Without `context.beat`, nothing changes.
+
 A scored film also gets `production-silent.mp4`: the same picture with no audio track (copied, not re-encoded), recorded in the report as `silentExport` with its tempo (for example `{ "bpm": 120, "label": "120 BPM" }`) and as `artifacts.silentVideo`, so creators can add platform music that lands on the motion. Films rendered with `music: 'off'` are already silent and get no copy.
 
 ## Deployments

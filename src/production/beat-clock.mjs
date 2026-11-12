@@ -69,3 +69,66 @@ export function measureBeatSync(grid, frames, { toleranceFrames = 1, division = 
   }
   return { checked: frames.length, onGrid: frames.length - offenders.length, offenders, pass: offenders.length === 0 };
 }
+
+/**
+ * Shot lengths (in frames) whose cuts land on beats, keeping the total exactly.
+ * Each cut moves to the nearest beat that keeps every shot at least `minFrames`
+ * long; a cut with no such beat nearby stays where it was.
+ */
+export function alignDurations(frames, grid, { minFrames = 1 } = {}) {
+  const total = frames.reduce((sum, f) => sum + f, 0);
+  const cuts = []; let at = 0;
+  for (let i = 0; i < frames.length - 1; i += 1) { at += frames[i]; cuts.push(at); }
+  const aligned = [];
+  let previous = 0;
+  cuts.forEach((cut, i) => {
+    const remainingShots = frames.length - 1 - i;
+    const latest = total - remainingShots * minFrames;   // leave room for the shots after this one
+    const candidates = [quantizeFrame(grid, cut, { division: 1 }), Math.floor(cut / grid.framesPerBeat) * grid.framesPerBeat, Math.ceil(cut / grid.framesPerBeat) * grid.framesPerBeat]
+      .map(Math.round)
+      .filter((c) => c - previous >= minFrames && c <= latest)
+      .sort((a, b) => Math.abs(a - cut) - Math.abs(b - cut));
+    const chosen = candidates.length ? candidates[0] : Math.min(Math.max(cut, previous + minFrames), latest);
+    aligned.push(chosen); previous = chosen;
+  });
+  const bounds = [0, ...aligned, total];
+  return bounds.slice(1).map((b, i) => b - bounds[i]);
+}
+
+/** The frames a beat-sync check measures: every cut, and every element's reveal start. */
+export function timelineBeatEvents(timeline) {
+  const events = [];
+  timeline.shots.forEach((shot, index) => {
+    if (index > 0) events.push(shot.startFrame);
+    for (const element of shot.spec?.elements || []) {
+      const start = element.reveal?.start;
+      if (Number.isFinite(start)) events.push(Math.round(shot.startFrame + start * timeline.fps));
+    }
+  });
+  return events;
+}
+
+/**
+ * Snaps every element's reveal start to the nearest half-beat inside its shot,
+ * stepping back a grid point when the reveal would otherwise run past the cut.
+ * Mutates the timeline's element specs; returns how many reveals moved.
+ */
+export function snapReveals(timeline, grid) {
+  let moved = 0;
+  const step = grid.framesPerBeat / 2;
+  for (const shot of timeline.shots) {
+    for (const element of shot.spec?.elements || []) {
+      const reveal = element.reveal;
+      if (!reveal || !Number.isFinite(reveal.start)) continue;
+      const absolute = shot.startFrame + reveal.start * timeline.fps;
+      const length = Number.isFinite(reveal.duration) ? reveal.duration * timeline.fps : 0;
+      let snapped = quantizeFrame(grid, absolute, { division: 2 });
+      while (snapped + length > shot.endFrame + 1 && snapped - step >= shot.startFrame) snapped = Math.round(snapped - step);
+      if (snapped < shot.startFrame) snapped = Math.round(Math.ceil(shot.startFrame / step) * step);
+      if (snapped > shot.endFrame) continue;
+      const start = (snapped - shot.startFrame) / timeline.fps;
+      if (Math.abs(start - reveal.start) > 1e-9) { element.reveal = { ...reveal, start }; moved += 1; }
+    }
+  }
+  return moved;
+}

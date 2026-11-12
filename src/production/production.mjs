@@ -1,4 +1,6 @@
 import { validateSceneSpec } from '../../scripts/qa/validate-scene-spec.mjs';
+import { alignDurations, beatGrid, chooseBeatTempo, snapReveals } from './beat-clock.mjs';
+import { moodForBrief } from './pacing.mjs';
 import { repairShotSpec, repairStoryboard } from './repair.mjs';
 import { contrastRatio, readableTextColor } from './color.mjs';
 import { fallbackMotion, isValidMotion, normalizeMotion } from './motion.mjs';
@@ -7,7 +9,7 @@ import { beatsFromBrief, durationFromBrief } from '../../public/brief-length.mjs
 import { normalizeBrandFont, normalizeLogoMeta, normalizeProductsMeta } from './brand-assets.mjs';
 import { fontFace, measure } from '../render/typography.mjs';
 import { BADGE_SHAPES, EMOJI_CHARS, EMOJI_NAMES, ICON_NAMES, SIGN_NAMES } from '../../public/graphics-library.mjs';
-import { chooseMood, MOOD_OPTIONS } from '../audio/fold-score.mjs';
+import { MOOD_OPTIONS } from '../audio/fold-score.mjs';
 import { chooseStyle, enforceStyleKit, resolveStyle, STYLE_KITS, STYLE_OPTIONS } from './style-kits.mjs';
 import { PAIRING_OPTIONS, resolvePairing } from './font-pairings.mjs';
 
@@ -1004,7 +1006,7 @@ export async function createCreativePlan(prompt, context = {}, provider = null) 
   if (rewriteNote) repairs.unshift(rewriteNote);
   // The music mood is part of the direction: the model's choice, or the brief's words.
   if (storyboard && typeof storyboard === 'object') {
-    const mood = MOOD_OPTIONS.includes(generatedStoryboard?.musicMood) ? generatedStoryboard.musicMood : chooseMood(`${prompt} ${storyboard.creativeDirection || ''}`);
+    const mood = MOOD_OPTIONS.includes(generatedStoryboard?.musicMood) ? generatedStoryboard.musicMood : moodForBrief(`${prompt} ${storyboard.creativeDirection || ''}`);
     storyboard.musicMood = mood;
     const reason = typeof generatedStoryboard?.musicReason === 'string' ? generatedStoryboard.musicReason.trim().slice(0, 160) : '';
     if (reason && MOOD_OPTIONS.includes(generatedStoryboard?.musicMood)) storyboard.musicReason = reason;
@@ -1189,19 +1191,48 @@ export function protectPayoff(shots, key = 'durationSeconds') {
   return [`The end card got ${(taken - Math.max(0, need)).toFixed(1)}s more so the payoff can land.`];
 }
 
+/**
+ * Beat timing for a film that asks for it (`context.beat`: true, or { mood, bpm }).
+ * The tempo comes first: shot lengths are adjusted so every cut lands on a beat,
+ * keeping the total length and the one-second minimum per shot. Returns the
+ * aligned storyboard copy and the beat settings, or null when beat timing is off.
+ */
+function prepareBeat(storyboard, context) {
+  const setting = context.beat;
+  if (!setting) return null;
+  const options = typeof setting === 'object' ? setting : {};
+  const text = [storyboard.title, storyboard.narrativeConcept, storyboard.creativeDirection, ...storyboard.shots.map((shot) => shot.onScreenCopy)].filter(Boolean).join(' ');
+  const mood = MOOD_OPTIONS.includes(options.mood) ? options.mood : MOOD_OPTIONS.includes(storyboard.musicMood) ? storyboard.musicMood : moodForBrief(text);
+  const bpm = chooseBeatTempo(mood, context.fps, { bpm: options.bpm });
+  const frames = storyboard.shots.map((shot) => Math.round(shot.durationSeconds * context.fps));
+  const total = frames.reduce((sum, f) => sum + f, 0);
+  const grid = beatGrid({ bpm, fps: context.fps, durationInSeconds: total / context.fps });
+  const aligned = alignDurations(frames, grid, { minFrames: Math.min(context.fps, ...frames) });
+  const alignedStoryboard = { ...storyboard, shots: storyboard.shots.map((shot, i) => ({ ...shot, durationSeconds: aligned[i] / context.fps })) };
+  return { storyboard: alignedStoryboard, grid, beat: { bpm, mood, framesPerBeat: grid.framesPerBeat, cuts: 'beat', reveals: 'half-beat' } };
+}
+
+function finishBeat(timeline, prepared) {
+  if (!prepared) return timeline;
+  snapReveals(timeline, prepared.grid);
+  timeline.beat = prepared.beat;
+  return timeline;
+}
+
 export async function compileCreativePlan(storyboard, context = {}, provider = null) {
   const storyboardValidation = validateStoryboard(storyboard);
   if (!storyboardValidation.valid) throw new Error(`Cannot compile invalid storyboard: ${storyboardValidation.errors.join(' ')}`);
   const normalizedContext = normalizeProductionContext(context);
   normalizedContext.style = resolveStyle(storyboard, normalizedContext);
   normalizedContext.fonts = resolvePairing(storyboard, normalizedContext);
+  const beat = prepareBeat(storyboard, normalizedContext);
   if (!provider?.compileStoryboard) {
     const seed = `${storyboard.id}|${storyboard.title}`;
     const shotSpecs = storyboard.shots.map((shot, index) => makeShotSpec(shot, index, normalizedContext, seed, storyboard.shots.length));
     ensureProductShot(shotSpecs, normalizedContext.products?.length || 0);
     strengthenDirection(shotSpecs, storyboard);
     enforceStyleKit(shotSpecs, normalizedContext.style);
-    const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
+    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat);
     timeline.style = normalizedContext.style;
     timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: 'mock-provider' };
@@ -1231,7 +1262,7 @@ export async function compileCreativePlan(storyboard, context = {}, provider = n
   repairs.push(...strengthenDirection(shotSpecs, storyboard));
   repairs.push(...enforceStyleKit(shotSpecs, normalizedContext.style, storyboard.shots.map((shot) => shot.id)));
   try {
-    const timeline = buildTimeline(storyboard, shotSpecs, normalizedContext);
+    const timeline = finishBeat(buildTimeline(beat?.storyboard || storyboard, shotSpecs, normalizedContext), beat);
     timeline.style = normalizedContext.style;
     timeline.fonts = normalizedContext.fonts;
     return { timeline, provider: provider.name, ...(repairs.length ? { repairs } : {}) };
