@@ -12,7 +12,8 @@
     "start": "node scripts/serve.mjs",
     "test": "node --test",
     "render:browser": "node scripts/render-browser.mjs",
-    "compare": "node --expose-gc scripts/compare-renderers.mjs"
+    "compare": "node --expose-gc scripts/compare-renderers.mjs",
+    "studio": "node scripts/launch-studio.mjs"
   },
   "engines": {
     "node": ">=20"
