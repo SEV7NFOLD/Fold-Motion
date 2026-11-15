@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStaticServer } from './runtime/static-server.mjs';
+import { loadProjectEnv } from './runtime/env-file.mjs';
 
 export async function startServer({
   root = path.join(process.cwd(), 'public'),
@@ -21,5 +22,8 @@ export async function startServer({
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // `npm start` reads the project's .env too (the launcher already does), so a key
+  // saved there works however the studio is started. Real environment variables win.
+  loadProjectEnv(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'));
   await startServer();
 }

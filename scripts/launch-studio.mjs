@@ -10,7 +10,7 @@
  * Keep the window open while you work; closing it stops the studio.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -18,23 +18,12 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WINDOWS = process.platform === 'win32';
 
-/** KEY=value lines from a .env file (comments and blank lines skipped, quotes removed). */
-export function parseEnv(text) {
-  const out = {};
-  for (const line of String(text).split(/\r?\n/)) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (!m || line.trim().startsWith('#')) continue;
-    out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
-  }
-  return out;
-}
+import {
+  cleanApiKey, loadProjectEnv, looksLikeGeminiKey, maskKey, saveGeminiKey,
+} from '../src/runtime/env-file.mjs';
 
-/** Loads a .env file into `env` without overriding values that are already set. */
-export function loadEnvFile(file, env = process.env) {
-  if (!existsSync(file)) return false;
-  for (const [key, value] of Object.entries(parseEnv(readFileSync(file, 'utf8')))) if (env[key] === undefined) env[key] = value;
-  return true;
-}
+// Kept as exports of this script for existing callers and tests.
+export { loadEnvFile, parseEnv } from '../src/runtime/env-file.mjs';
 
 /** Whether a FOLD Motion studio already answers at this address. */
 export async function isStudioRunning(url) {
@@ -75,12 +64,20 @@ async function main() {
     console.error(`FOLD Motion needs Node.js 20 or newer (this computer has ${process.versions.node}). Install the LTS version from https://nodejs.org and try again.`);
     process.exit(1);
   }
-  loadEnvFile(path.join(ROOT, '.env'));
+  const envFile = loadProjectEnv(ROOT);
+  if (envFile && path.basename(envFile) !== '.env') {
+    console.log(`Using settings from ${path.basename(envFile)} (Notepad added ".txt"; that's fine).`);
+  }
   const port = Number(process.env.PORT) || 4173;
   const url = `http://localhost:${port}`;
 
   if (await isStudioRunning(url)) {
     console.log(`FOLD Motion is already running at ${url}. Opening it.`);
+    const running = await fetch(`${url}/api/engine`).then((r) => r.json()).catch(() => null);
+    if (process.env.GEMINI_API_KEY && running?.engine?.gemini && running.engine.gemini.configured === false) {
+      console.log('\nThat copy was started before your Gemini key was added, so it has no key.');
+      console.log('Close the other FOLD Motion window (or restart your computer), then double-click Start FOLD Motion again.\n');
+    }
     if (open) openBrowser(url);
     return;
   }
@@ -100,14 +97,25 @@ async function main() {
   }
 
   // A Gemini key lets the AI plan films; without one, the offline planner is used.
-  const envFile = path.join(ROOT, '.env');
-  if (!process.env.GEMINI_API_KEY && !existsSync(envFile) && process.stdin.isTTY) {
+  // Asked again on every start until a key is set (press Enter to skip for now).
+  const settingsFile = envFile || path.join(ROOT, '.env');
+  if (!cleanApiKey(process.env.GEMINI_API_KEY) && process.stdin.isTTY) {
+    console.log('\nNo Gemini API key yet. Get one free at https://aistudio.google.com/apikey');
+    console.log('To paste in this window: right-click (or press Ctrl+V), then press Enter.');
     const ask = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const key = (await ask.question('Paste your Gemini API key to let the AI plan your films (or press Enter to skip): ')).trim();
+    const key = cleanApiKey(await ask.question('Gemini API key (or press Enter to skip): '));
     ask.close();
-    writeFileSync(envFile, key ? `GEMINI_API_KEY=${key}\n` : '# Add GEMINI_API_KEY=your-key here to let the AI plan films.\n');
-    if (key) process.env.GEMINI_API_KEY = key;
-    console.log(key ? 'Saved to .env on this computer only.' : 'Skipped: films will use the offline planner. Add your key to .env any time.');
+    if (key) {
+      saveGeminiKey(settingsFile, key);
+      process.env.GEMINI_API_KEY = key;
+      console.log(`Saved to ${path.basename(settingsFile)} on this computer only (${maskKey(key)}).`);
+      if (!looksLikeGeminiKey(key)) console.warn('Heads-up: that doesn\u2019t look like a usual Gemini key (they start with "AIza" and are 39 characters). If AI planning fails, paste it again.');
+    } else {
+      console.log('Skipped: films will use the offline planner. You can add the key next time you start.');
+    }
+  } else if (process.env.GEMINI_API_KEY) {
+    process.env.GEMINI_API_KEY = cleanApiKey(process.env.GEMINI_API_KEY);
+    console.log(`Gemini key found (${maskKey(process.env.GEMINI_API_KEY)}): AI planning is on.`);
   }
 
   // Local only: the studio listens on this computer, not the network.
