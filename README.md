@@ -108,11 +108,14 @@ runs just opens the studio. You can also run `npm run studio`.
 
 **Windows: no installer needed.** If this PC doesn't already have Node.js 20+
 and FFmpeg, the first double-click downloads portable copies (about 180 MB in
-total, once) into a `.runtime` folder inside the project, checks each download
-against its published SHA-256 checksum, and uses them from there. Nothing is
-installed system-wide and no admin rights are needed, so this works even when
-the Node.js installer fails. Delete `.runtime` to remove them. Launch films
-also download a headless Chromium the first time (about 150 MB).
+total, once per PC) into `%LOCALAPPDATA%\FOLD Motion\runtime`, checks each
+download against its published SHA-256 checksum, and uses them from there.
+Every copy of the project shares them, so a new ZIP or folder never downloads
+them again, and its packages install from this PC's npm cache with little or
+no data. Nothing is installed system-wide and no admin rights are needed, so
+this works even when the Node.js installer fails. Delete that folder to remove
+them. Launch films also download a headless Chromium the first time (about
+150 MB), which is likewise shared by every copy.
 
 On a Mac you need [Node.js](https://nodejs.org) (the LTS version) and FFmpeg
 installed once. If the launcher came from a download and macOS blocks it,

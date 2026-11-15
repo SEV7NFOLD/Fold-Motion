@@ -2,14 +2,18 @@
 # without the Node.js installer and without admin rights.
 #
 # Called by "Start FOLD Motion.cmd". If a suitable Node.js or FFmpeg is already
-# installed, it is used as-is. Otherwise a portable copy is downloaded once into
-# the project's .runtime folder (git-ignored), checked against its published
-# SHA-256 checksum, and unpacked there. Nothing is installed system-wide.
+# installed, it is used as-is. Otherwise a portable copy is downloaded once per
+# PC into a shared folder, checked against its published SHA-256 checksum, and
+# unpacked there. Every copy of the project reuses it, so updating FOLD Motion
+# (a new ZIP or folder) never downloads these again. Nothing is installed
+# system-wide and no admin rights are needed.
 #
-#   .runtime\node\node.exe          portable Node.js (latest LTS, win-x64)
-#   .runtime\ffmpeg\bin\ffmpeg.exe  portable FFmpeg + FFprobe (BtbN GPL build, includes libx264)
+#   %LOCALAPPDATA%\FOLD Motion\runtime\node\node.exe          portable Node.js (latest LTS, win-x64)
+#   %LOCALAPPDATA%\FOLD Motion\runtime\ffmpeg\bin\ffmpeg.exe  portable FFmpeg + FFprobe (BtbN GPL build, includes libx264)
+#
+# Delete "%LOCALAPPDATA%\FOLD Motion\runtime" to remove them.
 
-param([Parameter(Mandatory = $true)][string]$Root)
+param([Parameter(Mandatory = $true)][string]$Runtime)
 
 $ErrorActionPreference = 'Stop'
 # The progress bar makes Invoke-WebRequest many times slower on Windows PowerShell 5.
@@ -17,7 +21,6 @@ $ProgressPreference = 'SilentlyContinue'
 # Windows PowerShell 5 may default to old TLS versions that these sites refuse.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Runtime = Join-Path $Root '.runtime'
 $NodeDir = Join-Path $Runtime 'node'
 $FfmpegDir = Join-Path $Runtime 'ffmpeg'
 

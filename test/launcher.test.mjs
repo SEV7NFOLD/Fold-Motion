@@ -62,11 +62,11 @@ test('the Windows launcher fetches portable Node.js and FFmpeg when they are mis
   const cmd = await readFile('Start FOLD Motion.cmd', 'utf8');
   const setup = await readFile('scripts/windows/setup-runtime.ps1', 'utf8');
   assert.match(cmd, /scripts\\windows\\setup-runtime\.ps1/, 'the .cmd runs the setup script');
-  assert.match(cmd, /\.runtime\\node;.*\.runtime\\ffmpeg\\bin;/, 'portable copies go first on PATH');
+  assert.match(cmd, /FOLD_RUNTIME=%LOCALAPPDATA%\\FOLD Motion\\runtime/, 'portable copies live once per PC, shared by every project copy');
+  assert.match(cmd, /%FOLD_RUNTIME%\\node;%FOLD_RUNTIME%\\ffmpeg\\bin;/, 'portable copies go first on PATH');
   assert.ok(cmd.indexOf('setup-runtime.ps1') < cmd.indexOf('node scripts\\launch-studio.mjs'), 'setup runs before the studio starts');
   assert.match(setup, /Get-FileHash -Algorithm SHA256/, 'downloads are checked against published checksums');
   assert.match(setup, /nodejs\.org\/dist\/index\.json/);
   assert.match(setup, /ffprobe\.exe/);
   assert.ok(!/[^\x00-\x7F]/.test(setup), 'ASCII only, so Windows PowerShell 5 reads it correctly without a BOM');
-  assert.match(await readFile('.gitignore', 'utf8'), /^\.runtime\/$/m);
 });
