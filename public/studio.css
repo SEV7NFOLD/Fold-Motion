@@ -2823,3 +2823,15 @@ button.tool:hover,
   color: var(--text-3);
   font-size: 0.6875rem;
 }
+
+/* Gemini key box (System view, own computer only) */
+.local-key-status { margin: 0.25rem 0 0.75rem; color: var(--text-2, var(--text)); font-size: 0.875rem; }
+.local-key-status[data-state="attention"] { color: var(--amber, #f2b950); }
+.local-key-status[data-state="ok"] { color: var(--green, #6fd39a); }
+.local-key-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.local-key-form input {
+  flex: 1 1 16rem; min-width: 0; padding: 0.6rem 0.8rem; border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: var(--bg-raised); color: var(--text); font: 500 0.875rem/1.2 var(--mono, ui-monospace, monospace);
+}
+.local-key-form input:focus { border-color: var(--indigo-line); outline: none; }
+.local-key-help { margin: 0.6rem 0 0; color: var(--text-3, var(--text)); font-size: 0.8125rem; }

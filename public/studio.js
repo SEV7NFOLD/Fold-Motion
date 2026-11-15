@@ -318,6 +318,7 @@ let saveWarningShown = false;
 // small bookmark, and records that changed are uploaded a moment after the change.
 let cloud = null;
 let authInfo = null;
+let localKeySetup = false;
 const syncedJson = new Map();
 let syncTimer = null;
 
@@ -1691,7 +1692,7 @@ function providerNotes(data, key) {
     notes.push(note('info',
       h('p', {}, h('strong', { text: 'Made by the offline fallback, not AI. ' }),
         FALLBACK_REASONS[data.fallbackReason] || FALLBACK_REASONS.provider, ' ',
-        h('button', { class: 'link-button', type: 'button', onclick: () => showView('system'), text: 'See what happened' }))));
+        h('button', { class: 'link-button', type: 'button', onclick: () => showView('system'), text: data.fallbackReason === 'unconfigured' && localKeySetup ? 'Add your Gemini key' : 'See what happened' }))));
   }
   if (data.repairs?.length) {
     const count = data.repairs.length;
@@ -2439,6 +2440,7 @@ async function loadEngine() {
     engine = result.engine;
     renderInfo = result.render ?? null;
     authInfo = result.auth?.provider === 'supabase' ? result.auth : null;
+    localKeySetup = result.localKeySetup === true;
     engineError = false;
   } catch {
     engineError = true;
@@ -2473,7 +2475,48 @@ function definitionList(target, rows) {
   ]));
 }
 
+// On your own computer, the System view can save a Gemini key straight into .env.
+function renderLocalKey() {
+  const panel = $('local-key-panel');
+  if (!panel) return;
+  panel.hidden = !localKeySetup;
+  if (!localKeySetup || !engine) return;
+  const status = $('local-key-status');
+  status.textContent = engine.gemini.configured
+    ? `AI planning is on (${engine.gemini.keys} key${engine.gemini.keys === 1 ? '' : 's'} set). Paste a new key below to replace it.`
+    : 'No Gemini key yet, so films use the offline planner. Paste your key to switch the AI on.';
+  status.dataset.state = engine.gemini.configured ? 'ok' : 'attention';
+  $('local-key-save').textContent = engine.gemini.configured ? 'Replace key' : 'Save key';
+}
+
+async function saveLocalKey(event) {
+  event.preventDefault();
+  const input = $('local-key-input');
+  const button = $('local-key-save');
+  const status = $('local-key-status');
+  const key = input.value.trim();
+  if (!key) return;
+  button.disabled = true;
+  status.textContent = 'Saving…';
+  try {
+    const response = await fetch('/api/local/gemini-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.error || `The key couldn’t be saved (HTTP ${response.status}).`);
+    input.value = '';
+    if (result.engine) engine = result.engine;
+    render();
+    $('local-key-status').textContent = `Saved (${result.key}). AI planning is on; your next brief uses Gemini.`;
+  } catch (error) {
+    status.textContent = error.message;
+    status.dataset.state = 'attention';
+  } finally {
+    button.disabled = false;
+  }
+}
+document.addEventListener('submit', (event) => { if (event.target?.id === 'local-key-form') void saveLocalKey(event); });
+
 function renderSystem() {
+  renderLocalKey();
   if (engine) {
     const { gemini, fallbacks } = engine;
     definitionList($('engine-details'), [

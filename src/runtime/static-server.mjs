@@ -15,6 +15,8 @@ import { handleStoryboardRequest } from '../routes/storyboard.mjs';
 import { resolveBrandAssets } from '../production/brand-assets.mjs';
 import { loadStoredAssets, publicAuthConfig, requireUser, storeFilm, FILM_BUCKET } from './supabase-server.mjs';
 import { checkBrowserRenderer } from '../browser/render-browser.mjs';
+import { cleanApiKey, findEnvFile, maskKey, saveGeminiKey } from './env-file.mjs';
+import { fileURLToPath } from 'node:url';
 const MAX_GENERATE_BODY_BYTES = 1024 * 1024;
 const MAX_RENDER_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_SCENE_CONTEXT = {
@@ -485,6 +487,51 @@ function resolveOutputPath(root, requestUrl) {
   return resolved.startsWith(`${outputRoot}${path.sep}`) ? resolved : null;
 }
 
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * Whether this request may save a Gemini key from the studio: only on someone's own
+ * computer (never a hosted deployment), only from this computer, and only from the
+ * studio page itself (Host and Origin are localhost, which also blocks DNS rebinding).
+ */
+export function canSetLocalKey(request, env = process.env) {
+  if (env.NODE_ENV === 'production' || env.RENDER || env.VERCEL || env.FOLD_DISABLE_LOCAL_KEY) return false;
+  if (!LOOPBACK.has(request.socket?.remoteAddress)) return false;
+  const hostName = String(request.headers.host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+  if (!['localhost', '127.0.0.1', '::1'].includes(hostName)) return false;
+  const origin = request.headers.origin;
+  if (origin) {
+    try {
+      if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) return false;
+    } catch { return false; }
+  }
+  return true;
+}
+
+async function handleLocalKeyRequest(request, response) {
+  if (request.method !== 'POST') {
+    response.writeHead(405, { Allow: 'POST' }).end();
+    return;
+  }
+  if (!canSetLocalKey(request)) {
+    sendJson(response, 403, { success: false, error: 'Keys can only be added from the studio on your own computer. On a hosted studio, set GEMINI_API_KEY in the host’s settings.' });
+    return;
+  }
+  const body = await readJsonRequest(request, response, 2048);
+  if (!body) return;
+  const key = cleanApiKey(body.key);
+  if (!/^[0-9A-Za-z_-]{20,200}$/.test(key)) {
+    sendJson(response, 400, { success: false, error: 'That doesn’t look like an API key. Copy it again from aistudio.google.com/apikey.' });
+    return;
+  }
+  const dir = process.env.FOLD_ENV_DIR || PROJECT_ROOT;   // FOLD_ENV_DIR: tests only
+  const file = findEnvFile(dir) || path.join(dir, '.env');
+  saveGeminiKey(file, key);
+  process.env.GEMINI_API_KEY = key;   // used from the next request on; no restart needed
+  sendJson(response, 200, { success: true, saved: path.basename(file), key: maskKey(key), engine: getEngineConfig() });
+}
+
 export async function createStaticServer({ root, host = '127.0.0.1', port = 0 }) {
   const resolvedRoot = path.resolve(root);
   await access(resolvedRoot);
@@ -526,7 +573,11 @@ export async function createStaticServer({ root, host = '127.0.0.1', port = 0 })
           response.writeHead(405, { Allow: 'GET' }).end();
           return;
         }
-        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: { ...(await checkRenderAvailability()), launch: await checkBrowserRenderer() }, auth: publicAuthConfig() });
+        sendJson(response, 200, { success: true, engine: getEngineConfig(), render: { ...(await checkRenderAvailability()), launch: await checkBrowserRenderer() }, auth: publicAuthConfig(), localKeySetup: canSetLocalKey(request) });
+        return;
+      }
+      if (pathname === '/api/local/gemini-key') {
+        await handleLocalKeyRequest(request, response);
         return;
       }
       if (pathname === '/health') {
