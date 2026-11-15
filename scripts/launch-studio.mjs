@@ -87,7 +87,9 @@ async function main() {
 
   if (!existsSync(path.join(ROOT, 'node_modules'))) {
     console.log('First run: installing FOLD Motion. This takes a few minutes, once.');
-    if (!(await run('npm', ['install']))) { console.error('Installing failed. Check your internet connection and try again.'); process.exit(1); }
+    // --prefer-offline reuses packages already in this PC's npm cache, so a fresh copy
+    // of the project installs with little or no download.
+    if (!(await run('npm', ['install', '--prefer-offline', '--no-audit', '--no-fund']))) { console.error('Installing failed. Check your internet connection and try again.'); process.exit(1); }
   }
 
   // Launch films render in a headless browser; install it once if it's missing.

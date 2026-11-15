@@ -57,3 +57,16 @@ test('double-click launchers exist for Windows and Mac and both run the shared l
   assert.ok((await stat('Start FOLD Motion.command')).mode & 0o111, 'Mac launcher is executable');
   assert.match(cmd, /nodejs\.org/); assert.match(mac, /nodejs\.org/);
 });
+
+test('the Windows launcher fetches portable Node.js and FFmpeg when they are missing', async () => {
+  const cmd = await readFile('Start FOLD Motion.cmd', 'utf8');
+  const setup = await readFile('scripts/windows/setup-runtime.ps1', 'utf8');
+  assert.match(cmd, /scripts\\windows\\setup-runtime\.ps1/, 'the .cmd runs the setup script');
+  assert.match(cmd, /FOLD_RUNTIME=%LOCALAPPDATA%\\FOLD Motion\\runtime/, 'portable copies live once per PC, shared by every project copy');
+  assert.match(cmd, /%FOLD_RUNTIME%\\node;%FOLD_RUNTIME%\\ffmpeg\\bin;/, 'portable copies go first on PATH');
+  assert.ok(cmd.indexOf('setup-runtime.ps1') < cmd.indexOf('node scripts\\launch-studio.mjs'), 'setup runs before the studio starts');
+  assert.match(setup, /Get-FileHash -Algorithm SHA256/, 'downloads are checked against published checksums');
+  assert.match(setup, /nodejs\.org\/dist\/index\.json/);
+  assert.match(setup, /ffprobe\.exe/);
+  assert.ok(!/[^\x00-\x7F]/.test(setup), 'ASCII only, so Windows PowerShell 5 reads it correctly without a BOM');
+});
