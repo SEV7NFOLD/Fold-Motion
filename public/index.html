@@ -173,6 +173,16 @@
               <div class="panel-head"><h2 id="account-heading">Account</h2><button class="pill pill-quiet" id="sign-out" type="button">Sign out</button></div>
               <dl class="rows"><dt>Signed in as</dt><dd id="account-email"></dd><dt>Saved to</dt><dd>Supabase (projects, brand kit and films)</dd></dl>
             </section>
+            <section class="panel" id="local-key-panel" aria-labelledby="local-key-heading" hidden>
+              <h2 id="local-key-heading">Gemini API key</h2>
+              <p class="local-key-status" id="local-key-status"></p>
+              <form class="local-key-form" id="local-key-form" autocomplete="off">
+                <label class="sr-only" for="local-key-input">Gemini API key</label>
+                <input id="local-key-input" type="password" inputmode="text" spellcheck="false" autocapitalize="off" placeholder="Paste your key (starts with AIza…)" required>
+                <button class="pill" id="local-key-save" type="submit">Save key</button>
+              </form>
+              <p class="local-key-help">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It’s saved in the <code>.env</code> file on this computer only and works straight away, no restart needed.</p>
+            </section>
             <section class="panel" aria-labelledby="engine-heading">
               <h2 id="engine-heading">AI engine</h2>
               <p class="credits">Icons: Lucide (ISC). Emoji graphics: Twemoji by Twitter and contributors (CC BY 4.0). Fonts: Google Fonts (SIL Open Font License).</p>
