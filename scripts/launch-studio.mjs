@@ -109,7 +109,7 @@ async function main() {
       saveGeminiKey(settingsFile, key);
       process.env.GEMINI_API_KEY = key;
       console.log(`Saved to ${path.basename(settingsFile)} on this computer only (${maskKey(key)}).`);
-      if (!looksLikeGeminiKey(key)) console.warn('Heads-up: that doesn\u2019t look like a usual Gemini key (they start with "AIza" and are 39 characters). If AI planning fails, paste it again.');
+      if (!looksLikeGeminiKey(key)) console.warn('Heads-up: that doesn\u2019t look like a Gemini key (they start with "AQ." or "AIza"). If AI planning fails, paste it again.');
     } else {
       console.log('Skipped: films will use the offline planner. You can add the key next time you start.');
     }

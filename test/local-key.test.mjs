@@ -37,6 +37,10 @@ test('saving a key from the studio writes .env and switches the AI on without a 
     assert.equal(body.key, 'AIza…kkkk');
     assert.equal(body.engine.gemini.configured, true);
     assert.equal(await readFile(path.join(dir, '.env'), 'utf8'), `GEMINI_API_KEY=${KEY}\n`);
+    const aq = 'AQ.Ab8RN6Lx_example-Key.part2_abc123XYZ';
+    const okAq = await fetch(`${base}/api/local/gemini-key`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: aq }) });
+    assert.equal(okAq.status, 200, 'new AQ. keys (with dots) are accepted');
+    assert.equal(await readFile(path.join(dir, '.env'), 'utf8'), `GEMINI_API_KEY=${aq}\n`);
     const after = await (await fetch(`${base}/api/engine`)).json();
     assert.equal(after.engine.gemini.configured, true, 'live without restart');
   } finally {
