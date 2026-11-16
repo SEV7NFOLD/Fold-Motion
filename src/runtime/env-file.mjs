@@ -71,9 +71,13 @@ export function cleanApiKey(value) {
     .replace(/\s+/g, '');
 }
 
-/** Google AI Studio keys look like "AIza" followed by 35 more characters. */
+/**
+ * Gemini keys come in two shapes: the new Auth keys AI Studio issues today
+ * ("AQ.Ab…", with dots) and the older Standard keys ("AIza" plus 35 characters).
+ */
 export function looksLikeGeminiKey(value) {
-  return /^AIza[0-9A-Za-z_-]{35}$/.test(String(value || ''));
+  const key = String(value || '');
+  return /^AQ\.[0-9A-Za-z_.-]{20,}$/.test(key) || /^AIza[0-9A-Za-z_-]{35}$/.test(key);
 }
 
 /** "AIza…wxyz": enough to recognize a key without showing it. */

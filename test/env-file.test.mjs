@@ -41,6 +41,7 @@ test('a pasted key is cleaned and saved over the placeholder, keeping other sett
   assert.equal(cleanApiKey(`  GEMINI_API_KEY="${KEY}" \n`), KEY);
   assert.equal(cleanApiKey(`'${KEY}'`), KEY);
   assert.equal(looksLikeGeminiKey(KEY), true);
+  assert.equal(looksLikeGeminiKey('AQ.Ab8RN6Lx_example-Key.part2_abc123XYZ'), true, 'new AI Studio Auth keys');
   assert.equal(looksLikeGeminiKey('not-a-key'), false);
   assert.equal(maskKey(KEY), 'AIza…xxxx');
   const dir = await mkdtemp(path.join(os.tmpdir(), 'fold-envsave-'));

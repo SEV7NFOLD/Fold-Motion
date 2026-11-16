@@ -521,7 +521,7 @@ async function handleLocalKeyRequest(request, response) {
   const body = await readJsonRequest(request, response, 2048);
   if (!body) return;
   const key = cleanApiKey(body.key);
-  if (!/^[0-9A-Za-z_-]{20,200}$/.test(key)) {
+  if (!/^[0-9A-Za-z_.-]{20,400}$/.test(key)) {   // AQ.… Auth keys contain dots
     sendJson(response, 400, { success: false, error: 'That doesn’t look like an API key. Copy it again from aistudio.google.com/apikey.' });
     return;
   }
